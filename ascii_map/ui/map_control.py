@@ -12,7 +12,6 @@ Integrates:
 
 import time, queue, threading
 from pathlib import Path
-from typing import Any, Optional
 from prompt_toolkit.layout.controls import UIControl, UIContent
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.application import get_app_or_none
@@ -25,8 +24,8 @@ from ascii_map.ui.state import MapState
 
 class Frame:
     def __init__(self, width:int, height:int, lines_frag:list):
-        self.width=width
-        self.height=height
+        self.width=int(width)
+        self.height=int(height)
         self.lines_frag=lines_frag
 
 class MapControl(UIControl):
@@ -41,6 +40,10 @@ class MapControl(UIControl):
         self._stop=threading.Event()
         self._thread=threading.Thread(target=self._render_worker, daemon=True)
         self._thread.start()
+        # Track the most recent terminal dimensions so interaction-triggered
+        # renders know the correct size to request.
+        self._last_width=1
+        self._last_height=1
 
     # -------- UIControl interface --------
 
@@ -50,13 +53,26 @@ class MapControl(UIControl):
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix): return max_available_height
 
     def create_content(self, width, height):
+        width=max(1,int(width))
+        height=max(1,int(height))
+        self._last_width=width
+        self._last_height=height
+
+        frame=None
         try:
-            frame = self._res_q.get_nowait()
+            while True:
+                frame=self._res_q.get_nowait()
         except queue.Empty:
+            pass
+
+        if frame is None or frame.width!=width or frame.height!=height:
             self._enqueue(width, height, self.state.lat, self.state.lon, self.state.z)
-            # Return an empty frame that still fills the area.
-            empty_line = [("", " " * max(1, width))]
-            return UIContent(get_line=lambda i: empty_line, line_count=max(1, height))
+            if frame is None:
+                empty_line=[("", " " * width)]
+                return UIContent(
+                    get_line=lambda i: empty_line if 0 <= i < height else [("", " " * width)],
+                    line_count=height,
+                )
 
         # Normalize to full size
         lines_frag = []
@@ -70,7 +86,7 @@ class MapControl(UIControl):
                     row_text = row_text[:width]
                 lines_frag.append([("", row_text)])
             else:
-                lines_frag.append([("", " " * max(1, width))])
+                lines_frag.append([("", " " * width)])
 
         # Crosshair overlay after padding
         chx, chy = width // 2, height // 2
@@ -80,7 +96,7 @@ class MapControl(UIControl):
             lines_frag[chy] = [("", row_text)]
 
         return UIContent(
-            get_line=lambda i: lines_frag[i] if 0 <= i < height else [("", " " * max(1, width))],
+            get_line=lambda i: lines_frag[i] if 0 <= i < height else [("", " " * width)],
             line_count=height,
             cursor_position=Point(x=chx, y=chy),
         )
@@ -89,6 +105,8 @@ class MapControl(UIControl):
     # -------- worker logic --------
 
     def _enqueue(self,w:int,h:int,lat:float,lon:float,z:int):
+        w=max(1,int(w))
+        h=max(1,int(h))
         with self._req_q.mutex:
             self._req_q.queue.clear()
         try:
@@ -159,4 +177,4 @@ class MapControl(UIControl):
 
     def request_render(self):
         # Let the worker trigger repaint; keeps mouse clicks smooth.
-        self._enqueue(0, 0, self.state.lat, self.state.lon, self.state.z)
+        self._enqueue(self._last_width, self._last_height, self.state.lat, self.state.lon, self.state.z)
