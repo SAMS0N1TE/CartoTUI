@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 # ascii_map/ui/state.py
-"""
-Mutable runtime state for the ASCII Map TUI.
-Keeps map center, zoom, and runtime metrics. Thread-safe enough for UI usage.
-"""
+"""Mutable runtime state for the ASCII Map TUI."""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Tuple
+
 import math
 import threading
+from dataclasses import dataclass, field
+from typing import Tuple
 
 from ascii_map.config import Config
 from ascii_map.geodesy import clamp_lat
 
+
 def _wrap_lon(lon: float) -> float:
-    # Wrap to [-180, 180)
+    """Wrap longitude to [-180, 180)."""
+
     lon = ((lon + 180.0) % 360.0) - 180.0
     # Avoid -180 exact to keep XYZ math stable
     return -179.999999 if lon <= -180.0 else lon
+
 
 @dataclass
 class MapState:
@@ -37,7 +38,7 @@ class MapState:
     info_msg: str = ""
 
     # Compass
-    heading_deg: float = 0.0        # 0 = North, increases clockwise
+    heading_deg: float = 0.0  # 0 = North, increases clockwise
     _last_pan_vec: Tuple[int, int] = (0, 0)
 
     # Internal lock for multi-thread updates
@@ -50,7 +51,11 @@ class MapState:
         self.z = int(m.get("zoom"))
         self.min_zoom = int(m.get("min_zoom"))
         self.max_zoom = int(m.get("max_zoom"))
-        self.crosshair = self.cfg["viewport"].get("crosshair", True) and self.cfg["viewport"].get("crosshair_char", "+") or "+"
+        viewport = self.cfg["viewport"]
+        if viewport.get("crosshair", True):
+            self.crosshair = viewport.get("crosshair_char", "+") or "+"
+        else:
+            self.crosshair = ""
         # Clamp
         self._normalize_center()
 
@@ -79,11 +84,8 @@ class MapState:
     # ------------- compass / pan tracking -------------
 
     def record_pan(self, dx_cells: int, dy_cells: int) -> None:
-        """
-        Record a pan vector in terminal cell units for compass heading.
-        dx>0 moves east, dy>0 moves south.
-        Heading: 0=N, 90=E, 180=S, 270=W
-        """
+        """Record a pan vector in terminal cell units for compass heading."""
+
         if dx_cells == 0 and dy_cells == 0:
             return
         with self._lock:
@@ -104,8 +106,7 @@ class MapState:
     # ------------- export -------------
 
     def snapshot(self) -> Tuple[float, float, int, float]:
-        """
-        Return a quick snapshot used by render threads.
-        """
+        """Return a quick snapshot used by render threads."""
+
         with self._lock:
             return self.lat, self.lon, self.z, self.heading_deg
