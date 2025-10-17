@@ -2,13 +2,17 @@
 # ascii_map/ui/statusbar.py
 
 from __future__ import annotations
-from prompt_toolkit.widgets import Label
-from prompt_toolkit.formatted_text import HTML
 
-from ascii_map.ui.state import MapState
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.widgets import Label
+
 from ascii_map.config import Config
+from ascii_map.ui.state import MapState
+
 
 class StatusBar:
+    """Single-line status summary shown below the map."""
+
     def __init__(self, state: MapState, cfg: Config):
         self.state = state
         self.cfg = cfg
@@ -18,7 +22,7 @@ class StatusBar:
         self.update()
         return self.label
 
-    def update(self):
+    def update(self) -> None:
         pal = self.cfg["map"].get("palette", "ascii_dense")
         mode = self.cfg["map"].get("mode", "ascii")
         color = "color" if self.cfg["render"].get("color", True) else "mono"
