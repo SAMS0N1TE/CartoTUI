@@ -31,6 +31,11 @@ from cartotui.vector_source import VectorTile, VectorTileSource
 
 log = logging.getLogger("cartotui.raster_v")
 
+# Set of (kind, ...) signatures we've already warned about. Keeps the
+# "no tiles" warning from firing on every render frame when the source is
+# misconfigured. Cleared implicitly when the process restarts.
+_LOG_DEDUPE: set = set()
+
 __all__ = ["rasterise_view", "ROAD_CLASS_PRIORITY", "VectorStyle", "default_style"]
 
 
@@ -72,18 +77,32 @@ class VectorStyle:
     coastlines), bright roads with class-graded brightness, mid-grey
     buildings. This gives 4-5 distinct tonal levels — enough for a 5-step
     palette to actually use its full range.
+
+    Per-class road colors are supported via ``road_colors``: a dict mapping
+    priority (1..10) to RGB. When a road's class isn't in the dict, the
+    drawer falls back to ``road_color``. This is what gives motorways
+    visual weight different from residentials at the same zoom.
     """
 
     bg:       Tuple[int, int, int] = (15, 15, 20)      # subtle bg, not pure black
     water:    Tuple[int, int, int] = (95, 105, 120)    # mid-tone — visible
     park:     Tuple[int, int, int] = (60, 80, 60)      # darker than land, lighter than bg
     building: Tuple[int, int, int] = (75, 75, 80)
-    road_color: Tuple[int, int, int] = (255, 255, 255) # always brightest
+    road_color: Tuple[int, int, int] = (255, 255, 255) # fallback / single-color
     label_color: Tuple[int, int, int] = (255, 255, 255)
     halo_color:  Tuple[int, int, int] = (0, 0, 0)
 
+    # Aircraft overlay colours
+    aircraft_color:          Tuple[int, int, int] = (255, 200, 60)
+    aircraft_selected_color: Tuple[int, int, int] = (255, 255, 255)
+    aircraft_emergency_color: Tuple[int, int, int] = (255, 80, 80)
+    aircraft_label_color:    Tuple[int, int, int] = (255, 220, 120)
+    aircraft_halo_color:     Tuple[int, int, int] = (0, 0, 0)
+
     # Road widths in pixels by priority class (clamped to >=1).
     road_widths: Dict[int, int] = None  # type: ignore[assignment]
+    # Per-class road colors. When a key is missing we fall back to road_color.
+    road_colors: Dict[int, Tuple[int, int, int]] = None  # type: ignore[assignment]
 
     # Whether to draw labels at all.
     draw_labels: bool = True
@@ -102,6 +121,26 @@ class VectorStyle:
                 2: 1,
                 1: 1,
             }
+        if self.road_colors is None:
+            # Default palette is a brightness ramp keyed on priority. Values
+            # tuned so the threshold pass keeps even the lowest-priority
+            # roads visible against the bg, while motorways punch hard.
+            self.road_colors = {
+                10: (255, 255, 255),  # motorway — brightest
+                9:  (245, 245, 245),
+                8:  (230, 230, 230),
+                7:  (210, 210, 210),
+                6:  (195, 195, 195),
+                5:  (175, 175, 175),
+                4:  (160, 160, 160),
+                3:  (140, 140, 140),
+                2:  (120, 120, 120),
+                1:  (110, 110, 110),
+            }
+
+    def color_for_priority(self, priority: int) -> Tuple[int, int, int]:
+        """Return the road color for a class priority, with fallback."""
+        return self.road_colors.get(priority, self.road_color)
 
 
 def default_style(theme: str = "amber") -> VectorStyle:
@@ -109,9 +148,15 @@ def default_style(theme: str = "amber") -> VectorStyle:
 
     The rasteriser draws in *grayscale* and the chrome theme applies the
     colour cast through the terminal foreground style. So even amber/green
-    themes use white/gray here.
+    themes use white/gray here — the actual colour comes from the theme
+    style class. The road brightness ramp is what creates the visual road
+    hierarchy *before* the theme tint hits.
+
+    User config can override any field via ``theme.road_colors`` etc;
+    that's wired in ``themes.theme_vector_style``.
     """
     if theme == "paper":
+        # Light theme — invert the road ramp so dark = important.
         return VectorStyle(
             bg=(245, 240, 225),
             water=(180, 200, 220),
@@ -120,6 +165,44 @@ def default_style(theme: str = "amber") -> VectorStyle:
             road_color=(40, 30, 25),
             label_color=(20, 20, 20),
             halo_color=(245, 240, 225),
+            aircraft_color=(180, 60, 30),
+            aircraft_selected_color=(0, 0, 0),
+            aircraft_emergency_color=(220, 0, 0),
+            aircraft_label_color=(50, 30, 20),
+            aircraft_halo_color=(245, 240, 225),
+            road_colors={
+                10: (20, 15, 10),
+                9:  (35, 30, 25),
+                8:  (50, 45, 40),
+                7:  (65, 60, 55),
+                6:  (80, 75, 70),
+                5:  (95, 90, 85),
+                4:  (110, 105, 100),
+                3:  (125, 120, 115),
+                2:  (140, 135, 130),
+                1:  (155, 150, 145),
+            },
+        )
+    if theme == "light":
+        return VectorStyle(
+            bg=(240, 240, 240),
+            water=(170, 195, 220),
+            park=(200, 225, 195),
+            building=(215, 215, 215),
+            road_color=(50, 50, 50),
+            label_color=(30, 30, 30),
+            halo_color=(240, 240, 240),
+            aircraft_color=(0, 50, 150),
+            aircraft_selected_color=(0, 0, 0),
+            aircraft_emergency_color=(200, 0, 0),
+            aircraft_label_color=(0, 50, 150),
+            aircraft_halo_color=(240, 240, 240),
+            road_colors={
+                10: (30, 30, 30), 9: (45, 45, 45), 8: (60, 60, 60),
+                7:  (75, 75, 75), 6: (90, 90, 90), 5: (105, 105, 105),
+                4: (120, 120, 120), 3: (135, 135, 135),
+                2: (150, 150, 150), 1: (165, 165, 165),
+            },
         )
     # Default mono-on-black for amber/green/dark/retro
     return VectorStyle()
@@ -141,8 +224,17 @@ def rasterise_view(
     overzoom: int = 2,
     pmap_min_zoom: int = 0,
     pmap_max_zoom: int = 15,
+    aircraft_overlay: Optional[Iterable] = None,
+    selected_icao: Optional[str] = None,
 ) -> Image.Image:
-    """Render a vector-tile view into a Pillow RGB image."""
+    """Render a vector-tile view into a Pillow RGB image.
+
+    ``aircraft_overlay`` is an iterable of ``cartotui.traffic.Aircraft``
+    instances to plot on top of the basemap. Items lacking a position
+    (``has_position()`` is False) are skipped silently. ``selected_icao``
+    if given draws the matching aircraft in the selected colour with a
+    halo so the user can tell which one is highlighted in the sidebar.
+    """
 
     style = style or default_style()
     width_px = max(1, int(width_px))
@@ -200,23 +292,29 @@ def rasterise_view(
             px_per_ext = tile_size_px / float(tile.extent or extent)
             tiles.append((tile, tile_screen_x, tile_screen_y, px_per_ext))
 
-    # Diagnostic log: how many tiles + which layers we got. If this prints
-    # zero tiles or empty layers, the source isn't returning data — that's
-    # the actual cause of an "all black" vector render.
+    # Diagnostic log. This used to fire every render at INFO level and bled
+    # into the live terminal under prompt_toolkit's alt-screen. Now:
+    #   - "no tiles" once per (z, lat-rounded, lon-rounded) at WARNING
+    #     because that case is genuinely actionable.
+    #   - the per-render success summary at DEBUG so it stays out of the
+    #     default log file and the terminal alike.
     if not tiles:
-        log.info(
-            "rasterise_view: 0 tiles loaded for view at z=%d (%.4f,%.4f); "
-            "vector source returning None — check API key / network / source URL",
-            z, lat, lon,
-        )
-    else:
+        sig = ("no_tiles", fetch_z, round(lat, 2), round(lon, 2))
+        if sig not in _LOG_DEDUPE:
+            _LOG_DEDUPE.add(sig)
+            log.warning(
+                "rasterise_view: 0 tiles loaded for view at z=%d (%.4f,%.4f); "
+                "vector source returning None — check API key / network / source URL",
+                z, lat, lon,
+            )
+    elif log.isEnabledFor(logging.DEBUG):
         layer_summary = {}
         for tile, _sx, _sy, _ppe in tiles:
             for lname, layer in tile.layers.items():
                 layer_summary[lname] = layer_summary.get(lname, 0) + len(
                     layer.get("features", [])
                 )
-        log.info(
+        log.debug(
             "rasterise_view: %d tiles, layers/features: %s",
             len(tiles),
             ", ".join(f"{k}={v}" for k, v in sorted(layer_summary.items())),
@@ -227,6 +325,18 @@ def rasterise_view(
     _draw_roads(draw, tiles, style)
     if style.draw_labels:
         _draw_labels(draw, tiles, style, width_px, height_px)
+    if aircraft_overlay:
+        _draw_aircraft(
+            draw,
+            aircraft_overlay,
+            z=z,
+            world_left_px=world_left_px,
+            world_top_px=world_top_px,
+            width_px=width_px,
+            height_px=height_px,
+            style=style,
+            selected_icao=(selected_icao.upper() if selected_icao else None),
+        )
 
     return img
 
@@ -383,16 +493,17 @@ def _draw_roads(draw, tiles, style):
 
     for priority, sx, sy, px_per_ext, geom, _props in items:
         width = style.road_widths.get(priority, 1)
+        color = style.color_for_priority(priority)
         xformed = _xform_geom(geom["coordinates"], sx, sy, px_per_ext)
         for line in _flatten_lines(xformed):
             if len(line) < 2:
                 continue
             try:
-                draw.line(line, fill=style.road_color, width=width, joint="curve")
+                draw.line(line, fill=color, width=width, joint="curve")
             except Exception:
                 # joint not supported on older Pillow → draw without it
                 try:
-                    draw.line(line, fill=style.road_color, width=width)
+                    draw.line(line, fill=color, width=width)
                 except Exception:
                     pass
 
@@ -478,3 +589,182 @@ def _draw_labels(draw, tiles, style, w: int, h: int):
             except Exception:
                 pass
         placed.append((x0 - 4, y0 - 2, x1 + 4, y1 + 2))
+
+
+# ---------------------------------------------------------------------------
+# Aircraft overlay
+# ---------------------------------------------------------------------------
+
+# Per-aircraft hit boxes, set on each render. Format: (icao, x0, y0, x1, y1)
+# in canvas pixel coordinates. The map_control reads this via
+# ``last_aircraft_hitboxes`` to convert mouse clicks to ICAO selects.
+_LAST_HITBOXES: List[Tuple[str, float, float, float, float]] = []
+
+
+def last_aircraft_hitboxes() -> List[Tuple[str, float, float, float, float]]:
+    """Return a copy of the hitboxes from the last ``rasterise_view`` call.
+
+    Pixel-space rectangles. The caller (mouse handler) divides by the
+    cell-pixel scale to convert to screen cells.
+    """
+    return list(_LAST_HITBOXES)
+
+
+def _aircraft_canvas_xy(
+    lat: float, lon: float, z: int,
+    world_left_px: float, world_top_px: float,
+) -> Tuple[float, float]:
+    """Project lat/lon to canvas pixel coords using the same Web Mercator
+    convention as the tile layer. Out-of-range values are simply allowed
+    to land off-canvas; the caller filters.
+    """
+    tx, ty = latlon_to_tile_xy(lat, lon, z)
+    wx = tx * 256.0
+    wy = ty * 256.0
+    return (wx - world_left_px, wy - world_top_px)
+
+
+def _aircraft_marker(
+    draw,
+    cx: float, cy: float,
+    track_deg: Optional[float],
+    color: Tuple[int, int, int],
+    halo: Tuple[int, int, int],
+    size: int,
+):
+    """Draw a triangular aircraft marker at (cx, cy), pointing at track_deg.
+
+    Track is degrees true (0 = north, 90 = east). If unknown, draw a circle.
+    """
+    if track_deg is None:
+        r = size
+        try:
+            draw.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill=halo)
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=color)
+        except Exception:
+            pass
+        return
+
+    # Triangle vertices in marker-local coords: nose forward (+y in our
+    # convention before rotation), two tail corners.
+    a = math.radians(track_deg)
+    sin_a, cos_a = math.sin(a), math.cos(a)
+    pts = [(0.0, -size * 1.4), (size * 0.9, size * 0.8), (-size * 0.9, size * 0.8)]
+
+    def rot(p):
+        x, y = p
+        # Standard 2D rotation: positive a rotates the +y axis (which we
+        # treat as "nose") clockwise toward east, matching compass bearing.
+        rx = x * cos_a - y * sin_a
+        ry = x * sin_a + y * cos_a
+        return (cx + rx, cy + ry)
+
+    poly = [rot(p) for p in pts]
+    try:
+        # Halo
+        halo_poly = [
+            (cx + (px - cx) * 1.25, cy + (py - cy) * 1.25) for px, py in poly
+        ]
+        draw.polygon(halo_poly, fill=halo)
+        draw.polygon(poly, fill=color)
+    except Exception:
+        pass
+
+
+def _draw_aircraft(
+    draw,
+    aircraft_iter,
+    z: int,
+    world_left_px: float,
+    world_top_px: float,
+    width_px: int,
+    height_px: int,
+    style: VectorStyle,
+    selected_icao: Optional[str] = None,
+):
+    """Plot aircraft on top of the basemap.
+
+    Aircraft outside the viewport (with a small margin so half-on-edge
+    icons aren't clipped) are skipped. The selected aircraft is drawn
+    last so its glyph and label paint over its neighbours.
+    """
+    global _LAST_HITBOXES
+    _LAST_HITBOXES = []
+
+    # Use the existing label font for callsign labels.
+    font = None
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        pass
+
+    # Marker size scales modestly with zoom — bigger markers at higher zoom
+    # so the icons don't disappear when you're zoomed in close. Capped on
+    # both ends so they're never tiny or absurd.
+    marker_size = max(4, min(10, 4 + z // 3))
+
+    margin = marker_size * 4
+
+    items = []
+    selected_item = None
+    for ac in aircraft_iter:
+        if not ac.has_position():
+            continue
+        cx, cy = _aircraft_canvas_xy(
+            ac.lat, ac.lon, z, world_left_px, world_top_px,
+        )
+        if cx < -margin or cy < -margin:
+            continue
+        if cx >= width_px + margin or cy >= height_px + margin:
+            continue
+        is_selected = (selected_icao is not None and ac.icao.upper() == selected_icao)
+        if ac.emergency:
+            color = style.aircraft_emergency_color
+        elif is_selected:
+            color = style.aircraft_selected_color
+        else:
+            color = style.aircraft_color
+        entry = (ac, cx, cy, color, is_selected)
+        if is_selected:
+            selected_item = entry
+        else:
+            items.append(entry)
+
+    if selected_item is not None:
+        items.append(selected_item)  # draw selected last (on top)
+
+    for ac, cx, cy, color, is_selected in items:
+        # Marker
+        size = marker_size + (2 if is_selected else 0)
+        _aircraft_marker(
+            draw, cx, cy, ac.track_deg, color, style.aircraft_halo_color, size,
+        )
+
+        # Label — short callsign next to the marker, with halo for legibility.
+        if font is not None and (is_selected or marker_size >= 6):
+            label = ac.display_label()
+            if label:
+                lx = cx + size + 2
+                ly = cy - size
+                # Halo
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    try:
+                        draw.text(
+                            (lx + dx, ly + dy), label,
+                            fill=style.aircraft_halo_color, font=font,
+                        )
+                    except Exception:
+                        pass
+                try:
+                    draw.text(
+                        (lx, ly), label,
+                        fill=style.aircraft_label_color, font=font,
+                    )
+                except Exception:
+                    pass
+
+        # Hitbox (always recorded — used by mouse handler)
+        hb = (size + 2) * 1.5
+        _LAST_HITBOXES.append(
+            (ac.icao, cx - hb, cy - hb, cx + hb, cy + hb)
+        )

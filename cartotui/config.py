@@ -34,6 +34,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "show_toolbar": True,
         "show_titlebar": True,
         "help_panel": False,
+        # Right-side tabbed sidebar (Settings/Search/Controls/Integration).
+        "show_sidebar": True,
+        "sidebar_width": 36,
     },
     "map": {
         "center_lat": 42.3601,            # Boston as a neutral starting point
@@ -106,6 +109,28 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "file": None,
         "rotate_bytes": 5 * 1024 * 1024,
         "rotate_keep": 3,
+    },
+    # ----- Traffic / aircraft tracking -----
+    "traffic": {
+        "enabled": False,
+        "source": "disabled",          # "landshark" | "sbs1" | "disabled"
+        "stale_timeout_s": 60.0,
+        "landshark": {
+            "port": "",                # e.g. "/dev/ttyUSB0" or "COM4"
+            "baudrate": 921600,
+        },
+        "sbs1": {
+            "host": "localhost",
+            "port": 30003,
+        },
+    },
+    # ----- User theme overrides -----
+    # Empty by default; presence of a key under "chrome" or "road_colors"
+    # overrides the corresponding entry in the chosen theme. See
+    # cartotui.themes.theme_vector_style for the schema.
+    "theme": {
+        "chrome": {},                  # {class_name: style_spec}
+        "road_colors": {},             # {class_or_priority: [r, g, b]}
     },
 }
 
