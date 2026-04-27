@@ -3,8 +3,7 @@
 Interactive map viewer for the terminal — vector or raster tiles rendered as
 ASCII, Unicode quadrants, or braille, in retro nav-system aesthetics.
 
-<img width="1038" height="794" alt="TUI3" src="https://github.com/user-attachments/assets/ee1271b7-6814-459e-b0bf-3286adb5d288" />
-<img width="1045" height="802" alt="TUI2" src="https://github.com/user-attachments/assets/856f9ad5-f42d-4c69-88d6-f1e4d9d7449b" />
+<img width="1036" height="804" alt="TUI3" src="https://github.com/user-attachments/assets/59f10684-f3c4-444f-82f5-370aeb13c898" />
 
 ## What it does
 
@@ -23,7 +22,12 @@ and zoom around with keyboard or mouse. Two ways tiles get drawn:
 Either source renders through three terminal backends: ASCII, Unicode
 quadrants (`▘▝▖▗▀▄▌▐▙▟▚▞▛▜█`), or braille (`⠿⣿`).
 
-<img width="535" height="405" alt="TUI1" src="https://github.com/user-attachments/assets/5feb8962-b54b-414c-a67b-ef123549662e" />
+<img width="1040" height="805" alt="TUI4" src="https://github.com/user-attachments/assets/a638d41a-edb2-4f24-a872-1472d8413e44" />
+
+<img width="1058" height="811" alt="TUI2" src="https://github.com/user-attachments/assets/09a12317-8c2d-42e4-8771-34478ae70a2f" />
+
+<img width="1048" height="809" alt="TUI1" src="https://github.com/user-attachments/assets/0d4c7cf7-10be-4050-86f5-a007224c7066" />
+
 
 ## Install
 
