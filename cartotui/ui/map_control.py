@@ -27,8 +27,9 @@ from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
 from cartotui.cache import TileCache
 from cartotui.composite import composite_from_tiles, prefetch_ring
-from cartotui.raster_vector import default_style, rasterise_view
+from cartotui.raster_vector import default_style, last_aircraft_hitboxes, rasterise_view
 from cartotui.rendering.renderer import Renderer
+from cartotui.traffic.aircraft import AircraftRegistry
 from cartotui.ui.state import MapState
 from cartotui.vector_source import VectorTileSource
 
@@ -53,12 +54,16 @@ class MapControl(UIControl):
         renderer: Renderer,
         cache: TileCache,
         vector_source: Optional[VectorTileSource] = None,
+        aircraft_registry: Optional[AircraftRegistry] = None,
+        on_select_aircraft=None,
     ):
         self.cfg = cfg
         self.state = state
         self.renderer = renderer
         self.cache = cache
         self.vector_source = vector_source
+        self.aircraft_registry = aircraft_registry
+        self.on_select_aircraft = on_select_aircraft
 
         # Multi-source caches. Key by url_template / pmtiles_url so swapping
         # source returns to a warm cache instantly.
@@ -166,13 +171,17 @@ class MapControl(UIControl):
 
         # Decide whether to schedule a render.
         snap = self.state.snapshot()
-        snap_key = (width, height) + snap
+        # Include aircraft generation + selection so a position update or
+        # selection change invalidates the cached frame.
+        ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
+        ac_sel = self.state.selected_aircraft_icao or ""
+        snap_key = (width, height, ac_gen, ac_sel) + snap
         if (
             self._last_frame is None
             or self._last_frame.snapshot_key != snap_key
             or size_changed
         ):
-            self._enqueue(width, height, snap)
+            self._enqueue(width, height, snap, snap_key)
 
         if self._last_frame is None:
             return self._blank(width, height)
@@ -236,14 +245,61 @@ class MapControl(UIControl):
             anchor = self._drag_anchor
             self._drag_anchor = None
             if not self._drag_moved and anchor is not None:
-                # A click — centre on the clicked cell.
-                self._click_to_center(x, y)
+                # Try to hit an aircraft first; if we miss, recentre as before.
+                if self._click_to_aircraft(x, y):
+                    pass
+                else:
+                    self._click_to_center(x, y)
             self._drag_lat = None
             self._drag_lon = None
             self._drag_moved = False
             return None
 
         return NotImplemented
+
+    def _click_to_aircraft(self, cell_x: int, cell_y: int) -> bool:
+        """Check whether the click cell hits an aircraft icon. Returns True
+        if it did (caller should suppress recentre)."""
+        if self.aircraft_registry is None or self.on_select_aircraft is None:
+            return False
+        positioned = self.aircraft_registry.with_position()
+        if not positioned:
+            return False
+        # Convert click cell → lat/lon, then find the aircraft within a
+        # small angular tolerance proportional to cell size.
+        from cartotui.geodesy import viewport_deg_per_cell
+        cell_w_px, cell_h_px = self._cell_pixel_size()
+        cw, ch = self._last_w, self._last_h
+        if cw < 2 or ch < 2:
+            return False
+        cx_off = cell_x - cw // 2
+        cy_off = cell_y - ch // 2
+        d_lon, d_lat = viewport_deg_per_cell(self.state.lat, self.state.z,
+                                             cell_w_px, cell_h_px)
+        click_lat = self.state.lat - cy_off * d_lat
+        click_lon = self.state.lon + cx_off * d_lon
+        # 2-cell tolerance — feels right for chunky terminal cells.
+        tol_lat = abs(d_lat) * 2.0
+        tol_lon = abs(d_lon) * 2.0
+        best = None
+        best_d = 1e9
+        for ac in positioned:
+            dlat = abs(ac.lat - click_lat)
+            dlon = abs(ac.lon - click_lon)
+            if dlat > tol_lat or dlon > tol_lon:
+                continue
+            # Score by squared distance in cell-units so longitude doesn't
+            # dominate at high latitudes.
+            score = (dlat / max(1e-9, abs(d_lat))) ** 2 + (dlon / max(1e-9, abs(d_lon))) ** 2
+            if score < best_d:
+                best_d = score
+                best = ac
+        if best is None:
+            return False
+        cur = self.state.selected_aircraft_icao
+        new = None if (cur and cur.upper() == best.icao.upper()) else best.icao
+        self.on_select_aircraft(new)
+        return True
 
     def _click_to_center(self, cell_x: int, cell_y: int) -> None:
         cw, ch = self._last_w, self._last_h
@@ -328,13 +384,17 @@ class MapControl(UIControl):
     # Worker
     # ------------------------------------------------------------------
 
-    def _enqueue(self, w: int, h: int, snap: Tuple) -> None:
+    def _enqueue(self, w: int, h: int, snap: Tuple, snap_key: Optional[Tuple] = None) -> None:
         if w < 1 or h < 1:
             return
+        if snap_key is None:
+            ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
+            ac_sel = self.state.selected_aircraft_icao or ""
+            snap_key = (w, h, ac_gen, ac_sel) + snap
         with self._req_q.mutex:
             self._req_q.queue.clear()
         try:
-            self._req_q.put_nowait((w, h, snap))
+            self._req_q.put_nowait((w, h, snap, snap_key))
         except queue.Full:
             pass
 
@@ -347,7 +407,7 @@ class MapControl(UIControl):
             if job is None or self._stop.is_set():
                 break
 
-            w, h, snap = job
+            w, h, snap, snap_key = job
             (lat, lon, z, source, render_mode, palette, color, dither,
              theme, shaded, brightness, contrast, threshold_mode, _src_idx) = snap
 
@@ -368,11 +428,20 @@ class MapControl(UIControl):
             r = self.cfg["render"]
             t0 = time.time()
             img = None
+            # Aircraft overlay — fetched once per render so all rasterisation
+            # branches use the same snapshot. Empty list (not None) means
+            # "draw nothing" for the rasteriser.
+            ac_overlay = []
+            sel_icao = self.state.selected_aircraft_icao
+            if self.aircraft_registry is not None:
+                ac_overlay = self.aircraft_registry.with_position()
             if source == "vector" and self.vector_source is not None:
                 try:
                     style = default_style(theme)
                     img = rasterise_view(
                         self.vector_source, lat, lon, z, px_w, px_h, style=style,
+                        aircraft_overlay=ac_overlay,
+                        selected_icao=sel_icao,
                     )
                     # Apply user brightness/contrast so [/]{} keys work in
                     # vector mode the same way they do in raster mode.
@@ -421,6 +490,27 @@ class MapControl(UIControl):
                     log.warning("Composite failed: %s", e)
                     img = Image.new("RGB", (px_w, px_h), (24, 26, 32))
 
+                # Overlay aircraft on top of the raster composite — same
+                # function the vector path calls internally.
+                if ac_overlay:
+                    try:
+                        from PIL import ImageDraw as _ImageDraw
+                        from cartotui.geodesy import latlon_to_tile_xy as _ll
+                        from cartotui.raster_vector import _draw_aircraft, default_style as _ds
+                        tx, ty = _ll(lat, lon, z)
+                        wlx = (tx * 256.0) - px_w / 2.0
+                        wly = (ty * 256.0) - px_h / 2.0
+                        d = _ImageDraw.Draw(img)
+                        _draw_aircraft(
+                            d, ac_overlay, z=z,
+                            world_left_px=wlx, world_top_px=wly,
+                            width_px=px_w, height_px=px_h,
+                            style=_ds(theme),
+                            selected_icao=sel_icao,
+                        )
+                    except Exception as e:
+                        log.debug("Aircraft overlay failed on raster: %s", e)
+
             # In vector mode the image is already mono so colour mode just
             # flattens to grayscale; force colour off so the chrome theme
             # tints everything one consistent colour.
@@ -441,7 +531,7 @@ class MapControl(UIControl):
 
             frame = _Frame(
                 w, h, rows,
-                (w, h) + snap,
+                snap_key,
             )
             with self._res_q.mutex:
                 self._res_q.queue.clear()

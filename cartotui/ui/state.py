@@ -11,7 +11,7 @@ import math
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 from cartotui.config import Config
 from cartotui.geodesy import clamp_lat, viewport_deg_per_cell, wrap_lon
@@ -54,6 +54,12 @@ class MapState:
     info_msg_until: float = 0.0  # epoch seconds; status bar shows until this
     heading_deg: float = 0.0
     pending_input: str = ""  # for goto-prompt
+
+    # Sidebar UI state — not in snapshot() because rendering doesn't depend
+    # on them; UI components read them directly. Default sidebar visible.
+    sidebar_visible: bool = True
+    sidebar_tab: int = 0
+    selected_aircraft_icao: Optional[str] = None
 
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
@@ -198,6 +204,22 @@ class MapState:
             order = ["percentile", "edge", "fixed"]
             i = order.index(self.threshold_mode) if self.threshold_mode in order else 0
             self.threshold_mode = order[(i + 1) % len(order)]
+
+    # ------------------------------------------------------------------
+    # Sidebar / traffic UI
+    # ------------------------------------------------------------------
+
+    def toggle_sidebar(self) -> None:
+        with self._lock:
+            self.sidebar_visible = not self.sidebar_visible
+
+    def set_sidebar_tab(self, idx: int) -> None:
+        with self._lock:
+            self.sidebar_tab = max(0, min(3, int(idx)))
+
+    def select_aircraft(self, icao: Optional[str]) -> None:
+        with self._lock:
+            self.selected_aircraft_icao = icao.upper() if icao else None
 
     # ------------------------------------------------------------------
     # Info / status messaging

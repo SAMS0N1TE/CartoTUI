@@ -18,10 +18,12 @@ from cartotui.config import Config
 from cartotui.rendering.renderer import Renderer, default_palettes
 from cartotui.sources import build_source_list
 from cartotui.themes import make_style
+from cartotui.traffic import AircraftRegistry, build_source as build_traffic_source
 from cartotui.ui.compass import Compass
 from cartotui.ui.goto import GotoPrompt
 from cartotui.ui.helppane import HelpPane
 from cartotui.ui.map_control import MapControl
+from cartotui.ui.sidebar import Sidebar
 from cartotui.ui.state import MapState
 from cartotui.ui.statusbar import StatusBar
 from cartotui.ui.titlebar import TitleBar
@@ -67,9 +69,22 @@ class CartoTUIApp:
             subpixel_percentile=float(rcfg.get("subpixel_percentile", 55)),
             shaded_blocks=bool(rcfg.get("shaded_blocks", False)),
         )
+
+        # Traffic / aircraft tracking. The registry exists even when no
+        # source is configured — the sidebar Integration tab can still
+        # render "no source" cleanly. The source itself is started in run()
+        # so config errors don't crash __init__.
+        traffic_cfg = self.cfg.data.get("traffic", {}) if hasattr(self.cfg, "data") else {}
+        self.aircraft_registry = AircraftRegistry(
+            stale_timeout_s=float(traffic_cfg.get("stale_timeout_s", 60.0)),
+        )
+        self.traffic_source = build_traffic_source(traffic_cfg, self.aircraft_registry)
+
         self.map_control = MapControl(
             self.cfg, self.state, self.renderer, self.cache,
             vector_source=self.vector_source,
+            aircraft_registry=self.aircraft_registry,
+            on_select_aircraft=self._on_select_aircraft,
         )
 
         # Widgets
@@ -78,6 +93,16 @@ class CartoTUIApp:
         self.compass = Compass(self.state)
         self.help_pane = HelpPane()
         self.goto_prompt = GotoPrompt(on_submit=self._on_goto_submit)
+
+        sidebar_cfg = self.cfg["viewport"]
+        self.sidebar = Sidebar(
+            self.state, self.cfg,
+            get_traffic=lambda: self.traffic_source,
+            get_registry=lambda: self.aircraft_registry,
+            on_select_aircraft=self._on_select_aircraft,
+            on_search_submit=self._on_search_submit,
+            width_chars=int(sidebar_cfg.get("sidebar_width", 36)),
+        )
 
         palettes = list(default_palettes().keys())
         self.toolbar = Toolbar(
@@ -106,10 +131,11 @@ class CartoTUIApp:
         if vp.get("show_titlebar", True):
             rows.append(Window(content=self.titlebar, height=1, style="class:titlebar"))
 
+        # Map + sidebar. The sidebar is a ConditionalContainer that folds
+        # away when state.sidebar_visible is False — Tab toggles it.
         body = VSplit([
             self.map_window,
-            Window(width=1, char="│", style="class:border"),
-            Window(content=self.compass, width=9, style="class:compass"),
+            self.sidebar,
         ])
         rows.append(body)
 
@@ -144,8 +170,13 @@ class CartoTUIApp:
     def run(self) -> None:
         try:
             log.info("Starting CartoTUI %s", os.environ.get("USER", ""))
+            self.traffic_source.start()
             self.app.run()
         finally:
+            try:
+                self.traffic_source.stop(timeout_s=2.0)
+            except Exception:
+                pass
             self.map_control.shutdown()
 
     # ------------------------------------------------------------------
@@ -162,6 +193,27 @@ class CartoTUIApp:
     def _on_goto_submit(self, lat: float, lon: float, z) -> None:
         self.map_control.goto(lat, lon, z)
         self.map_control.focus()
+
+    def _on_select_aircraft(self, icao) -> None:
+        """Wired to both sidebar (clicking a row) and map_control (clicking
+        a plotted aircraft). icao=None deselects."""
+        self.state.select_aircraft(icao)
+        self.map_control.request_render()
+        self.app.invalidate()
+
+    def _on_search_submit(self, text: str) -> None:
+        """Sidebar Search tab submit. Resolves lat,lon (with optional zoom)
+        via the same parser the goto prompt uses."""
+        from cartotui.ui.goto import _parse
+        text = (text or "").strip()
+        if not text:
+            return
+        parsed = _parse(text)
+        if parsed is None:
+            self.state.set_info(f"Could not resolve: {text}")
+            return
+        lat, lon, z = parsed
+        self.map_control.goto(lat, lon, z)
 
     def _quit(self) -> None:
         self.app.exit()
@@ -230,155 +282,197 @@ class CartoTUIApp:
         # Disable map keybindings while goto prompt is visible.
         active = Condition(lambda: not self.goto_prompt.visible)
 
-        @kb.add("q", filter=active)
+        # Map-focused = no goto, and sidebar isn't focused. Digit/letter
+        # bindings get this filter so when the user is typing in the
+        # sidebar's search field they don't accidentally trigger zoom-to-N
+        # or theme cycle.
+        from prompt_toolkit.application.current import get_app
+
+        def _map_active() -> bool:
+            if self.goto_prompt.visible:
+                return False
+            try:
+                app = get_app()
+                if app.layout.current_window is self.sidebar.window:
+                    return False
+            except Exception:
+                pass
+            return True
+        map_active = Condition(_map_active)
+
+        @kb.add("q", filter=map_active)
         @kb.add("c-c")
         def _(event):
             event.app.exit()
 
-        @kb.add("up", filter=active)
+        @kb.add("tab", filter=active)
+        def _(event):
+            self.state.toggle_sidebar()
+            # If we just hid the sidebar and it had focus, return focus to
+            # the map.
+            if not self.state.sidebar_visible:
+                try:
+                    event.app.layout.focus(self.map_window)
+                except Exception:
+                    pass
+            event.app.invalidate()
+
+        @kb.add("f2", filter=active)
+        def _(event):
+            """Focus toggle between map and sidebar."""
+            try:
+                if event.app.layout.current_window is self.sidebar.window:
+                    event.app.layout.focus(self.map_window)
+                else:
+                    if self.state.sidebar_visible:
+                        event.app.layout.focus(self.sidebar.window)
+            except Exception:
+                pass
+
+        @kb.add("up", filter=map_active)
         def _(event):
             self.map_control.pan(0, -step)
 
-        @kb.add("down", filter=active)
+        @kb.add("down", filter=map_active)
         def _(event):
             self.map_control.pan(0, step)
 
-        @kb.add("left", filter=active)
+        @kb.add("left", filter=map_active)
         def _(event):
             self.map_control.pan(-step, 0)
 
-        @kb.add("right", filter=active)
+        @kb.add("right", filter=map_active)
         def _(event):
             self.map_control.pan(step, 0)
 
-        @kb.add("s-up", filter=active)
+        @kb.add("s-up", filter=map_active)
         def _(event):
             self.map_control.pan(0, -step * 4)
 
-        @kb.add("s-down", filter=active)
+        @kb.add("s-down", filter=map_active)
         def _(event):
             self.map_control.pan(0, step * 4)
 
-        @kb.add("s-left", filter=active)
+        @kb.add("s-left", filter=map_active)
         def _(event):
             self.map_control.pan(-step * 4, 0)
 
-        @kb.add("s-right", filter=active)
+        @kb.add("s-right", filter=map_active)
         def _(event):
             self.map_control.pan(step * 4, 0)
 
-        @kb.add("+", filter=active)
-        @kb.add("=", filter=active)
+        @kb.add("+", filter=map_active)
+        @kb.add("=", filter=map_active)
         def _(event):
             self.map_control.zoom(+1)
 
-        @kb.add("-", filter=active)
-        @kb.add("_", filter=active)
+        @kb.add("-", filter=map_active)
+        @kb.add("_", filter=map_active)
         def _(event):
             self.map_control.zoom(-1)
 
         for digit in range(10):
-            @kb.add(str(digit), filter=active)
+            @kb.add(str(digit), filter=map_active)
             def _(event, d=digit):
                 self.map_control.zoom(d - self.state.z)
                 self.state.set_zoom(d)
                 self.state.set_info(f"Zoom → {d}")
                 self.map_control.request_render()
 
-        @kb.add("v", filter=active)
+        @kb.add("v", filter=map_active)
         def _(event):
             self.state.toggle_source()
             self.state.set_info(f"Source → {self.state.source}")
             self.map_control.request_render()
 
-        @kb.add("m", filter=active)
+        @kb.add("m", filter=map_active)
         def _(event):
             self.state.cycle_render_mode()
             self.state.set_info(f"View → {self.state.render_mode}")
             self.map_control.request_render()
 
-        @kb.add("t", filter=active)
+        @kb.add("t", filter=map_active)
         def _(event):
             self.state.cycle_theme()
             self.state.set_info(f"Theme → {self.state.theme}")
             self._reload_theme()
 
-        @kb.add("p", filter=active)
+        @kb.add("p", filter=map_active)
         def _(event):
             self.state.cycle_palette(list(default_palettes().keys()))
             self.state.set_info(f"Palette → {self.state.palette}")
             self.map_control.request_render()
 
-        @kb.add("d", filter=active)
+        @kb.add("d", filter=map_active)
         def _(event):
             self.state.cycle_dither()
             self.state.set_info(f"Dither → {self.state.dither}")
             self.map_control.request_render()
 
-        @kb.add("s", filter=active)
+        @kb.add("s", filter=map_active)
         def _(event):
             self.state.toggle_shaded()
             self.state.set_info(f"Shaded {'on' if self.state.shaded_blocks else 'off'}")
             self.map_control.request_render()
 
-        @kb.add("c", filter=active)
+        @kb.add("c", filter=map_active)
         def _(event):
             self.state.toggle_color()
             self.state.set_info(f"Color {'on' if self.state.color else 'off'}")
             self.map_control.request_render()
 
-        @kb.add("k", filter=active)
+        @kb.add("k", filter=map_active)
         def _(event):
             self._cycle_source()
 
-        @kb.add("u", filter=active)
+        @kb.add("u", filter=map_active)
         def _(event):
             self.state.cycle_threshold()
             self.state.set_info(f"Threshold → {self.state.threshold_mode}")
             self.map_control.request_render()
 
         # Brightness — Shift+= / Shift+-
-        @kb.add("[", filter=active)
+        @kb.add("[", filter=map_active)
         def _(event):
             self.state.adjust_brightness(-0.1)
             self.state.set_info(f"Brightness → {self.state.brightness:.2f}")
             self.map_control.request_render()
 
-        @kb.add("]", filter=active)
+        @kb.add("]", filter=map_active)
         def _(event):
             self.state.adjust_brightness(+0.1)
             self.state.set_info(f"Brightness → {self.state.brightness:.2f}")
             self.map_control.request_render()
 
         # Contrast — { / }
-        @kb.add("{", filter=active)
+        @kb.add("{", filter=map_active)
         def _(event):
             self.state.adjust_contrast(-0.1)
             self.state.set_info(f"Contrast → {self.state.contrast:.2f}")
             self.map_control.request_render()
 
-        @kb.add("}", filter=active)
+        @kb.add("}", filter=map_active)
         def _(event):
             self.state.adjust_contrast(+0.1)
             self.state.set_info(f"Contrast → {self.state.contrast:.2f}")
             self.map_control.request_render()
 
-        @kb.add("\\", filter=active)
+        @kb.add("\\", filter=map_active)
         def _(event):
             self.state.reset_image_adjust()
             self.state.set_info("Image adjust reset")
             self.map_control.request_render()
 
-        @kb.add("h", filter=active)
-        @kb.add("?", filter=active)
+        @kb.add("h", filter=map_active)
+        @kb.add("?", filter=map_active)
         def _(event):
             self._toggle_help()
 
-        @kb.add("g", filter=active)
+        @kb.add("g", filter=map_active)
         def _(event):
             self._show_goto()
 
-        @kb.add("r", filter=active)
+        @kb.add("r", filter=map_active)
         def _(event):
             self.map_control.goto(
                 float(self.cfg["map"]["center_lat"]),
@@ -386,4 +480,23 @@ class CartoTUIApp:
                 int(self.cfg["map"]["zoom"]),
             )
 
-        return kb
+        # Merge sidebar's own keybindings. They activate only when the
+        # sidebar window has focus — checked inside each handler via the
+        # current window — and don't conflict with map keys because the
+        # map_active filter excludes "sidebar focused" already.
+        from prompt_toolkit.key_binding import merge_key_bindings
+
+        def _sidebar_focused() -> bool:
+            try:
+                return get_app().layout.current_window is self.sidebar.window
+            except Exception:
+                return False
+        sidebar_kb_filter = Condition(_sidebar_focused)
+        sidebar_kb = self.sidebar.keybindings()
+        # We can't easily wrap an existing KB with a filter, so we copy
+        # bindings into a new KB with the sidebar-focus filter on each.
+        wrapped = KeyBindings()
+        for binding in sidebar_kb.bindings:
+            wrapped.add(*binding.keys, filter=sidebar_kb_filter)(binding.handler)
+
+        return merge_key_bindings([kb, wrapped])
