@@ -109,17 +109,25 @@ class VectorStyle:
 
     def __post_init__(self):
         if self.road_widths is None:
+            # Widths in source pixels. The renderer downsamples the
+            # canvas to terminal cells (typically 8x8 source pixels per
+            # cell at our render scale), so a road narrower than ~4 px
+            # disappears into the threshold quantization and turns into
+            # invisible specks. We keep the visual hierarchy (motorways
+            # punch harder than residentials) but raise the *floor* so
+            # even minor roads consistently render at least one
+            # sub-cell wide and survive the threshold pass.
             self.road_widths = {
-                10: 6,  # motorway
-                9: 5,
-                8: 4,
-                7: 3,
-                6: 3,
-                5: 2,
-                4: 2,
-                3: 1,
-                2: 1,
-                1: 1,
+                10: 9,   # motorway — very wide, instantly readable
+                9:  8,
+                8:  7,
+                7:  6,
+                6:  5,
+                5:  5,
+                4:  4,
+                3:  4,
+                2:  4,
+                1:  4,   # minor — still a full sub-cell wide
             }
         if self.road_colors is None:
             # Default palette is a brightness ramp keyed on priority. Values
@@ -146,66 +154,14 @@ class VectorStyle:
 def default_style(theme: str = "amber") -> VectorStyle:
     """Return a sensible style preset for a theme name.
 
-    The rasteriser draws in *grayscale* and the chrome theme applies the
-    colour cast through the terminal foreground style. So even amber/green
-    themes use white/gray here — the actual colour comes from the theme
-    style class. The road brightness ramp is what creates the visual road
-    hierarchy *before* the theme tint hits.
-
-    User config can override any field via ``theme.road_colors`` etc;
-    that's wired in ``themes.theme_vector_style``.
+    Thin shim — actual per-theme data now lives in
+    ``cartotui.themes._VECTOR_STYLES``. Calling ``theme_vector_style()``
+    directly is preferred; this wrapper exists for backwards compatibility
+    with code that imports ``default_style`` from this module.
     """
-    if theme == "paper":
-        # Light theme — invert the road ramp so dark = important.
-        return VectorStyle(
-            bg=(245, 240, 225),
-            water=(180, 200, 220),
-            park=(210, 230, 200),
-            building=(220, 215, 200),
-            road_color=(40, 30, 25),
-            label_color=(20, 20, 20),
-            halo_color=(245, 240, 225),
-            aircraft_color=(180, 60, 30),
-            aircraft_selected_color=(0, 0, 0),
-            aircraft_emergency_color=(220, 0, 0),
-            aircraft_label_color=(50, 30, 20),
-            aircraft_halo_color=(245, 240, 225),
-            road_colors={
-                10: (20, 15, 10),
-                9:  (35, 30, 25),
-                8:  (50, 45, 40),
-                7:  (65, 60, 55),
-                6:  (80, 75, 70),
-                5:  (95, 90, 85),
-                4:  (110, 105, 100),
-                3:  (125, 120, 115),
-                2:  (140, 135, 130),
-                1:  (155, 150, 145),
-            },
-        )
-    if theme == "light":
-        return VectorStyle(
-            bg=(240, 240, 240),
-            water=(170, 195, 220),
-            park=(200, 225, 195),
-            building=(215, 215, 215),
-            road_color=(50, 50, 50),
-            label_color=(30, 30, 30),
-            halo_color=(240, 240, 240),
-            aircraft_color=(0, 50, 150),
-            aircraft_selected_color=(0, 0, 0),
-            aircraft_emergency_color=(200, 0, 0),
-            aircraft_label_color=(0, 50, 150),
-            aircraft_halo_color=(240, 240, 240),
-            road_colors={
-                10: (30, 30, 30), 9: (45, 45, 45), 8: (60, 60, 60),
-                7:  (75, 75, 75), 6: (90, 90, 90), 5: (105, 105, 105),
-                4: (120, 120, 120), 3: (135, 135, 135),
-                2: (150, 150, 150), 1: (165, 165, 165),
-            },
-        )
-    # Default mono-on-black for amber/green/dark/retro
-    return VectorStyle()
+    from cartotui.themes import theme_vector_style
+    return theme_vector_style(theme)
+
 
 
 # ---------------------------------------------------------------------------

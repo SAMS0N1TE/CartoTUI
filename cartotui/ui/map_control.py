@@ -28,6 +28,8 @@ from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from cartotui.cache import TileCache
 from cartotui.composite import composite_from_tiles, prefetch_ring
 from cartotui.raster_vector import default_style, last_aircraft_hitboxes, rasterise_view
+from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
+from cartotui.ui.map_overlay import apply_vector_overlay, clear_classify_cache as _clear_vector_overlay_cache
 from cartotui.rendering.renderer import Renderer
 from cartotui.traffic.aircraft import AircraftRegistry
 from cartotui.ui.state import MapState
@@ -84,6 +86,29 @@ class MapControl(UIControl):
         self._last_h = 1
         self._last_frame: Optional[_Frame] = None
         self._window = None
+
+        # Render dedup state. Both fields are guarded by ``_dedup_lock``.
+        #
+        # ``_inflight_key`` is the snap_key currently being processed
+        # by the worker (or None if idle). ``_last_enqueued_key`` is
+        # the snap_key of the most recent job we *put on the queue*.
+        # ``_enqueue`` checks both: it drops a request whose key
+        # matches inflight, OR matches last_enqueued AND the queue
+        # still has it pending. Once the queue drains (worker picked
+        # up the job), the last_enqueued check is gated by qsize so a
+        # genuine re-enqueue with the same key (e.g. user pans away
+        # then pans back) is allowed through.
+        #
+        # Why this exists: prompt_toolkit's display loop calls
+        # ``create_content`` on every frame. While the worker is
+        # busy producing the next render, every redraw saw "displayed
+        # frame's snap_key != current snap_key" and enqueued another
+        # job. Several jobs would queue up for the same key. The
+        # worker burned through them all, producing the user-visible
+        # "renders twice with subtle flicker" theme-cycle artifact.
+        self._dedup_lock = threading.Lock()
+        self._inflight_key: Optional[Tuple] = None
+        self._last_enqueued_key: Optional[Tuple] = None
 
         # Mouse drag bookkeeping.
         self._drag_anchor: Optional[Tuple[int, int]] = None
@@ -391,6 +416,21 @@ class MapControl(UIControl):
             ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
             ac_sel = self.state.selected_aircraft_icao or ""
             snap_key = (w, h, ac_gen, ac_sel) + snap
+        # Dedup. Skip enqueue if either:
+        #   1. The worker is already processing this exact key.
+        #   2. The most-recently-enqueued key matches AND the queue
+        #      still holds it pending (qsize > 0). Once qsize hits 0
+        #      the worker has picked up the job, and a fresh enqueue
+        #      with the same key (user panning back to a recent view)
+        #      should still go through — that case is handled by the
+        #      qsize gate.
+        with self._dedup_lock:
+            if self._inflight_key == snap_key:
+                return
+            if (self._last_enqueued_key == snap_key
+                    and self._req_q.qsize() > 0):
+                return
+            self._last_enqueued_key = snap_key
         with self._req_q.mutex:
             self._req_q.queue.clear()
         try:
@@ -410,6 +450,15 @@ class MapControl(UIControl):
             w, h, snap, snap_key = job
             (lat, lon, z, source, render_mode, palette, color, dither,
              theme, shaded, brightness, contrast, threshold_mode, _src_idx) = snap
+
+            # Mark this job as in-flight for the dedup check in
+            # ``_enqueue``. Cleared at the end of this iteration after
+            # ``app.invalidate()``. The render body has fine-grained
+            # try/except around all the dangerous operations
+            # (rasterise_view, composite, renderer.render), so we
+            # don't worry about exceptions escaping past this point.
+            with self._dedup_lock:
+                self._inflight_key = snap_key
 
             cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
@@ -435,13 +484,18 @@ class MapControl(UIControl):
             sel_icao = self.state.selected_aircraft_icao
             if self.aircraft_registry is not None:
                 ac_overlay = self.aircraft_registry.with_position()
+            # Aircraft are NOT drawn into the source image any more —
+            # that produced indistinguishable "tiny blobs" after the
+            # threshold + palette quantization step. They're stamped
+            # post-render directly into the row data; see the
+            # apply_aircraft_overlay() call below.
             if source == "vector" and self.vector_source is not None:
                 try:
                     style = default_style(theme)
                     img = rasterise_view(
                         self.vector_source, lat, lon, z, px_w, px_h, style=style,
-                        aircraft_overlay=ac_overlay,
-                        selected_icao=sel_icao,
+                        aircraft_overlay=None,
+                        selected_icao=None,
                     )
                     # Apply user brightness/contrast so [/]{} keys work in
                     # vector mode the same way they do in raster mode.
@@ -490,26 +544,8 @@ class MapControl(UIControl):
                     log.warning("Composite failed: %s", e)
                     img = Image.new("RGB", (px_w, px_h), (24, 26, 32))
 
-                # Overlay aircraft on top of the raster composite — same
-                # function the vector path calls internally.
-                if ac_overlay:
-                    try:
-                        from PIL import ImageDraw as _ImageDraw
-                        from cartotui.geodesy import latlon_to_tile_xy as _ll
-                        from cartotui.raster_vector import _draw_aircraft, default_style as _ds
-                        tx, ty = _ll(lat, lon, z)
-                        wlx = (tx * 256.0) - px_w / 2.0
-                        wly = (ty * 256.0) - px_h / 2.0
-                        d = _ImageDraw.Draw(img)
-                        _draw_aircraft(
-                            d, ac_overlay, z=z,
-                            world_left_px=wlx, world_top_px=wly,
-                            width_px=px_w, height_px=px_h,
-                            style=_ds(theme),
-                            selected_icao=sel_icao,
-                        )
-                    except Exception as e:
-                        log.debug("Aircraft overlay failed on raster: %s", e)
+                # Aircraft are not burned into the raster composite
+                # any more — see apply_aircraft_overlay() below.
 
             # In vector mode the image is already mono so colour mode just
             # flattens to grayscale; force colour off so the chrome theme
@@ -526,6 +562,49 @@ class MapControl(UIControl):
             except Exception as e:
                 log.warning("Render failed: %s", e)
                 rows = [[("", " " * w)] for _ in range(h)]
+
+            # Apply the vector-as-overlay map if enabled and we have a
+            # vector source. This stamps water/parks/roads/labels
+            # directly into the row data as character-mode geometry,
+            # matching the DOS-era cartographic-app aesthetic. The
+            # basemap underneath stays visible only where the vector
+            # overlay didn't paint, which is fine — typically that's
+            # just empty land areas.
+            r_cfg = self.cfg["render"]
+            vector_overlay_enabled = bool(r_cfg.get("vector_overlay", True))
+            if (vector_overlay_enabled and self.vector_source is not None):
+                try:
+                    apply_vector_overlay(
+                        rows, self.vector_source,
+                        center_lat=lat, center_lon=lon, z=z,
+                        term_w=w, term_h=h,
+                        canvas_px_w=px_w, canvas_px_h=px_h,
+                        style=default_style(theme),
+                    )
+                except Exception as e:
+                    log.debug("Vector overlay failed: %s", e)
+
+            # Stamp aircraft markers post-render so they're full-cell,
+            # full-saturation, and never get washed out by the threshold
+            # / palette quantization that the basemap goes through.
+            # Trails are drawn first so the marker overpaints them.
+            if ac_overlay:
+                try:
+                    trails_cfg = self.cfg.get("aircraft_trails", {})
+                    trails_enabled = bool(trails_cfg.get("enabled", True))
+                    trails_duration = float(trails_cfg.get("duration_s", 60.0))
+                    apply_aircraft_overlay(
+                        rows, ac_overlay,
+                        center_lat=lat, center_lon=lon, z=z,
+                        term_w=w, term_h=h,
+                        canvas_px_w=px_w, canvas_px_h=px_h,
+                        style=default_style(theme),
+                        selected_icao=sel_icao,
+                        show_trails=trails_enabled,
+                        trail_duration_s=trails_duration,
+                    )
+                except Exception as e:
+                    log.debug("Aircraft post-render overlay failed: %s", e)
 
             self.state.last_render_ms = (time.time() - t0) * 1000.0
 
@@ -559,6 +638,14 @@ class MapControl(UIControl):
             app = get_app_or_none()
             if app:
                 app.invalidate()
+
+            # Clear in-flight state so the next render with this same
+            # key (or any other) is allowed through. We do NOT clear
+            # ``_last_enqueued_key`` here — _enqueue's qsize check
+            # makes that field self-clearing once the queue drains.
+            with self._dedup_lock:
+                if self._inflight_key == snap_key:
+                    self._inflight_key = None
 
     # ------------------------------------------------------------------
     # Helpers

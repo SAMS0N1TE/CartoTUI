@@ -43,7 +43,7 @@ class MapState:
     # Image-level adjustments (manual, user-tunable)
     brightness: float = field(init=False)
     contrast: float = field(init=False)
-    threshold_mode: str = field(init=False)   # fixed | percentile | edge
+    threshold_mode: str = field(init=False)   # adaptive | fixed | percentile | edge
 
     # Source switcher — index into a registry of sources
     source_idx: int = field(init=False, default=0)
@@ -88,7 +88,7 @@ class MapState:
         self.shaded_blocks = bool(r.get("shaded_blocks", False))
         self.brightness = float(r.get("brightness", 1.0))
         self.contrast = float(r.get("contrast", 1.05))
-        self.threshold_mode = str(r.get("subpixel_threshold", "percentile"))
+        self.threshold_mode = str(r.get("subpixel_threshold", "adaptive"))
 
         vp = self.cfg["viewport"]
         self.crosshair = (vp.get("crosshair_char") or "+") if vp.get("crosshair", True) else ""
@@ -162,7 +162,13 @@ class MapState:
 
     def cycle_theme(self) -> None:
         with self._lock:
-            order = ["amber", "green", "paper", "retro", "dark", "light"]
+            # Pull the live list from themes.available_themes() so any theme
+            # added later (e.g. high-contrast) is included automatically.
+            try:
+                from cartotui.themes import available_themes
+                order = list(available_themes())
+            except Exception:
+                order = ["amber", "green", "paper", "retro", "dark", "light", "hicon"]
             i = order.index(self.theme) if self.theme in order else 0
             self.theme = order[(i + 1) % len(order)]
 
@@ -201,7 +207,10 @@ class MapState:
 
     def cycle_threshold(self) -> None:
         with self._lock:
-            order = ["percentile", "edge", "fixed"]
+            # Adaptive first because it's the new default. The legacy modes
+            # remain reachable via the cycle for users who specifically want
+            # them on certain tile sources.
+            order = ["adaptive", "percentile", "edge", "fixed"]
             i = order.index(self.threshold_mode) if self.threshold_mode in order else 0
             self.threshold_mode = order[(i + 1) % len(order)]
 

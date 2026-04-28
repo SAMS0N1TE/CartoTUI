@@ -100,6 +100,11 @@ class VectorTileSource:
         self._pm_reader = None
         self._pm_header: Optional[dict] = None
         self._pm_url: Optional[str] = None
+        # Circuit breaker — set to a URL string when that URL failed
+        # to open. Subsequent calls to _ensure_pmtiles() short-circuit
+        # rather than re-attempting (and re-logging) the failure on
+        # every tile fetch.
+        self._pm_failed_url: Optional[str] = None
 
         self._closed = False
 
@@ -284,6 +289,12 @@ class VectorTileSource:
             return False
         if self._pm_reader is not None and self._pm_url == url:
             return True
+        # Circuit breaker: if this URL already failed to open this run,
+        # don't keep retrying it on every tile fetch. Without this, a
+        # broken pmtiles URL produces hundreds of "Failed to open
+        # PMTiles" warnings per second as the renderer sweeps tiles.
+        if self._pm_failed_url == url:
+            return False
 
         # HTTP range source. The reader expects a callable taking (offset, length)
         # and returning bytes. We need to fetch the header first to know
@@ -301,14 +312,21 @@ class VectorTileSource:
             self._pm_reader = pmtiles_reader.Reader(get_bytes)
             self._pm_header = self._pm_reader.header()
             self._pm_url = url
+            self._pm_failed_url = None
             tt = self._pm_header.get("tile_type")
             log.info("PMTiles opened: %s (%s tiles)", url, tt)
             return True
         except Exception as e:
-            log.warning("Failed to open PMTiles %s: %s", url, e)
+            log.warning(
+                "Failed to open PMTiles %s: %s "
+                "(suppressing further retries this run; "
+                "switch vector.source to 'protomaps_api' or change "
+                "vector.pmtiles_url to a working archive)", url, e,
+            )
             self._pm_reader = None
             self._pm_header = None
             self._pm_url = None
+            self._pm_failed_url = url
             return False
 
     def _fetch_pmtiles(self, z: int, x: int, y: int) -> Optional[bytes]:

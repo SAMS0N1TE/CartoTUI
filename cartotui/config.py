@@ -88,9 +88,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "edge_boost": False,
         "invert": False,
         # Quadrant/braille thresholding
-        "subpixel_threshold": "percentile",  # fixed | percentile | edge
+        "subpixel_threshold": "adaptive",  # adaptive | fixed | percentile | edge
         "subpixel_percentile": 55,            # 0..100; lower = more "filled" pixels
         "shaded_blocks": False,               # quadrant/braille: combine block + palette
+        # When True, vector geometry (water, parks, roads, place labels)
+        # is stamped directly into the row data as character-mode
+        # primitives — see cartotui/ui/map_overlay.py. The PIL-rasterised
+        # basemap still renders underneath as a coarse fill. This is the
+        # readable "DOS map app" path; turn it off to get the legacy
+        # full-PIL-render behaviour.
+        "vector_overlay": True,
     },
     "prefetch": {
         "enable": True,
@@ -98,11 +105,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_inflight": 4,
     },
     "ui": {
-        "theme": "amber",                 # amber | green | paper | retro | dark | light
+        "theme": "ega",                   # amber | green | paper | retro | dark | light | hicon | ega | win31 | night
         "mouse": True,
         "border_style": "heavy",          # ascii | heavy | rounded
         "show_latency": True,
         "pan_step_cells": 6,              # pan by N cells per arrow press
+    },
+    # ----- Aircraft trail rendering -----
+    # Walks each aircraft's position-history deque and stamps fading
+    # trail dots behind it. The duration here is the soft cap — the
+    # registry's TRAIL_MAX_SAMPLES is a hard ceiling.
+    "aircraft_trails": {
+        "enabled": True,
+        "duration_s": 60.0,
     },
     "logging": {
         "level": "INFO",
@@ -113,11 +128,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # ----- Traffic / aircraft tracking -----
     "traffic": {
         "enabled": False,
-        "source": "disabled",          # "landshark" | "sbs1" | "disabled"
+        "source": "disabled",          # "landshark" | "landshark_tui" | "sbs1" | "disabled"
         "stale_timeout_s": 60.0,
         "landshark": {
             "port": "",                # e.g. "/dev/ttyUSB0" or "COM4"
-            "baudrate": 921600,
+            "baudrate": 115200,        # 115200 for TUI mode, 921600 for JSONL
+            "format": "auto",          # "auto" picks by baud; "tui" or "jsonl" forces
         },
         "sbs1": {
             "host": "localhost",
@@ -305,7 +321,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["edge_boost"] = _coerce_bool(r.get("edge_boost"), DEFAULT_CONFIG["render"]["edge_boost"])
     r["invert"]    = _coerce_bool(r.get("invert"), DEFAULT_CONFIG["render"]["invert"])
     r["subpixel_threshold"] = _coerce_choice(
-        r.get("subpixel_threshold"), ("fixed", "percentile", "edge"),
+        r.get("subpixel_threshold"), ("adaptive", "fixed", "percentile", "edge"),
         DEFAULT_CONFIG["render"]["subpixel_threshold"])
     r["subpixel_percentile"] = _coerce_int(r.get("subpixel_percentile"), 55, (5, 95))
     r["shaded_blocks"] = _coerce_bool(r.get("shaded_blocks"), DEFAULT_CONFIG["render"]["shaded_blocks"])
@@ -317,7 +333,8 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     ui = c["ui"]
     ui["theme"] = _coerce_choice(ui.get("theme"),
-                                  ("amber", "green", "paper", "retro", "dark", "light"),
+                                  ("amber", "green", "paper", "retro", "dark", "light",
+                                   "hicon", "ega", "win31", "night"),
                                   DEFAULT_CONFIG["ui"]["theme"])
     ui["mouse"] = _coerce_bool(ui.get("mouse"), True)
     ui["border_style"] = _coerce_choice(ui.get("border_style"), ("ascii", "heavy", "rounded"),

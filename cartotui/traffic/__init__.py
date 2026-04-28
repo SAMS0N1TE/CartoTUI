@@ -1,91 +1,131 @@
-"""Traffic / aircraft-tracking integration for CartoTUI.
+"""Traffic source factory.
 
-Public API:
+Builds the right ``TrafficSource`` for the user's config. Auto-detection
+of the LandShark wire format (JSONL vs ESP_LOG TUI) does *not* branch
+on baudrate any more — the two share a baud now, so the only reliable
+discriminator is what's actually on the wire. Sniffing happens inside
+``LandSharkSerialSource`` itself; the factory just picks the source
+class the user asked for.
 
-  * ``Aircraft``        — single-aircraft state model
-  * ``AircraftRegistry`` — thread-safe collection (upsert/prune/snapshot)
-  * ``TrafficSource``   — ABC for any data feeder
-  * ``LinkStatus``      — health snapshot for the Integration sidebar tab
-  * ``NullTrafficSource`` — no-op; used when traffic is disabled
-  * ``LandSharkSerialSource`` — reads JSONL from a LandShark UART device
-  * ``LandSharkReplaySource`` — replays a captured byte stream (testing)
-  * ``SBS1TCPSource``    — reads BaseStation CSV from dump1090's port 30003
+# Source values
 
-Constructing the right source from config is centralised in ``build_source``.
+  * ``"landshark"``     — JSONL events on a UART (preferred path).
+  * ``"landshark_tui"`` — ESP_LOG fallback parser (system console UART).
+  * ``"sbs1"``          — TCP port 30003 of a dump1090 instance.
+  * ``"disabled"``      — explicit no-op. Returns NullTrafficSource.
+
+# Auto-promote rules
+
+If ``traffic.enabled`` is True but ``source`` is ``"disabled"``, and a
+``landshark.port`` is configured, we promote to ``"landshark"``. This
+saves one round-trip of "I set port but nothing happens." Strings the
+factory doesn't recognise (typos like ``"enabled"`` or ``"true"``)
+fall through to NullTrafficSource — they are *not* auto-promoted, so
+the user sees the wrong-spelled value and can fix it.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import logging
+from typing import TYPE_CHECKING
 
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
+from cartotui.traffic.source import LinkStatus, TrafficSource, NullTrafficSource
 from cartotui.traffic.landshark import (
-    LandSharkReplaySource,
+    DEFAULT_TX_PIN,
     LandSharkSerialSource,
-    event_to_aircraft,
-    event_to_status_update,
+    LandSharkReplaySource,
+    looks_like_jsonl,
     parse_frame,
     split_frames,
+    event_to_aircraft,
+    event_to_status_update,
 )
-from cartotui.traffic.sbs1 import SBS1TCPSource, parse_sbs1_line
-from cartotui.traffic.source import LinkStatus, NullTrafficSource, TrafficSource
+from cartotui.traffic.landshark_tui import LandSharkTUISource
+from cartotui.traffic.sbs1 import SBS1TCPSource
+
+log = logging.getLogger("cartotui.traffic")
 
 __all__ = [
-    "Aircraft", "AircraftRegistry",
-    "TrafficSource", "LinkStatus", "NullTrafficSource",
-    "LandSharkSerialSource", "LandSharkReplaySource",
+    "Aircraft",
+    "AircraftRegistry",
+    "LinkStatus",
+    "TrafficSource",
+    "NullTrafficSource",
+    "LandSharkSerialSource",
+    "LandSharkReplaySource",
+    "LandSharkTUISource",
     "SBS1TCPSource",
-    "parse_frame", "split_frames", "event_to_aircraft", "event_to_status_update",
-    "parse_sbs1_line",
     "build_source",
+    "looks_like_jsonl",
+    "parse_frame",
+    "split_frames",
+    "event_to_aircraft",
+    "event_to_status_update",
 ]
 
 
-def build_source(cfg: Mapping[str, Any], registry: AircraftRegistry) -> TrafficSource:
-    """Construct a TrafficSource from the ``traffic`` config block.
+def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
+    """Build the configured traffic source.
 
-    Schema::
+    ``cfg`` is the ``traffic`` block from the app config. ``registry``
+    is the shared ``AircraftRegistry`` the new source will populate.
 
-        {
-          "enabled": bool,
-          "source":  "landshark" | "sbs1" | "disabled",
-          "stale_timeout_s": float,
-          "landshark": {
-              "port": "/dev/ttyUSB0" | "COM4",
-              "baudrate": int,
-          },
-          "sbs1": {
-              "host": "localhost",
-              "port": 30003,
-          }
-        }
-
-    Returns ``NullTrafficSource`` for any disabled / unknown configuration
-    so the UI never has to handle a None.
+    Returns a started-but-not-running ``TrafficSource`` — the caller
+    is expected to call ``.start()`` after construction.
     """
-    if not cfg.get("enabled", False):
+    if not cfg or not isinstance(cfg, dict):
         return NullTrafficSource(registry)
 
-    kind = str(cfg.get("source", "disabled")).lower()
-    registry.stale_timeout_s = float(cfg.get("stale_timeout_s", registry.stale_timeout_s))
+    enabled = bool(cfg.get("enabled", False))
+    source = str(cfg.get("source", "disabled")).lower().strip()
 
-    if kind == "landshark":
+    # Auto-promote: enabled + port set + source is "disabled" → landshark.
+    # We don't promote on unknown values so typos stay visible.
+    if enabled and source == "disabled":
+        ls_cfg = cfg.get("landshark", {})
+        if ls_cfg.get("port"):
+            log.info("Auto-promoting source=disabled → landshark "
+                     "(traffic.enabled=true and port is set).")
+            source = "landshark"
+
+    if not enabled:
+        return NullTrafficSource(registry)
+
+    if source == "landshark":
         ls = cfg.get("landshark", {})
-        port = ls.get("port")
-        if not port:
-            return NullTrafficSource(registry)
         return LandSharkSerialSource(
             registry,
-            port=str(port),
-            baudrate=int(ls.get("baudrate", 921600)),
+            port=str(ls.get("port", "")),
+            baudrate=int(ls.get("baudrate", 115200)),
+            tx_pin=int(ls.get("tx_pin", DEFAULT_TX_PIN)),
         )
 
-    if kind == "sbs1":
-        s = cfg.get("sbs1", {})
+    if source == "landshark_tui":
+        ls = cfg.get("landshark", {})
+        return LandSharkTUISource(
+            registry,
+            port=str(ls.get("port", "")),
+            baudrate=int(ls.get("baudrate", 115200)),
+        )
+
+    if source == "sbs1":
+        s1 = cfg.get("sbs1", {})
         return SBS1TCPSource(
             registry,
-            host=str(s.get("host", "localhost")),
-            port=int(s.get("port", 30003)),
+            host=str(s1.get("host", "localhost")),
+            port=int(s1.get("port", 30003)),
         )
 
-    return NullTrafficSource(registry)
+    if source == "disabled":
+        return NullTrafficSource(registry)
+
+    # Unrecognised value (e.g. "enabled", "true", typos). Surface the
+    # bad value in the sidebar detail so the user can spot the typo.
+    log.warning(
+        "Unrecognised traffic.source = %r; expected one of "
+        "'landshark', 'landshark_tui', 'sbs1', 'disabled'.", source,
+    )
+    null = NullTrafficSource(registry)
+    null._set_status(detail=f"unknown source: {source!r}")
+    return null

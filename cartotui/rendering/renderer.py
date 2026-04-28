@@ -8,11 +8,32 @@ Backends:
   * ASCII     — one cell per char, palette glyph by luminance, optional dither.
   * Quadrant  — 2×2 subpixels per cell using Unicode block elements.
   * Braille   — 2×4 subpixels per cell using Unicode braille patterns.
+
+# Smart braille → quadrant fallback
+
+Braille is great for rendering vector geometry (sharp 1-bit roads,
+building outlines) because each braille cell encodes 8 binary
+sub-pixels and the *binary-ness* matches the source. It's a bad fit
+for continuous-tone raster tiles (OSM-style cream-and-grey terrain
+with overlaid antialiased lines): every sub-pixel makes its own
+threshold decision, so flat land regions speckle and you can't read
+anything.
+
+The renderer detects this combination and silently downgrades to
+quadrant mode unless the caller explicitly opts out. The signal
+comes from the new ``source_kind`` argument to ``Renderer.render()``:
+when it's ``"raster"`` and ``mode == "braille"``, we route to the
+quadrant backend instead. The caller is told what happened via
+``Renderer.last_effective_mode`` so the status bar can show e.g.
+``BRAILLE→QUAD``.
+
+This can be turned off with ``auto_downgrade_braille_on_raster=False``
+on the Renderer for users who want the old behaviour back.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -54,6 +75,13 @@ def default_palettes() -> Dict[str, str]:
         "heat":       " ░▒▓█",
         # Mono dot — pure 2-level for crispest line work.
         "binary":     " █",
+        # DOS-style 11-step ASCII ramp — the classic text-art look.
+        # Pairs especially well with quadrant mode + bayer dither for
+        # a recognisable "Magellan / Garmin / DOS GPS" feel.
+        "dos":        " .,:;+=*#%@",
+        # Same idea but coarser, 5 steps — good when you want the look
+        # without the density of the full ramp at small terminals.
+        "dos5":       " .+#@",
     }
 
 
@@ -107,9 +135,7 @@ def _emit_row_color_fast(
     w = rgb.shape[0]
     if w == 0:
         return [("", "")]
-    # Pack RGB into a single 24-bit int per cell.
     packed = (rgb[:, 0].astype(np.int32) << 16) | (rgb[:, 1].astype(np.int32) << 8) | rgb[:, 2].astype(np.int32)
-    # Run starts where the packed value changes.
     diff = np.empty(w, dtype=bool)
     diff[0] = True
     diff[1:] = packed[1:] != packed[:-1]
@@ -134,7 +160,7 @@ class AsciiBackend:
 
     def __init__(
         self,
-        threshold_mode: str = "percentile",
+        threshold_mode: str = "adaptive",
         percentile: float = 55.0,
         shaded: bool = False,
     ) -> None:
@@ -164,10 +190,14 @@ class AsciiBackend:
         lum = _luminance(arr)
         glyph_chars = list(palette) if palette else list(" .")
         levels = len(glyph_chars)
-        # Use the threshold helper for an orientation-aware level mapping.
-        # If a dither is requested it overrides — old behaviour for back-compat.
         if dither and dither != "none":
-            idx = _quantize(lum, levels, dither)
+            # Flip orientation so 'feature' pixels (the contrast we want to
+            # see) become the high-luminance end of the dither input. After
+            # this, dither distributes error correctly on both light and
+            # dark themes.
+            from cartotui.rendering.threshold import estimate_orientation
+            flip_lum = lum if estimate_orientation(lum) == "dark" else (1.0 - lum)
+            idx = _quantize(flip_lum, levels, dither)
         else:
             idx = compute_fill_levels(
                 lum, levels,
@@ -201,7 +231,7 @@ class QuadrantBackend:
 
     def __init__(
         self,
-        threshold_mode: str = "percentile",
+        threshold_mode: str = "adaptive",
         percentile: float = 55.0,
         shaded: bool = False,
     ) -> None:
@@ -230,9 +260,6 @@ class QuadrantBackend:
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
 
-        # Multi-level fill driven by palette length. With a 5-step palette
-        # (e.g. " ░▒▓█") the image gets quantised to 5 brightness levels per
-        # subpixel. For binary palettes (" █") this collapses back to 1-bit.
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
         fill = compute_fill_levels(
@@ -241,64 +268,38 @@ class QuadrantBackend:
             percentile=self.percentile,
         )
 
-        # For each 2×2 sub-pixel block we now have *four* fill levels in
-        # [0, levels-1]. We composite them into a final glyph as follows:
-        #
-        #  * If all four subpixels share the same level, use the palette glyph
-        #    directly (smooth shading for flat regions).
-        #  * Otherwise use the quadrant block element pattern based on which
-        #    subpixels are above the cell's median level — this preserves
-        #    feature direction even when intensities differ.
         tl = fill[0::2, 0::2]
         tr = fill[0::2, 1::2]
         bl = fill[1::2, 0::2]
         br = fill[1::2, 1::2]
 
-        # Median fill level per cell (handle even count by averaging).
         cell_max = np.maximum(np.maximum(tl, tr), np.maximum(bl, br))
         cell_min = np.minimum(np.minimum(tl, tr), np.minimum(bl, br))
         cell_avg = (tl.astype(np.int32) + tr + bl + br) // 4
 
-        # 4-bit code: subpixel filled if it's above the cell average.
         thr = cell_avg
         codes = (
             ((tl > thr) << 3) | ((tr > thr) << 2)
             | ((bl > thr) << 1) | (br > thr)
         ).astype(np.uint8)
 
-        # In near-flat cells (max == min), no quadrant pattern can differ from
-        # the average, so we'd always pick glyph 0. Use a palette glyph
-        # selected by the average level instead — gives smooth shading.
         flat = (cell_max == cell_min)
-        # Codes is 0 wherever flat (all subpixels equal); for non-flat cells
-        # codes represents the quadrant pattern. But "all on" cells aren't
-        # detected as flat above — handle that case too.
-        # In quadrant mode, code == 15 (all four set) means full block.
-        # If cell is *almost* flat at high level we want it to be full.
         full = (cell_min >= levels - 1)
         empty = (cell_max == 0)
 
         glyph_lookup = np.array(_QUAD_GLYPHS)
         cell_glyphs = glyph_lookup[codes]
 
-        # For flat cells, draw a palette glyph by intensity.
         palette_arr = np.array(palette_chars)
         flat_idx = np.clip(cell_avg, 0, levels - 1)
         flat_glyphs = palette_arr[flat_idx]
 
-        # Mix: empty → glyph 0; full → palette[-1]; flat → palette by avg;
-        # otherwise → quadrant pattern.
         cell_glyphs = np.where(flat, flat_glyphs, cell_glyphs)
         cell_glyphs = np.where(empty, palette_arr[0], cell_glyphs)
         cell_glyphs = np.where(full, palette_arr[-1], cell_glyphs)
 
-        # In shaded mode, give partial cells a softer glyph too — mix the
-        # palette intensity into non-flat cells so the *whole image* stays
-        # tonally readable and doesn't collapse to pure black/white blocks.
         if self.shaded:
             partial = ~flat & ~empty & ~full
-            # Soften only the heavy-fill quadrant glyphs by replacing with a
-            # palette glyph chosen by intensity. Light glyphs (▘▝▖▗) stay.
             heavy = partial & (cell_avg >= max(1, levels // 2))
             soft_glyphs = palette_arr[np.clip(cell_avg, 1, levels - 1)]
             cell_glyphs = np.where(heavy, soft_glyphs, cell_glyphs)
@@ -338,7 +339,7 @@ class BrailleBackend:
 
     def __init__(
         self,
-        threshold_mode: str = "percentile",
+        threshold_mode: str = "adaptive",
         percentile: float = 55.0,
         shaded: bool = False,
     ) -> None:
@@ -367,9 +368,6 @@ class BrailleBackend:
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
 
-        # Subpixel fill is binary (braille is 1-bit per dot), but we use the
-        # multi-level helper to drive a *cell-level* shading fallback for
-        # uniform regions. Threshold each subpixel against the cell's median.
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
         fill = compute_fill_levels(
@@ -378,15 +376,11 @@ class BrailleBackend:
             percentile=self.percentile,
         )
 
-        # Cell average over the 4×2 block.
         cell_avg = fill.reshape(term_h, 4, term_w, 2).mean(axis=(1, 3))
 
-        # Subpixel filled = above cell average level. For pure binary
-        # palettes this collapses to "above 0".
         thr = np.repeat(np.repeat(cell_avg, 4, axis=0), 2, axis=1)
         filled = (fill > thr).astype(np.uint8)
 
-        # Build a per-cell 8-bit mask by OR-ing the eight sub-pixels.
         codes = np.zeros((term_h, term_w), dtype=np.uint8)
         for ry in range(4):
             for cx in range(2):
@@ -394,7 +388,6 @@ class BrailleBackend:
 
         glyphs_int = codes.astype(np.int32) + 0x2800
 
-        # Flat cells get a palette glyph instead of all-empty / all-full.
         flat = (codes == 0) | (codes == 0xFF)
         palette_codes = np.array([ord(c) for c in palette_chars], dtype=np.int32)
         flat_idx = np.clip(cell_avg.astype(np.int32), 0, levels - 1)
@@ -402,8 +395,6 @@ class BrailleBackend:
         glyphs_int = np.where(flat, flat_glyphs, glyphs_int)
 
         if self.shaded and palette:
-            # In shaded mode, replace heavy braille cells too with a softer
-            # palette glyph based on cell-average level.
             popcount = np.unpackbits(codes[..., None], axis=-1).sum(axis=-1)
             heavy = popcount >= 6
             soft = palette_codes[np.clip(cell_avg.astype(np.int32), 1, levels - 1)]
@@ -433,9 +424,18 @@ class BrailleBackend:
 class Renderer:
     palettes: Dict[str, str]
     default_palette: str = "shades"
-    subpixel_threshold: str = "percentile"
+    subpixel_threshold: str = "adaptive"
     subpixel_percentile: float = 55.0
     shaded_blocks: bool = False
+    # When True (default), feeding a raster source into braille mode
+    # silently downgrades to quadrant. Continuous-tone raster + 8
+    # binary sub-pixels per cell = unreadable speckle. The downgrade
+    # gives flat tonal regions a single palette glyph per cell instead
+    # of a randomised stipple. Set False to opt out.
+    auto_downgrade_braille_on_raster: bool = True
+    # Last mode actually used by render(). Different from the requested
+    # mode iff the auto-downgrade fired. The status bar reads this.
+    last_effective_mode: str = field(default="ascii", init=False)
 
     def __post_init__(self) -> None:
         self._backends: Dict[str, object] = {
@@ -468,7 +468,6 @@ class Renderer:
             self.subpixel_percentile = subpixel_percentile
         if shaded_blocks is not None:
             self.shaded_blocks = shaded_blocks
-        # Rebuild backends with new params.
         kwargs = dict(
             threshold_mode=self.subpixel_threshold,
             percentile=self.subpixel_percentile,
@@ -496,6 +495,28 @@ class Renderer:
             return 2, 4
         return 1, 2  # ASCII: roughly square character footprint
 
+    def _resolve_mode(self, mode: str, source_kind: Optional[str]) -> str:
+        """Apply the auto-downgrade rule. Returns the mode actually used.
+
+        Continuous-tone raster + 8 binary braille sub-pixels per cell is
+        the canonical "completely unreadable" combination — flat land
+        regions of a 50% grey raster tile have noisy luminance, the
+        sub-pixel threshold flips on every neighbour, and the cell
+        becomes a randomised stipple instead of a coherent shade. Even
+        the threshold rewrite can't save this — the information density
+        is wrong for the destination format. The fix is to use a
+        2x2-subpixel cell instead, which thresholds 4 sub-pixels and
+        almost always finds them all on the same side, so cells become
+        single palette glyphs instead of stippled noise.
+        """
+        if mode != "braille":
+            return mode
+        if source_kind != "raster":
+            return mode
+        if not self.auto_downgrade_braille_on_raster:
+            return mode
+        return "quadrant"
+
     def render(
         self,
         img: Image.Image,
@@ -505,8 +526,21 @@ class Renderer:
         mode: str = "ascii",
         palette_name: Optional[str] = None,
         dither: str = "none",
+        source_kind: Optional[str] = None,
     ) -> FrameFrag:
-        backend = self._backends.get(mode) or self._backends["ascii"]
+        """Render an image to a list of styled rows.
+
+        ``source_kind`` is a hint to the dispatcher: ``"raster"`` for
+        OSM-style continuous-tone tiles, ``"vector"`` for the output of
+        the vector rasteriser (binary-ish geometry already), ``None``
+        when the caller doesn't know. ``None`` is treated as "no
+        downgrade hint" — equivalent to ``"vector"`` for routing
+        purposes — which preserves backward compatibility for callers
+        that pre-date the smart-downgrade.
+        """
+        effective_mode = self._resolve_mode(mode, source_kind)
+        self.last_effective_mode = effective_mode
+        backend = self._backends.get(effective_mode) or self._backends["ascii"]
         return backend.render(
             img,
             term_w,

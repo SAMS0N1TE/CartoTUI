@@ -1,8 +1,17 @@
-"""Toolbar — a one-line strip of key hints under the map.
+"""Toolbar — Win 3.1 menu-bar style.
 
-It looks like an old-school menu bar: ` [Q]uit  [+/-] Zoom  [M]ode  [P]al ... `.
-Clicks on the bracketed letters fire the same handlers as the keybindings, so
-mouse users get the same affordances without dedicated buttons.
+Renders as a flat bar of action items. Each item shows the hotkey letter
+in ``toolbar.key`` colour (darkred for win31, bright for CRT themes) and
+the action label in ``toolbar`` colour, separated by a space:
+
+    Q Quit   ? Help   +/- Zoom   K Style   V Src   M View   T Theme ...
+
+No brackets around the hotkey letters — Win 3.1 menu bars indicated
+accelerators by underlining the letter; we approximate that with the key
+colour. The separator between items is two spaces.
+
+Mouse clicks on any part of an item (key + label) dispatch the same
+action as the keybinding.
 """
 
 from __future__ import annotations
@@ -18,37 +27,32 @@ from cartotui.ui.map_control import MapControl
 from cartotui.ui.state import MapState
 
 _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
-    ("Q", "Quit"),
-    ("?", "Help"),
+    ("Q",   "Quit"),
+    ("?",   "Help"),
     ("+/-", "Zoom"),
-    ("K", "Style"),
-    ("V", "Src"),
-    ("M", "View"),
-    ("T", "Theme"),
-    ("P", "Pal"),
-    ("D", "Dith"),
-    ("S", "Shade"),
-    ("U", "Thr"),
-    ("C", "Color"),
-    ("G", "Goto"),
-    ("R", "Reset"),
+    ("K",   "Style"),
+    ("V",   "Src"),
+    ("M",   "View"),
+    ("T",   "Theme"),
+    ("P",   "Pal"),
+    ("D",   "Dith"),
+    ("S",   "Shade"),
+    ("U",   "Thr"),
+    ("C",   "Color"),
+    ("G",   "Goto"),
+    ("R",   "Reset"),
 ]
+
+# Separator between items
+_SEP = "  "
 
 
 def _is_disabled(state, key: str) -> bool:
-    """Decide whether a toolbar item is greyed out for the current state.
-
-    Some controls don't apply in every mode; greying them keeps the toolbar
-    informative without hiding things."""
+    """Decide whether a toolbar item is greyed out for the current state."""
     rm = state.render_mode
-    # Palette has visible effect everywhere now (multi-level fill in
-    # quadrant/braille), so it's always enabled.
     if key == "D":
-        # Dither only affects ascii rendering — quadrant/braille use the
-        # threshold mode for sub-pixel decisions.
         return rm != "ascii"
     if key == "S":
-        # "Shaded blocks" is only meaningful in quadrant/braille.
         return rm == "ascii"
     return False
 
@@ -84,30 +88,32 @@ class Toolbar(UIControl):
         runs = []
         zones: List[Tuple[int, int, str]] = []
         col = 0
-        runs.append(("class:toolbar", " ▌ "))
-        col += 3
 
-        for key, label in _TOOLBAR_ITEMS:
-            kseg = f"[{key}]"
-            lseg = f" {label} "
-            zone_start = col
+        # Leading margin
+        runs.append(("class:toolbar", "  "))
+        col += 2
+
+        for idx, (key, label) in enumerate(_TOOLBAR_ITEMS):
             disabled = _is_disabled(self.state, key)
-            key_style = "class:toolbar.dim" if disabled else "class:toolbar.key"
-            text_style = "class:toolbar.dim" if disabled else "class:toolbar"
-            runs.append((key_style, kseg))
-            col += len(kseg)
-            runs.append((text_style, lseg))
-            col += len(lseg)
-            # Disabled zones still register clicks — clicking them shows an
-            # info message explaining why nothing happened, rather than
-            # silently doing nothing.
+            key_cls  = "class:toolbar.dim" if disabled else "class:toolbar.key"
+            text_cls = "class:toolbar.dim" if disabled else "class:toolbar"
+
+            zone_start = col
+            runs.append((key_cls, key))
+            col += len(key)
+            runs.append((text_cls, " " + label))
+            col += len(label) + 1
             zones.append((zone_start, col, key))
 
-        # Filler.
+            # Separator between items (not after the last one)
+            if idx < len(_TOOLBAR_ITEMS) - 1:
+                runs.append(("class:toolbar.dim", _SEP))
+                col += len(_SEP)
+
+        # Filler to right edge
         if col < width:
             runs.append(("class:toolbar", " " * (width - col)))
-        else:
-            # Truncate gracefully.
+        elif col > width:
             rendered = "".join(t for _s, t in runs)
             runs = [("class:toolbar", rendered[:width])]
 
@@ -129,7 +135,6 @@ class Toolbar(UIControl):
         return None
 
     def _dispatch(self, key: str) -> None:
-        # Reject clicks on disabled items rather than silently doing nothing.
         if _is_disabled(self.state, key):
             reason = self._disabled_reason(key)
             self.state.set_info(reason)
@@ -158,7 +163,6 @@ class Toolbar(UIControl):
         elif key == "T":
             self.state.cycle_theme()
             self.state.set_info(f"Theme → {self.state.theme}")
-            # Theme cycle requires a chrome refresh, handled by app.
             if self.on_theme_changed is not None:
                 self.on_theme_changed()
         elif key == "P":
@@ -198,4 +202,4 @@ class Toolbar(UIControl):
             return "Dither only applies in ASCII view"
         if key == "S":
             return "Shade only applies in quadrant/braille"
-        return f"[{key}] not available"
+        return f"{key} not available"

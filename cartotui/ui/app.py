@@ -65,7 +65,7 @@ class CartoTUIApp:
         rcfg = self.cfg["render"]
         self.renderer = Renderer(
             default_palettes(),
-            subpixel_threshold=str(rcfg.get("subpixel_threshold", "percentile")),
+            subpixel_threshold=str(rcfg.get("subpixel_threshold", "adaptive")),
             subpixel_percentile=float(rcfg.get("subpixel_percentile", 55)),
             shaded_blocks=bool(rcfg.get("shaded_blocks", False)),
         )
@@ -328,6 +328,41 @@ class CartoTUIApp:
                         event.app.layout.focus(self.sidebar.window)
             except Exception:
                 pass
+
+        # ----- Sidebar tab cycling at the global level ------------------
+        # These work whether the sidebar is focused or not, so long as it
+        # is visible. Ctrl+Left/Right is the primary; Alt+Left/Right is a
+        # fallback for terminals that swallow Ctrl+arrow (Windows Terminal
+        # under some profiles, certain SSH chains, tmux without
+        # `xterm-keys on`, etc.). F3/F4 is the most-portable fallback —
+        # function keys are escape-coded with no modifier munging.
+        sidebar_visible_filter = Condition(
+            lambda: self.state.sidebar_visible and not self.goto_prompt.visible
+        )
+
+        @kb.add("c-right", filter=sidebar_visible_filter)
+        @kb.add("escape", "right", filter=sidebar_visible_filter)
+        @kb.add("f4", filter=sidebar_visible_filter)
+        def _(event):
+            self.sidebar.control.cycle_tab(+1)
+            event.app.invalidate()
+
+        @kb.add("c-left", filter=sidebar_visible_filter)
+        @kb.add("escape", "left", filter=sidebar_visible_filter)
+        @kb.add("f3", filter=sidebar_visible_filter)
+        def _(event):
+            self.sidebar.control.cycle_tab(-1)
+            event.app.invalidate()
+
+        # Direct-jump to a tab. We can't make plain "1".."4" global because
+        # those collide with map zoom-to-N. So we use F5..F8 (always free)
+        # as the universal hotkey, and keep "1".."4" as a sidebar-focused
+        # binding (already in sidebar.keybindings()).
+        for i in range(4):
+            @kb.add(f"f{5 + i}", filter=sidebar_visible_filter)
+            def _(event, idx=i):
+                self.sidebar.control.set_tab(idx)
+                event.app.invalidate()
 
         @kb.add("up", filter=map_active)
         def _(event):
