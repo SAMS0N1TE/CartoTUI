@@ -3,9 +3,7 @@
 Interactive map viewer for the terminal — vector or raster tiles rendered as
 ASCII, Unicode quadrants, or braille, in retro nav-system aesthetics.
 
-<img width="1036" height="804" alt="TUI3" src="https://github.com/user-attachments/assets/59f10684-f3c4-444f-82f5-370aeb13c898" />
-
-## What it does
+<img width="1044" height="753" alt="TUI5" src="https://github.com/user-attachments/assets/d4b078d6-095f-4f21-92f9-066e885df719" />
 
 CartoTUI fetches map tiles, draws them into the terminal, and lets you pan
 and zoom around with keyboard or mouse. Two ways tiles get drawn:
@@ -22,12 +20,9 @@ and zoom around with keyboard or mouse. Two ways tiles get drawn:
 Either source renders through three terminal backends: ASCII, Unicode
 quadrants (`▘▝▖▗▀▄▌▐▙▟▚▞▛▜█`), or braille (`⠿⣿`).
 
-<img width="1040" height="805" alt="TUI4" src="https://github.com/user-attachments/assets/a638d41a-edb2-4f24-a872-1472d8413e44" />
-
-<img width="1058" height="811" alt="TUI2" src="https://github.com/user-attachments/assets/09a12317-8c2d-42e4-8771-34478ae70a2f" />
-
-<img width="1048" height="809" alt="TUI1" src="https://github.com/user-attachments/assets/0d4c7cf7-10be-4050-86f5-a007224c7066" />
-
+<img width="1039" height="746" alt="TUI7" src="https://github.com/user-attachments/assets/318162b9-c315-4858-8f13-01598ef0088b" />
+<img width="1039" height="752" alt="TUI6" src="https://github.com/user-attachments/assets/c1b00a1a-e567-4e4e-b2be-e183d97b03dd" />
+<img width="1038" height="747" alt="TUI4" src="https://github.com/user-attachments/assets/6c9655b4-73f0-4898-a193-355df6d324b4" />
 
 ## Install
 
