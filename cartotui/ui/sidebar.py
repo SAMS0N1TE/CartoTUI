@@ -1,21 +1,24 @@
-"""Right-edge tabbed sidebar.
+"""Right-edge tabbed sidebar — Win 3.1 group-box chrome.
 
 Four tabs:
 
-  * **Settings** — theme, palette, render mode, dither, color, threshold,
-    brightness, contrast. The values shown are live and reflect ``MapState``.
-  * **Search** — text input that resolves to lat/lon. Recent goto history.
-  * **Controls** — quick-reference of keys + a small compass.
-  * **Integration** — LandShark/SBS-1 connection status + aircraft list +
-    selected-aircraft details.
+  * **Set**  (Settings) — theme, palette, render mode, dither, color,
+    threshold, brightness, contrast.
+  * **Sch**  (Search)   — text input that resolves to lat/lon.
+  * **Ctl**  (Controls) — quick-reference of keys.
+  * **Int**  (Integration) — LandShark/SBS-1 status + aircraft list.
 
-Tabs are switched by ``[`` and ``]`` (prev / next) when the sidebar is
-focused, or by their leading hotkey number ``1..4``. Toggle the sidebar
-itself with ``Tab`` (or whatever the app keybinding maps).
+Tab labels are abbreviated so four tabs render as proper rectangular
+slots at the default sidebar width of 36 chars.
 
-The sidebar is a regular ``UIControl`` so it lives in any HSplit/VSplit
-layout. It does *not* hold focus by default — it only focuses when the
-user activates it (that's the app's job, not ours).
+Chrome layout (Win 3.1 property-sheet style):
+  * Title row: sidebar.title class (navy bar w/white text for win31).
+  * Tab strip: two rows — border top + label row. Active tab uses
+    sidebar.tab.active, inactive uses sidebar.tab. Border chars adapt
+    to the current theme (ASCII for win31, heavy Unicode for others).
+  * Group boxes: border top with caption-in-border, body rows with
+    ``| Label:  value [key] |`` form layout, border bottom.
+  * Hotkey brackets: ``[t]`` at right edge of each value row.
 """
 
 from __future__ import annotations
@@ -31,19 +34,35 @@ from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
 from cartotui.config import Config
+from cartotui.themes import (
+    border_chars,
+    group_box_bottom,
+    group_box_top,
+    kv_row,
+    tab_strip_rows,
+    tab_strip_slot_ranges,
+)
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import LinkStatus, TrafficSource
 from cartotui.ui.state import MapState
 
 
+# Abbreviated tab labels — must fit 4 slots in the sidebar width (default 36).
 SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration")
+_TAB_ABBREV: Tuple[str, ...] = ("Set", "Sch", "Ctl", "Int")
 
-
-# Public sentinel — index ↔ name lookups.
-TAB_SETTINGS = 0
-TAB_SEARCH = 1
-TAB_CONTROLS = 2
+# Public sentinels — index ↔ name lookups.
+TAB_SETTINGS    = 0
+TAB_SEARCH      = 1
+TAB_CONTROLS    = 2
 TAB_INTEGRATION = 3
+
+
+def _get_bc(cfg: Config) -> dict:
+    """Return the border-char dict for the current theme/border_style config."""
+    theme = cfg["ui"].get("theme", "amber")
+    style = cfg["ui"].get("border_style", "heavy")
+    return border_chars(style, theme)
 
 
 class SidebarControl(UIControl):
@@ -73,14 +92,11 @@ class SidebarControl(UIControl):
         # action is a callable; mouse handler invokes it on click.
         self._hits: List[Tuple[int, int, int, Callable[[], None]]] = []
 
-        # Search field state — owned by the sidebar so the Search tab can
-        # type into it without needing a separate full prompt_toolkit
-        # buffer. Returns are picked up by app to dispatch a goto.
+        # Search field state.
         self.search_text: str = ""
         self.search_focused: bool = False
 
-        # Cached scroll offset for aircraft list (page through with up/down
-        # when sidebar is focused on Integration tab).
+        # Cached scroll offset for aircraft list.
         self.aircraft_scroll: int = 0
 
     # ------------------------------------------------------------------
@@ -112,73 +128,82 @@ class SidebarControl(UIControl):
     # Body builders — one per tab
     # ------------------------------------------------------------------
 
-    def _build_settings_lines(self, w: int) -> List:
+    def _build_settings_lines(self, w: int, bc: dict) -> List:
         s = self.state
         lines = []
-        lines.append(self._section("Display", w))
-        lines.append(self._kv("Theme", s.theme, w, hot="t"))
-        lines.append(self._kv("Palette", s.palette, w, hot="p"))
-        lines.append(self._kv("Render", s.render_mode, w, hot="m"))
-        lines.append(self._kv("Source", s.source, w, hot="v"))
-        lines.append(self._kv("Color", "on" if s.color else "off", w, hot="c"))
-        lines.append(self._kv("Dither", s.dither, w, hot="d"))
-        lines.append(self._kv("Shaded", "on" if s.shaded_blocks else "off", w, hot="s"))
-        lines.append(self._spacer(w))
-        lines.append(self._section("Image", w))
-        lines.append(self._kv("Threshold", s.threshold_mode, w, hot="u"))
-        lines.append(self._kv("Brightness", f"{s.brightness:+.2f}", w, hot="[ ]"))
-        lines.append(self._kv("Contrast", f"{s.contrast:+.2f}", w, hot="{ }"))
-        lines.append(self._spacer(w))
-        lines.append(self._section("View", w))
-        lines.append(self._kv("Lat", f"{s.lat:+.4f}", w))
-        lines.append(self._kv("Lon", f"{s.lon:+.4f}", w))
-        lines.append(self._kv("Zoom", f"{s.z}", w, hot="0–9"))
-        lines.append(self._kv("Heading", f"{s.heading_deg:5.1f}°", w))
+        lines.append(self._section("Display", w, bc))
+        lines.append(self._kv("Theme",   s.theme,                           w, bc, hot="t"))
+        lines.append(self._kv("Palette", s.palette,                         w, bc, hot="p"))
+        lines.append(self._kv("Render",  s.render_mode,                     w, bc, hot="m"))
+        lines.append(self._kv("Source",  s.source,                          w, bc, hot="v"))
+        lines.append(self._kv("Color",   "on" if s.color else "off",        w, bc, hot="c"))
+        lines.append(self._kv("Dither",  s.dither,                          w, bc, hot="d"))
+        lines.append(self._kv("Shaded",  "on" if s.shaded_blocks else "off",w, bc, hot="s"))
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Image", w, bc))
+        lines.append(self._kv("Threshold",  s.threshold_mode,          w, bc, hot="u"))
+        lines.append(self._kv("Brightness", f"{s.brightness:+.2f}",   w, bc, hot="[/]"))
+        lines.append(self._kv("Contrast",   f"{s.contrast:+.2f}",     w, bc, hot="{/}"))
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("View", w, bc))
+        lines.append(self._kv("Lat",     f"{s.lat:+.4f}",         w, bc))
+        lines.append(self._kv("Lon",     f"{s.lon:+.4f}",         w, bc))
+        lines.append(self._kv("Zoom",    f"z{s.z}",               w, bc, hot="0-9"))
+        lines.append(self._kv("Heading", f"{s.heading_deg:5.1f}°",w, bc))
+        lines.append(self._section_end(w, bc))
         return lines
 
-    def _build_search_lines(self, w: int) -> List:
+    def _build_search_lines(self, w: int, bc: dict) -> List:
+        v = bc["v"]
         lines = []
-        lines.append(self._section("Search", w))
-        lines.append([("class:sidebar.label", " Goto: ")])
-        # Input box
+        lines.append(self._section("Search", w, bc))
+        lines.append([("class:sidebar.label", v + " Goto:"),
+                      ("class:sidebar",       " " * max(0, w - len(v + " Goto:") - 1) + v)])
+        # Input box — full-width inside borders
         focus_cls = "class:sidebar.input.focus" if self.search_focused else "class:sidebar.input"
-        text = self.search_text or " "
-        # Pad to width-2 so the field looks like a box.
-        field_w = max(8, w - 2)
-        line_text = (text + " " * field_w)[: field_w]
+        field_w = max(4, w - 4)  # 2 border chars + 1 space each side
+        text = (self.search_text or " ")
+        field_text = (text + " " * field_w)[:field_w]
         lines.append([
-            ("class:sidebar.value", " "),
-            (focus_cls, line_text),
-            ("class:sidebar.value", " "),
+            ("class:sidebar", v + " "),
+            (focus_cls, field_text),
+            ("class:sidebar", " " + v),
         ])
-        lines.append([("class:sidebar.dim", " (Enter to go, Esc cancel)".ljust(w))])
-        lines.append(self._spacer(w))
-        lines.append(self._section("Examples", w))
+        hint = "(Enter to go, Esc to clear)"
+        lines.append([("class:sidebar.dim", v + " " + hint.ljust(w - 3) + " " + v)])
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Examples", w, bc))
         for ex in (
             "43.2081, -71.5376",
             "Concord NH",
             "44.2706, -71.3033",
         ):
-            lines.append([("class:sidebar.dim", "  " + ex.ljust(w - 2))])
+            row = v + " " + ex
+            lines.append([("class:sidebar.dim", (row + " " * w)[:w - 1] + v)])
+        lines.append(self._section_end(w, bc))
         return lines
 
-    def _build_controls_lines(self, w: int) -> List:
+    def _build_controls_lines(self, w: int, bc: dict) -> List:
         lines = []
-        lines.append(self._section("Navigation", w))
+        lines.append(self._section("Navigation", w, bc))
         for key, desc in (
-            ("↑↓←→", "pan"),
+            ("↑↓←→",       "pan"),
             ("Shift+↑↓←→", "pan ×4"),
-            ("+ -", "zoom"),
-            ("0-9", "jump zoom"),
-            ("g", "goto…"),
-            ("r", "home"),
-            ("click", "recentre"),
-            ("drag", "pan"),
-            ("wheel", "zoom"),
+            ("+ -",         "zoom"),
+            ("0-9",         "jump zoom"),
+            ("g",           "goto…"),
+            ("r",           "home"),
+            ("click",       "recentre"),
+            ("drag",        "pan"),
+            ("wheel",       "zoom"),
         ):
-            lines.append(self._kv(key, desc, w))
-        lines.append(self._spacer(w))
-        lines.append(self._section("Display", w))
+            lines.append(self._kv(key, desc, w, bc))
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Display", w, bc))
         for key, desc in (
             ("v", "vector/raster"),
             ("k", "next source"),
@@ -190,45 +215,54 @@ class SidebarControl(UIControl):
             ("c", "color"),
             ("u", "threshold"),
         ):
-            lines.append(self._kv(key, desc, w))
-        lines.append(self._spacer(w))
-        lines.append(self._section("Image", w))
+            lines.append(self._kv(key, desc, w, bc))
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Image", w, bc))
         for key, desc in (
             ("[ / ]", "brightness ±"),
             ("{ / }", "contrast ±"),
-            ("\\", "reset"),
+            ("\\",    "reset"),
         ):
-            lines.append(self._kv(key, desc, w))
-        lines.append(self._spacer(w))
-        lines.append(self._section("App", w))
+            lines.append(self._kv(key, desc, w, bc))
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("App", w, bc))
         for key, desc in (
-            ("Tab", "toggle sidebar"),
-            ("1-4", "switch tab"),
-            ("h / ?", "help"),
-            ("q", "quit"),
+            ("Tab",  "toggle sidebar"),
+            ("1-4",  "switch tab"),
+            ("h / ?","help"),
+            ("q",    "quit"),
         ):
-            lines.append(self._kv(key, desc, w))
+            lines.append(self._kv(key, desc, w, bc))
+        lines.append(self._section_end(w, bc))
         return lines
 
-    def _build_integration_lines(self, w: int) -> List:
+    def _build_integration_lines(self, w: int, bc: dict) -> List:
         lines: List = []
         traffic = self.get_traffic()
         registry = self.get_registry()
+        v = bc["v"]
 
-        lines.append(self._section("LandShark Link", w))
+        lines.append(self._section("LandShark Link", w, bc))
         if traffic is None:
-            lines.append([("class:sidebar.dim", " not configured".ljust(w))])
+            lines.append([("class:sidebar.dim", (v + " not configured").ljust(w - 1) + v)])
+            lines.append(self._section_end(w, bc))
             return lines
 
         st = traffic.status()
         ok_cls = "class:sidebar.ok" if st.connected else "class:sidebar.warn"
+        conn_text = "CONNECTED" if st.connected else "OFFLINE"
+        row = v + " Status:  "
+        pad = w - len(row) - len(conn_text) - 2
         lines.append([
-            ("class:sidebar.label", " Status   "),
-            (ok_cls, ("CONNECTED" if st.connected else "OFFLINE").ljust(w - 11)),
+            ("class:sidebar.label", row),
+            (ok_cls, conn_text + " " * max(0, pad)),
+            ("class:sidebar", " " + v),
         ])
-        lines.append(self._kv("Source", st.name, w))
-        lines.append(self._kv("Target", st.detail or "-", w))
-        # Last message age
+        lines.append(self._kv("Source", st.name, w, bc))
+        lines.append(self._kv("Target", st.detail or "-", w, bc))
+
         age = st.age_s()
         if age is None:
             age_text = "never"
@@ -238,112 +272,98 @@ class SidebarControl(UIControl):
             age_text = f"{age:.0f}s ago"
         else:
             age_text = f"{age / 60:.1f}m ago"
-        lines.append(self._kv("Last msg", age_text, w))
-        lines.append(self._kv("Msgs/s", f"{st.msgs_per_sec:5.1f}", w))
-        lines.append(self._kv("Bytes/s", _human_bytes(st.bytes_per_sec), w))
+        lines.append(self._kv("Last msg", age_text, w, bc))
+        lines.append(self._kv("Msgs/s",  f"{st.msgs_per_sec:5.1f}", w, bc))
+        lines.append(self._kv("Bytes/s", _human_bytes(st.bytes_per_sec), w, bc))
         if st.crc_good or st.crc_errors:
             ratio = st.crc_good / max(1, st.crc_good + st.crc_errors)
-            lines.append(self._kv("CRC OK", f"{ratio*100:.1f}%", w))
+            lines.append(self._kv("CRC OK", f"{ratio*100:.1f}%", w, bc))
         if st.signal_mag is not None:
-            lines.append(self._kv("Signal", f"{st.signal_mag:.2f}", w))
+            lines.append(self._kv("Signal", f"{st.signal_mag:.2f}", w, bc))
         if st.parse_errors:
-            lines.append(self._kv("Parse err", str(st.parse_errors), w))
+            lines.append(self._kv("Parse err", str(st.parse_errors), w, bc))
 
-        # Diagnostic: bytes arriving but no messages decoded → most
-        # commonly the user wired to the system console UART (carries
-        # plain ESP_LOG) instead of the dedicated event_stream UART
-        # configured at GPIO `tx_pin`. The serial source itself also
-        # auto-detects this and updates `detail`; this hint just makes
-        # the resolution more visible.
         if (st.bytes_per_sec > 100 and st.msgs_per_sec < 0.1
                 and st.messages_total == 0):
             ls_cfg = self.cfg.get("traffic", {}).get("landshark", {})
             tx_pin = int(ls_cfg.get("tx_pin", 48))
             baud = int(ls_cfg.get("baudrate", 115200))
-            lines.append(self._spacer(w))
             lines.append([("class:sidebar.warn",
-                           " bytes flowing but no JSONL frames".ljust(w))])
+                           (v + " bytes flowing, no JSONL frames").ljust(w - 1) + v)])
             lines.append([("class:sidebar.dim",
-                           f" wire to GPIO {tx_pin}, {baud} baud".ljust(w))])
-            lines.append([("class:sidebar.dim",
-                           " or set source to landshark_tui".ljust(w))])
+                           (v + f" GPIO {tx_pin}, {baud} baud").ljust(w - 1) + v)])
+        lines.append(self._section_end(w, bc))
 
-        lines.append(self._spacer(w))
-        lines.append(self._section(f"Aircraft ({len(registry) if registry else 0})", w))
+        ac_count = len(registry) if registry else 0
+        lines.append(self._section(f"Aircraft ({ac_count})", w, bc))
 
         if registry is None:
-            lines.append([("class:sidebar.dim", " no registry".ljust(w))])
+            lines.append([("class:sidebar.dim", (v + " no registry").ljust(w - 1) + v)])
+            lines.append(self._section_end(w, bc))
             return lines
 
         ac_list = registry.snapshot()
-        # Sort: with-position first, then by callsign / icao.
         ac_list.sort(key=lambda a: (not a.has_position(),
                                     (a.callsign or a.icao).strip()))
         if not ac_list:
-            lines.append([("class:sidebar.dim", " (none yet)".ljust(w))])
+            lines.append([("class:sidebar.dim", (v + " (none yet)").ljust(w - 1) + v)])
         else:
             visible = ac_list[self.aircraft_scroll: self.aircraft_scroll + 8]
             for ac in visible:
-                self._append_aircraft_row(lines, ac, w)
+                self._append_aircraft_row(lines, ac, w, v)
 
-        # Selected-aircraft details panel
         sel = self.state.selected_aircraft_icao
         if sel and registry is not None:
             ac = registry.get(sel)
             if ac is not None:
-                lines.append(self._spacer(w))
-                lines.append(self._section(f"Selected: {ac.display_label()}", w))
-                lines.append(self._kv("ICAO", ac.icao, w))
+                lines.append(self._section_end(w, bc))
+                lines.append(self._section(f"Sel: {ac.display_label()}", w, bc))
+                lines.append(self._kv("ICAO",     ac.icao, w, bc))
                 if ac.callsign:
-                    lines.append(self._kv("Callsign", ac.callsign, w))
+                    lines.append(self._kv("Callsign", ac.callsign, w, bc))
                 if ac.lat is not None and ac.lon is not None:
-                    lines.append(self._kv("Lat", f"{ac.lat:+.4f}", w))
-                    lines.append(self._kv("Lon", f"{ac.lon:+.4f}", w))
+                    lines.append(self._kv("Lat", f"{ac.lat:+.4f}", w, bc))
+                    lines.append(self._kv("Lon", f"{ac.lon:+.4f}", w, bc))
                 if ac.altitude_ft is not None:
-                    lines.append(self._kv("Altitude", f"{ac.altitude_ft:,.0f} ft", w))
+                    lines.append(self._kv("Altitude", f"{ac.altitude_ft:,.0f} ft", w, bc))
                 if ac.ground_speed_kt is not None:
-                    lines.append(self._kv("Speed", f"{ac.ground_speed_kt:.0f} kt", w))
+                    lines.append(self._kv("Speed", f"{ac.ground_speed_kt:.0f} kt", w, bc))
                 if ac.track_deg is not None:
-                    lines.append(self._kv("Track", f"{ac.track_deg:.0f}°", w))
+                    lines.append(self._kv("Track", f"{ac.track_deg:.0f}°", w, bc))
                 if ac.vertical_rate_fpm is not None:
-                    arrow = "↑" if ac.vertical_rate_fpm > 50 else "↓" if ac.vertical_rate_fpm < -50 else "→"
-                    lines.append(self._kv("VS", f"{arrow} {ac.vertical_rate_fpm:+.0f} fpm", w))
+                    arrow = ("↑" if ac.vertical_rate_fpm > 50 else
+                             "↓" if ac.vertical_rate_fpm < -50 else "→")
+                    lines.append(self._kv("VS", f"{arrow} {ac.vertical_rate_fpm:+.0f} fpm", w, bc))
                 if ac.squawk:
-                    lines.append(self._kv("Squawk", ac.squawk, w))
+                    lines.append(self._kv("Squawk", ac.squawk, w, bc))
                 if ac.emergency:
-                    lines.append([
-                        ("class:sidebar.warn", " EMERGENCY".ljust(w))
-                    ])
-                lines.append(self._kv("Msgs", str(ac.msg_count), w))
-
+                    lines.append([("class:sidebar.warn",
+                                   (v + " EMERGENCY").ljust(w - 1) + v)])
+                lines.append(self._kv("Msgs", str(ac.msg_count), w, bc))
+        lines.append(self._section_end(w, bc))
         return lines
 
-    def _append_aircraft_row(self, lines: List, ac: Aircraft, w: int) -> None:
+    def _append_aircraft_row(self, lines: List, ac: Aircraft, w: int, v: str) -> None:
         is_selected = (self.state.selected_aircraft_icao
                        and ac.icao == self.state.selected_aircraft_icao.upper())
         cls = "class:sidebar.aircraft.selected" if is_selected else "class:sidebar.aircraft"
         label = (ac.callsign or ac.icao)[:8].ljust(8)
-        if ac.altitude_ft is not None:
-            alt_text = f"{int(ac.altitude_ft / 100):>3}"   # FL
-        else:
-            alt_text = " --"
-        if ac.ground_speed_kt is not None:
-            sp_text = f"{int(ac.ground_speed_kt):>3}"
-        else:
-            sp_text = " --"
+        alt_text = f"{int(ac.altitude_ft / 100):>3}" if ac.altitude_ft is not None else " --"
+        sp_text  = f"{int(ac.ground_speed_kt):>3}" if ac.ground_speed_kt is not None else " --"
         marker = "▲" if ac.has_position() else "·"
         if ac.emergency:
             marker = "!"
-        text = f" {marker} {label} FL{alt_text} {sp_text}kt"
-        text = text[:w].ljust(w)
-        # Record hit row at the (about-to-be-rendered) line index.
+        inner = f" {marker} {label} FL{alt_text} {sp_text}kt"
+        # Fit inside group-box borders
+        inner_w = w - 2
+        inner = (inner + " " * inner_w)[:inner_w]
+        text = v + inner + v
         y = len(lines)
         action = (lambda icao=ac.icao: self._on_aircraft_click(icao))
         self._hits.append((y, 0, len(text), action))
         lines.append([(cls, text)])
 
     def _on_aircraft_click(self, icao: str) -> None:
-        # Toggle: clicking the selected aircraft deselects.
         cur = self.state.selected_aircraft_icao
         new = None if (cur and cur.upper() == icao.upper()) else icao.upper()
         self.on_select_aircraft(new)
@@ -358,30 +378,59 @@ class SidebarControl(UIControl):
         self._hits = []
         rows: List = []
 
-        # Header
-        title = " ◤ CartoTUI "
-        rows.append([("class:sidebar.title", title.ljust(width))])
+        bc = _get_bc(self.cfg)
 
-        # Tab strip — clickable
-        rows.append(self._tab_strip(width))
+        # Title row — "CartoTUI" in sidebar.title style (navy bar for win31)
+        title_text = " CartoTUI"
+        rows.append([("class:sidebar.title", title_text.ljust(width))])
 
-        # Subtle separator
-        rows.append([("class:sidebar.dim", "─" * width)])
+        # Tab strip — two rows: border top + labels
+        top_str, label_str = tab_strip_rows(_TAB_ABBREV, self.state.sidebar_tab, width, bc)
+        rows.append([("class:sidebar.tab", top_str)])
 
-        # Body
+        # Build label row with per-tab styling
+        slot_ranges = tab_strip_slot_ranges(_TAB_ABBREV, width)
+        label_runs = []
+        for i, (s0, s1) in enumerate(slot_ranges):
+            # Separator before this tab (column s0-1 is the separator char)
+            sep_pos = s0 - 1
+            # Add the left separator from the raw string
+            sep_char = label_str[sep_pos] if sep_pos >= 0 else ""
+            if i == 0:
+                # Leading separator
+                label_runs.append(("class:sidebar.tab", label_str[0:s0]))
+            tab_cls = ("class:sidebar.tab.active"
+                       if i == self.state.sidebar_tab else "class:sidebar.tab")
+            slot_text = label_str[s0:s1]
+            label_runs.append((tab_cls, slot_text))
+            # Register tab click hit (row index will be adjusted by offset below)
+            self._hits.append((2, s0, s1, (lambda idx=i: self.set_tab(idx))))
+            # Trailing separator
+            if s1 < len(label_str):
+                label_runs.append(("class:sidebar.tab", label_str[s1:s1 + 1]))
+
+        # Pad if label_str has trailing chars after last tab
+        last_s1 = slot_ranges[-1][1] + 1 if slot_ranges else 0
+        if last_s1 < len(label_str):
+            label_runs.append(("class:sidebar.tab", label_str[last_s1:]))
+
+        rows.append(label_runs)
+
+        # Body — dispatch to active tab
         tab = self.state.sidebar_tab
         if tab == TAB_SETTINGS:
-            body = self._build_settings_lines(width)
+            body = self._build_settings_lines(width, bc)
         elif tab == TAB_SEARCH:
-            body = self._build_search_lines(width)
+            body = self._build_search_lines(width, bc)
         elif tab == TAB_CONTROLS:
-            body = self._build_controls_lines(width)
+            body = self._build_controls_lines(width, bc)
         else:
-            body = self._build_integration_lines(width)
+            body = self._build_integration_lines(width, bc)
 
         # Adjust hit y-coords: body rows are offset by len(rows)
         offset = len(rows)
-        self._hits = [(y + offset, x0, x1, fn) for (y, x0, x1, fn) in self._hits]
+        self._hits = [(y + offset if y >= 2 else y + offset, x0, x1, fn)
+                      for (y, x0, x1, fn) in self._hits]
 
         rows.extend(body)
 
@@ -389,7 +438,7 @@ class SidebarControl(UIControl):
         while len(rows) < height:
             rows.append([("class:sidebar", " " * width)])
 
-        # Trim if longer than height (don't drop the header).
+        # Trim if longer than height.
         if len(rows) > height:
             rows = rows[:height]
 
@@ -399,26 +448,6 @@ class SidebarControl(UIControl):
                                 else to_formatted_text([("class:sidebar", " " * width)]),
             line_count=len(formatted),
         )
-
-    def _tab_strip(self, width: int) -> List:
-        runs = []
-        cursor = 0
-        for i, name in enumerate(SIDEBAR_TABS):
-            label = f" {i+1} {name} "
-            cls = "class:sidebar.tab.active" if i == self.state.sidebar_tab else "class:sidebar.tab"
-            x0 = cursor
-            runs.append((cls, label))
-            cursor += len(label)
-            # Hit registers tab number
-            self._hits.append((1, x0, cursor, (lambda idx=i: self.set_tab(idx))))
-        # Pad
-        if cursor < width:
-            runs.append(("class:sidebar.tab", " " * (width - cursor)))
-        elif cursor > width:
-            # Truncate — this is purely cosmetic. In practice with sidebar
-            # width >= 28 the four tabs fit fine.
-            pass
-        return runs
 
     # ------------------------------------------------------------------
     # Mouse
@@ -432,8 +461,6 @@ class SidebarControl(UIControl):
             if hy == y and x0 <= x < x1:
                 fn()
                 return None
-        # Clicking elsewhere on the sidebar — focus the search box if we're on
-        # the Search tab.
         if self.state.sidebar_tab == TAB_SEARCH:
             self.search_focused = True
         return None
@@ -443,8 +470,6 @@ class SidebarControl(UIControl):
     # ------------------------------------------------------------------
 
     def search_keystroke(self, char: str) -> None:
-        """Append a single character to the search text. Caller filters
-        printable chars."""
         self.search_text += char
 
     def search_backspace(self) -> None:
@@ -460,44 +485,95 @@ class SidebarControl(UIControl):
             self.search_text = ""
 
     # ------------------------------------------------------------------
-    # Layout-assist helpers
+    # Group-box layout helpers
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _section(title: str, w: int) -> List:
-        text = f" ── {title} ".ljust(w, "─")[:w]
-        return [("class:sidebar.section", text)]
+    def _section(title: str, w: int, bc: dict) -> List:
+        """Group-box top border with caption.
+
+        Border chars render in ``sidebar.dim`` — plain and unobtrusive.
+        Only the title text uses ``sidebar.section`` colour so it stands
+        out without the whole row glowing.  Result looks like:
+
+            +- Display ----------------------+   (amber/green/retro — dim + and -)
+            +- Display ----------------------+   (win31 — same chars, different bg)
+
+        Win31's ``sidebar.section`` is white-on-navy so the title reads as
+        a mini title-bar label. CRT themes get accent-coloured text on a
+        dark bg without bold — plain 1980s terminal config style.
+        """
+        h = bc["h"]
+        tl = bc["tl"]
+        tr = bc["tr"]
+        prefix = tl + h + " "
+        pad = max(0, w - len(prefix) - len(title) - 2)
+        suffix = " " + h * pad + tr
+        return [
+            ("class:sidebar.dim",     prefix),
+            ("class:sidebar.section", title),
+            ("class:sidebar.dim",     suffix),
+        ]
 
     @staticmethod
-    def _kv(label: str, value: str, w: int, hot: Optional[str] = None) -> List:
-        # One left-aligned label, one right-aligned value, optional hotkey
-        # hint at the very end.
-        label_w = max(8, w // 3)
-        value_w = w - label_w - 1
-        if hot:
-            value_w -= len(hot) + 1
-        if value_w < 4:
-            value_w = 4
-        lab = (" " + label).ljust(label_w)[:label_w]
+    def _section_end(w: int, bc: dict) -> List:
+        """Group-box bottom border."""
+        text = group_box_bottom(w, bc)
+        return [("class:sidebar.dim", text)]
+
+    @staticmethod
+    def _kv(label: str, value: str, w: int, bc: dict,
+            hot: Optional[str] = None) -> List:
+        """Form-style key-value row inside a group box.
+
+        Format: ``| Label:   value [hot] |``
+
+        Rendered as label (sidebar.label) + value (sidebar.value) +
+        hotkey (sidebar.hotkey). The border chars (``|`` or ``│``) are
+        rendered in ``sidebar.dim``.
+        """
+        v = bc["v"]
+        label_str = " " + label + ":"
+        hot_str = f" [{hot}]" if hot else ""
+        # Inner content width (excluding two border chars)
+        inner = w - 2
+        val_w = inner - len(label_str) - len(hot_str) - 1
+        if val_w < 1:
+            val_w = 1
         val = str(value)
-        if len(val) > value_w:
-            val = val[: value_w - 1] + "…"
-        val = val.rjust(value_w)
+        if len(val) > val_w:
+            val = val[:val_w - 1] + "…"
+        val = val.rjust(val_w)
         runs: List = [
-            ("class:sidebar.label", lab),
-            ("class:sidebar.value", " " + val),
+            ("class:sidebar.dim",    v),
+            ("class:sidebar.label",  label_str),
+            ("class:sidebar.value",  " " + val),
         ]
-        if hot:
-            runs.append(("class:sidebar.hotkey", " " + hot))
-        # Pad final width
+        if hot_str:
+            runs.append(("class:sidebar.hotkey", hot_str))
+        runs.append(("class:sidebar.value", " "))
+        runs.append(("class:sidebar.dim", v))
+        # Normalize: count chars consumed
         consumed = sum(len(t) for _, t in runs)
         if consumed < w:
-            runs.append(("class:sidebar", " " * (w - consumed)))
+            # Insert padding before closing border
+            runs[-1] = ("class:sidebar.dim", v)  # pop placeholder
+            runs.insert(-1, ("class:sidebar.value", " " * (w - consumed)))
+        elif consumed > w:
+            # Trim value
+            excess = consumed - w
+            val = val[:-excess] if excess < len(val) else " "
+            # Rebuild
+            runs = [
+                ("class:sidebar.dim",    v),
+                ("class:sidebar.label",  label_str),
+                ("class:sidebar.value",  " " + val),
+            ]
+            if hot_str:
+                runs.append(("class:sidebar.hotkey", hot_str))
+            runs.append(("class:sidebar.value", " "))
+            runs.append(("class:sidebar.dim", v))
         return runs
-
-    @staticmethod
-    def _spacer(w: int) -> List:
-        return [("class:sidebar", " " * w)]
 
 
 def _human_bytes(n: float) -> str:
@@ -555,7 +631,6 @@ class Sidebar:
     def keybindings(self) -> KeyBindings:
         kb = KeyBindings()
 
-        # Tab cycling on the sidebar itself
         @kb.add("c-right")
         def _(event):
             self.control.cycle_tab(+1)
@@ -569,7 +644,6 @@ class Sidebar:
             def _(event, idx=i):
                 self.control.set_tab(idx)
 
-        # Search input
         @kb.add("enter")
         def _(event):
             if self.state.sidebar_tab == TAB_SEARCH:
@@ -585,7 +659,6 @@ class Sidebar:
             if self.state.sidebar_tab == TAB_SEARCH:
                 self.control.search_clear()
 
-        # Aircraft list scrolling on Integration
         @kb.add("up")
         def _(event):
             if self.state.sidebar_tab == TAB_INTEGRATION:
@@ -596,8 +669,6 @@ class Sidebar:
             if self.state.sidebar_tab == TAB_INTEGRATION:
                 self.control.aircraft_scroll += 1
 
-        # Printable input — only consume when on Search tab so other tabs'
-        # keys (t, p, m, etc.) still pass through to the global app.
         @kb.add("<any>")
         def _(event):
             if self.state.sidebar_tab != TAB_SEARCH:

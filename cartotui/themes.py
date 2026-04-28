@@ -15,11 +15,22 @@ support automatically as long as they reference the standard class names.
 User overrides land at config-load time: anything under ``cfg["theme"]``
 is shallow-merged into the chosen theme's chrome dict, and anything under
 ``cfg["theme"]["road_colors"]`` overrides the road brightness ramp.
+
+Group-box helpers
+-----------------
+``group_box_top(title, w, theme)``, ``group_box_bottom(w, theme)``, and
+``kv_row(label, value, hot, w, theme)`` return *raw strings* (not formatted
+text runs) suitable for wrapping in a ``(style_class, text)`` tuple.
+``tab_strip_rows(tabs, active, w, theme)`` returns the two-row [(style, text)]
+lists for the Win 3.1-style rectangular tab strip.
+
+The border character set (ASCII vs Unicode) is selected automatically from
+the theme via ``border_chars()``.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from prompt_toolkit.styles import Style
 
@@ -28,93 +39,104 @@ from cartotui.config import Config
 __all__ = [
     "make_style", "border_chars", "theme_palette", "theme_vector_style",
     "available_themes",
+    "group_box_top", "group_box_bottom", "kv_row", "tab_strip_rows",
 ]
 
 
+# ---------------------------------------------------------------------------
+# Chrome theme dicts
+# ---------------------------------------------------------------------------
+
 _AMBER: Dict[str, str] = {
-    "titlebar":      "bg:#1a0f00 #ffaa33 bold",
-    "titlebar.dim":  "bg:#1a0f00 #886611",
-    "toolbar":       "bg:#0f0f0f #ffaa33",
-    "toolbar.key":   "bg:#0f0f0f #ffdd66 bold",
-    "toolbar.dim":   "bg:#0f0f0f #553300",
-    "statusbar":     "bg:#0f0f0f #ffaa33",
-    "statusbar.warn": "bg:#0f0f0f #ff5555 bold",
-    "statusbar.dim": "bg:#0f0f0f #553300",
-    "compass":       "bg:#0f0f0f #ffcc66 bold",
-    "crosshair":     "bg:#0f0f0f #ffcc66 bold reverse bold",
-    "compass.label": "bg:#0f0f0f #886611",
-    "help":          "bg:#1a0f00 #ffcc66",
-    "help.title":    "bg:#1a0f00 #ffaa33 bold reverse",
-    "help.key":      "bg:#1a0f00 #ffdd66 bold",
-    "help.text":     "bg:#1a0f00 #ffcc66",
-    "border":        "bg:#0f0f0f #ffaa33",
-    "frame.border":  "bg:#0f0f0f #ffaa33",
-    "button":        "bg:#332200 #ffaa33",
-    "button.focused": "bg:#ffaa33 #1a0f00 bold",
-    "dialog":        "bg:#1a0f00 #ffcc66",
-    "dialog.body":   "bg:#1a0f00 #ffcc66",
-    "sidebar":             "bg:#0a0500 #ffaa33",
-    "sidebar.title":       "bg:#1a0f00 #ffdd66 bold",
-    "sidebar.tab":         "bg:#1a0f00 #886611",
-    "sidebar.tab.active":  "bg:#ffaa33 #1a0f00 bold",
-    "sidebar.section":     "bg:#0a0500 #ffdd66 bold",
-    "sidebar.label":       "bg:#0a0500 #886611",
-    "sidebar.value":       "bg:#0a0500 #ffcc66",
-    "sidebar.dim":         "bg:#0a0500 #553300",
-    "sidebar.warn":        "bg:#0a0500 #ff5555 bold",
-    "sidebar.ok":          "bg:#0a0500 #88ff88 bold",
-    "sidebar.aircraft":          "bg:#0a0500 #ffcc66",
-    "sidebar.aircraft.selected": "bg:#332200 #ffffff bold",
-    "sidebar.input":       "bg:#1a0f00 #ffffff",
-    "sidebar.input.focus": "bg:#332200 #ffffff bold",
-    "sidebar.hotkey":      "bg:#0a0500 #ffdd66 bold",
-    "map":           "bg:#0a0500 #ffaa33",
-    "map.water":     "bg:#0a0500 #553311",
-    "map.road":      "bg:#0a0500 #ffdd66",
-    "map.label":     "bg:#0a0500 #ffffaa bold",
+    # IBM 3278 white phosphor — pure white-on-black, no colour tint.
+    # This is the "default" IBM 3270 terminal look: monochrome white,
+    # no amber/green cast, just clean CRT white on black.
+    "titlebar":      "bg:#000000 #e8e8e8",
+    "titlebar.dim":  "bg:#000000 #707070",
+    "toolbar":       "bg:#000000 #c8c8c8",
+    "toolbar.key":   "bg:#000000 #e8e8e8",
+    "toolbar.dim":   "bg:#000000 #505050",
+    "statusbar":     "bg:#000000 #c8c8c8",
+    "statusbar.warn": "bg:#000000 #c8c8c8 reverse",
+    "statusbar.dim": "bg:#000000 #505050",
+    "compass":       "bg:#000000 #e8e8e8",
+    "crosshair":     "bg:#000000 #e8e8e8 reverse",
+    "compass.label": "bg:#000000 #707070",
+    "help":          "bg:#000000 #c8c8c8",
+    "help.title":    "bg:#000000 #e8e8e8 reverse",
+    "help.key":      "bg:#000000 #e8e8e8",
+    "help.text":     "bg:#000000 #c8c8c8",
+    "border":        "bg:#000000 #707070",
+    "frame.border":  "bg:#000000 #707070",
+    "button":        "bg:#000000 #c8c8c8",
+    "button.focused": "bg:#000000 #ffffff reverse",
+    "dialog":        "bg:#000000 #c8c8c8",
+    "dialog.body":   "bg:#000000 #c8c8c8",
+    "sidebar":             "bg:#000000 #c8c8c8",
+    "sidebar.title":       "bg:#000000 #c8c8c8",
+    "sidebar.tab":         "bg:#000000 #707070",
+    "sidebar.tab.active":  "bg:#000000 #e8e8e8 reverse",
+    "sidebar.section":     "bg:#000000 #e8e8e8",
+    "sidebar.label":       "bg:#000000 #909090",
+    "sidebar.value":       "bg:#000000 #c8c8c8",
+    "sidebar.dim":         "bg:#000000 #505050",
+    "sidebar.warn":        "bg:#000000 #c8c8c8 reverse",
+    "sidebar.ok":          "bg:#000000 #e8e8e8",
+    "sidebar.aircraft":          "bg:#000000 #c8c8c8",
+    "sidebar.aircraft.selected": "bg:#000000 #e8e8e8 reverse",
+    "sidebar.input":       "bg:#000000 #e8e8e8 reverse",
+    "sidebar.input.focus": "bg:#000000 #ffffff reverse",
+    "sidebar.hotkey":      "bg:#000000 #e8e8e8",
+    "map":           "bg:#000000 #c8c8c8",
+    "map.water":     "bg:#000000 #505050",
+    "map.road":      "bg:#000000 #e8e8e8",
+    "map.label":     "bg:#000000 #ffffff",
 }
 
 _GREEN: Dict[str, str] = {
-    "titlebar":      "bg:#001100 #66ff66 bold",
-    "titlebar.dim":  "bg:#001100 #226622",
-    "toolbar":       "bg:#000a00 #66ff66",
-    "toolbar.key":   "bg:#000a00 #aaffaa bold",
-    "toolbar.dim":   "bg:#000a00 #114411",
-    "statusbar":     "bg:#000a00 #66ff66",
-    "statusbar.warn": "bg:#000a00 #ff5555 bold",
-    "statusbar.dim": "bg:#000a00 #114411",
-    "compass":       "bg:#000a00 #aaffaa bold",
-    "crosshair":     "bg:#000a00 #aaffaa bold reverse bold",
-    "compass.label": "bg:#000a00 #226622",
-    "help":          "bg:#001100 #aaffaa",
-    "help.title":    "bg:#001100 #66ff66 bold reverse",
-    "help.key":      "bg:#001100 #aaffaa bold",
-    "help.text":     "bg:#001100 #88ee88",
-    "border":        "bg:#000a00 #66ff66",
-    "frame.border":  "bg:#000a00 #66ff66",
-    "button":        "bg:#002200 #66ff66",
-    "button.focused": "bg:#66ff66 #001100 bold",
-    "dialog":        "bg:#001100 #aaffaa",
-    "dialog.body":   "bg:#001100 #aaffaa",
-    "sidebar":             "bg:#000500 #66ff66",
-    "sidebar.title":       "bg:#001100 #aaffaa bold",
-    "sidebar.tab":         "bg:#001100 #226622",
-    "sidebar.tab.active":  "bg:#66ff66 #001100 bold",
-    "sidebar.section":     "bg:#000500 #aaffaa bold",
-    "sidebar.label":       "bg:#000500 #226622",
-    "sidebar.value":       "bg:#000500 #88ee88",
-    "sidebar.dim":         "bg:#000500 #114411",
-    "sidebar.warn":        "bg:#000500 #ff5555 bold",
-    "sidebar.ok":          "bg:#000500 #aaffaa bold",
-    "sidebar.aircraft":          "bg:#000500 #88ee88",
-    "sidebar.aircraft.selected": "bg:#002200 #ffffff bold",
-    "sidebar.input":       "bg:#001100 #ffffff",
-    "sidebar.input.focus": "bg:#002200 #ffffff bold",
-    "sidebar.hotkey":      "bg:#000500 #aaffaa bold",
-    "map":           "bg:#000500 #66ff66",
-    "map.water":     "bg:#000500 #114411",
-    "map.road":      "bg:#000500 #aaffaa",
-    "map.label":     "bg:#000500 #ddffdd bold",
+    # IBM 3278 green phosphor (P1 phosphor). The actual colour was a
+    # muted yellow-green — not neon lime. #44aa44 normal, #66cc66 bright.
+    # Pure black background, no green tint on bg.
+    "titlebar":      "bg:#000000 #66cc66",
+    "titlebar.dim":  "bg:#000000 #336633",
+    "toolbar":       "bg:#000000 #44aa44",
+    "toolbar.key":   "bg:#000000 #66cc66",
+    "toolbar.dim":   "bg:#000000 #2a5a2a",
+    "statusbar":     "bg:#000000 #44aa44",
+    "statusbar.warn": "bg:#000000 #44aa44 reverse",
+    "statusbar.dim": "bg:#000000 #2a5a2a",
+    "compass":       "bg:#000000 #66cc66",
+    "crosshair":     "bg:#000000 #66cc66 reverse",
+    "compass.label": "bg:#000000 #336633",
+    "help":          "bg:#000000 #44aa44",
+    "help.title":    "bg:#000000 #66cc66 reverse",
+    "help.key":      "bg:#000000 #66cc66",
+    "help.text":     "bg:#000000 #44aa44",
+    "border":        "bg:#000000 #336633",
+    "frame.border":  "bg:#000000 #336633",
+    "button":        "bg:#000000 #44aa44",
+    "button.focused": "bg:#000000 #66cc66 reverse",
+    "dialog":        "bg:#000000 #44aa44",
+    "dialog.body":   "bg:#000000 #44aa44",
+    "sidebar":             "bg:#000000 #44aa44",
+    "sidebar.title":       "bg:#000000 #44aa44",
+    "sidebar.tab":         "bg:#000000 #2a5a2a",
+    "sidebar.tab.active":  "bg:#000000 #66cc66 reverse",
+    "sidebar.section":     "bg:#000000 #66cc66",
+    "sidebar.label":       "bg:#000000 #336633",
+    "sidebar.value":       "bg:#000000 #44aa44",
+    "sidebar.dim":         "bg:#000000 #2a5a2a",
+    "sidebar.warn":        "bg:#000000 #44aa44 reverse",
+    "sidebar.ok":          "bg:#000000 #66cc66",
+    "sidebar.aircraft":          "bg:#000000 #44aa44",
+    "sidebar.aircraft.selected": "bg:#000000 #66cc66 reverse",
+    "sidebar.input":       "bg:#000000 #66cc66 reverse",
+    "sidebar.input.focus": "bg:#000000 #88ee88 reverse",
+    "sidebar.hotkey":      "bg:#000000 #66cc66",
+    "map":           "bg:#000000 #44aa44",
+    "map.water":     "bg:#000000 #2a5a2a",
+    "map.road":      "bg:#000000 #66cc66",
+    "map.label":     "bg:#000000 #88ee88",
 }
 
 _PAPER: Dict[str, str] = {
@@ -161,46 +183,49 @@ _PAPER: Dict[str, str] = {
 
 
 _RETRO: Dict[str, str] = {
-    "titlebar":      "bg:#1a0f00 #ffaa33 bold",
-    "titlebar.dim":  "bg:#1a0f00 #886611",
-    "toolbar":       "bg:#0f0f0f #ffaa33",
-    "toolbar.key":   "bg:#0f0f0f #66ff66 bold",
-    "toolbar.dim":   "bg:#0f0f0f #555555",
-    "statusbar":     "bg:#0f0f0f #88ff88",
-    "statusbar.warn": "bg:#0f0f0f #ff5555 bold",
-    "statusbar.dim": "bg:#0f0f0f #555555",
-    "compass":       "bg:#0f0f0f #ffaa33 bold",
-    "map":           "bg:#0f0f0f #ffaa33",
-    "crosshair":     "bg:#0f0f0f #ffaa33 bold reverse bold",
-    "compass.label": "bg:#0f0f0f #886611",
-    "help":          "bg:#1a0f00 #ffcc66",
-    "help.title":    "bg:#1a0f00 #ffaa33 bold reverse",
-    "help.key":      "bg:#1a0f00 #66ff66 bold",
-    "help.text":     "bg:#1a0f00 #ffcc66",
-    "border":        "bg:#0f0f0f #ffaa33",
-    "frame.border":  "bg:#0f0f0f #ffaa33",
-    "button":        "bg:#332200 #ffaa33",
-    "button.focused": "bg:#ffaa33 #1a0f00 bold",
-    "dialog":        "bg:#1a0f00 #ffcc66",
-    "dialog.body":   "bg:#1a0f00 #ffcc66",
+    # P3 amber phosphor — the warm orange-amber of a real ADM-3A or VT100
+    # amber monitor. Muted #cc8833 for normal, #ddaa44 for highlights.
+    # Pure black bg, no warm tint. No green mixed in — this is single-hue.
+    "titlebar":      "bg:#000000 #ddaa44",
+    "titlebar.dim":  "bg:#000000 #664d11",
+    "toolbar":       "bg:#000000 #cc8833",
+    "toolbar.key":   "bg:#000000 #ddaa44",
+    "toolbar.dim":   "bg:#000000 #553d0f",
+    "statusbar":     "bg:#000000 #cc8833",
+    "statusbar.warn": "bg:#000000 #cc8833 reverse",
+    "statusbar.dim": "bg:#000000 #553d0f",
+    "compass":       "bg:#000000 #ddaa44",
+    "map":           "bg:#000000 #cc8833",
+    "crosshair":     "bg:#000000 #ddaa44 reverse",
+    "compass.label": "bg:#000000 #664d11",
+    "help":          "bg:#000000 #cc8833",
+    "help.title":    "bg:#000000 #ddaa44 reverse",
+    "help.key":      "bg:#000000 #ddaa44",
+    "help.text":     "bg:#000000 #cc8833",
+    "border":        "bg:#000000 #664d11",
+    "frame.border":  "bg:#000000 #664d11",
+    "button":        "bg:#000000 #cc8833",
+    "button.focused": "bg:#000000 #ddaa44 reverse",
+    "dialog":        "bg:#000000 #cc8833",
+    "dialog.body":   "bg:#000000 #cc8833",
     "dialog.shadow": "bg:#000000",
-    "scrollbar.background": "bg:#1a0f00",
-    "scrollbar.button":     "bg:#ffaa33",
-    "sidebar":             "bg:#0f0f0f #ffaa33",
-    "sidebar.title":       "bg:#1a0f00 #ffaa33 bold",
-    "sidebar.tab":         "bg:#1a0f00 #886611",
-    "sidebar.tab.active":  "bg:#66ff66 #0f0f0f bold",
-    "sidebar.section":     "bg:#0f0f0f #66ff66 bold",
-    "sidebar.label":       "bg:#0f0f0f #886611",
-    "sidebar.value":       "bg:#0f0f0f #ffcc66",
-    "sidebar.dim":         "bg:#0f0f0f #555555",
-    "sidebar.warn":        "bg:#0f0f0f #ff5555 bold",
-    "sidebar.ok":          "bg:#0f0f0f #88ff88 bold",
-    "sidebar.aircraft":          "bg:#0f0f0f #ffcc66",
-    "sidebar.aircraft.selected": "bg:#332200 #ffffff bold",
-    "sidebar.input":       "bg:#1a0f00 #ffffff",
-    "sidebar.input.focus": "bg:#332200 #ffffff bold",
-    "sidebar.hotkey":      "bg:#0f0f0f #66ff66 bold",
+    "scrollbar.background": "bg:#000000",
+    "scrollbar.button":     "bg:#000000 #cc8833 reverse",
+    "sidebar":             "bg:#000000 #cc8833",
+    "sidebar.title":       "bg:#000000 #cc8833",
+    "sidebar.tab":         "bg:#000000 #553d0f",
+    "sidebar.tab.active":  "bg:#000000 #ddaa44 reverse",
+    "sidebar.section":     "bg:#000000 #ddaa44",
+    "sidebar.label":       "bg:#000000 #664d11",
+    "sidebar.value":       "bg:#000000 #cc8833",
+    "sidebar.dim":         "bg:#000000 #553d0f",
+    "sidebar.warn":        "bg:#000000 #cc8833 reverse",
+    "sidebar.ok":          "bg:#000000 #ddaa44",
+    "sidebar.aircraft":          "bg:#000000 #cc8833",
+    "sidebar.aircraft.selected": "bg:#000000 #ddaa44 reverse",
+    "sidebar.input":       "bg:#000000 #ddaa44 reverse",
+    "sidebar.input.focus": "bg:#000000 #ffcc66 reverse",
+    "sidebar.hotkey":      "bg:#000000 #ddaa44",
 }
 
 _DARK: Dict[str, str] = {
@@ -228,10 +253,10 @@ _DARK: Dict[str, str] = {
     "dialog.body":   "bg:#1f2430 #c0caf5",
     "dialog.shadow": "bg:#000000",
     "sidebar":             "bg:#1a1b26 #c0caf5",
-    "sidebar.title":       "bg:#1f2430 #7aa2f7 bold",
+    "sidebar.title":       "bg:#1f2430 #7aa2f7",
     "sidebar.tab":         "bg:#1f2430 #565f89",
-    "sidebar.tab.active":  "bg:#7aa2f7 #1a1b26 bold",
-    "sidebar.section":     "bg:#1a1b26 #7aa2f7 bold",
+    "sidebar.tab.active":  "bg:#1a1b26 #c0caf5 reverse",
+    "sidebar.section":     "bg:#1a1b26 #7aa2f7",
     "sidebar.label":       "bg:#1a1b26 #565f89",
     "sidebar.value":       "bg:#1a1b26 #c0caf5",
     "sidebar.dim":         "bg:#1a1b26 #414868",
@@ -241,7 +266,7 @@ _DARK: Dict[str, str] = {
     "sidebar.aircraft.selected": "bg:#292e42 #ffffff bold",
     "sidebar.input":       "bg:#1f2430 #ffffff",
     "sidebar.input.focus": "bg:#292e42 #ffffff bold",
-    "sidebar.hotkey":      "bg:#1a1b26 #9ece6a bold",
+    "sidebar.hotkey":      "bg:#1a1b26 #9ece6a",
 }
 
 _LIGHT: Dict[str, str] = {
@@ -365,7 +390,7 @@ _EGA: Dict[str, str] = {
     "sidebar":             "bg:#000000 #aaaaaa",
     "sidebar.title":       "bg:#0000aa #ffffff",
     "sidebar.tab":         "bg:#000000 #555555",
-    "sidebar.tab.active":  "bg:#ffff55 #000000",
+    "sidebar.tab.active":  "bg:#000000 #ffff55 reverse",
     "sidebar.section":     "bg:#000000 #ffff55",
     "sidebar.label":       "bg:#000000 #555555",
     "sidebar.value":       "bg:#000000 #aaaaaa",
@@ -509,7 +534,7 @@ _NIGHT: Dict[str, str] = {
     "sidebar":             "bg:#000000 #c83232",
     "sidebar.title":       "bg:#100404 #ff5050",
     "sidebar.tab":         "bg:#100404 #802020",
-    "sidebar.tab.active":  "bg:#c83232 #000000",
+    "sidebar.tab.active":  "bg:#000000 #ff5050 reverse",
     "sidebar.section":     "bg:#000000 #ff5050",
     "sidebar.label":       "bg:#000000 #802020",
     "sidebar.value":       "bg:#000000 #c83232",
@@ -542,10 +567,20 @@ _THEMES: Dict[str, Dict[str, str]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Border characters
+# ---------------------------------------------------------------------------
+
 _BORDERS = {
-    "ascii":   {"h": "-", "v": "|", "tl": "+", "tr": "+", "bl": "+", "br": "+", "x": "+"},
-    "heavy":   {"h": "━", "v": "┃", "tl": "┏", "tr": "┓", "bl": "┗", "br": "┛", "x": "╋"},
-    "rounded": {"h": "─", "v": "│", "tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "x": "┼"},
+    "ascii":   {"h": "-", "v": "|", "tl": "+", "tr": "+", "bl": "+", "br": "+", "x": "+",
+                "th": "-", "tv": "|",   # tab-separator chars (same for ascii)
+                "tab_tl": "+", "tab_tr": "+", "tab_sep": "+"},
+    "heavy":   {"h": "━", "v": "┃", "tl": "┏", "tr": "┓", "bl": "┗", "br": "┛", "x": "╋",
+                "th": "─", "tv": "│",
+                "tab_tl": "┌", "tab_tr": "┐", "tab_sep": "┬"},
+    "rounded": {"h": "─", "v": "│", "tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "x": "┼",
+                "th": "─", "tv": "│",
+                "tab_tl": "╭", "tab_tr": "╮", "tab_sep": "┬"},
 }
 
 # Themes that override the user's border_style preference. If the
@@ -553,7 +588,7 @@ _BORDERS = {
 # regardless of what they set in config — that's part of the visual
 # identity of the theme. Win 3.1 used 1-pixel hard-edged borders
 # which read closest to ASCII `+ - |` in a terminal.
-_FORCE_ASCII_BORDER_THEMES = {"win31"}
+_FORCE_ASCII_BORDER_THEMES = {"win31", "amber", "green", "retro", "dark", "night", "ega"}
 
 
 def border_chars(style: str, theme: Optional[str] = None) -> dict:
@@ -568,6 +603,174 @@ def border_chars(style: str, theme: Optional[str] = None) -> dict:
         return _BORDERS["ascii"]
     return _BORDERS.get(style, _BORDERS["heavy"])
 
+
+# ---------------------------------------------------------------------------
+# Win 3.1 group-box rendering helpers
+# ---------------------------------------------------------------------------
+
+def group_box_top(title: str, w: int, bc: Optional[dict] = None) -> str:
+    """Return the top border of a group box with a caption in the border.
+
+    Example (ASCII, w=36):  ``+- Display ------------------------+``
+    Example (heavy, w=36):  ``┏━ Display ━━━━━━━━━━━━━━━━━━━━━━━┓``
+
+    ``bc`` is the border-char dict from ``border_chars()``. If None,
+    heavy Unicode borders are used.
+    """
+    if bc is None:
+        bc = _BORDERS["heavy"]
+    tl = bc["tl"]
+    tr = bc["tr"]
+    h = bc["h"]
+    # Caption takes the form: TL + h + ' ' + title + ' ' + h*pad + TR
+    prefix = tl + h + " " + title + " "
+    suffix = tr
+    pad = max(0, w - len(prefix) - len(suffix))
+    return prefix + h * pad + suffix
+
+
+def group_box_bottom(w: int, bc: Optional[dict] = None) -> str:
+    """Return the bottom border of a group box.
+
+    Example (ASCII, w=36):  ``+----------------------------------+``
+    """
+    if bc is None:
+        bc = _BORDERS["heavy"]
+    bl = bc["bl"]
+    br = bc["br"]
+    h = bc["h"]
+    inner = max(0, w - 2)
+    return bl + h * inner + br
+
+
+def kv_row(label: str, value: str, hot: Optional[str], w: int,
+           bc: Optional[dict] = None) -> str:
+    """Return a form-style key-value row inside a group box.
+
+    Format: ``| Label:           value    [hot] |``
+
+    The label gets a colon appended. The value is right-aligned in the
+    space between label and hotkey. The whole row is exactly ``w`` chars.
+    ``hot`` may be None (no hotkey bracket shown) or a string like ``"t"``.
+    """
+    if bc is None:
+        bc = _BORDERS["heavy"]
+    v = bc["v"]
+    label_part = " " + label + ":"
+    hot_part = f" [{hot}]" if hot else ""
+    # Inner content width (excluding the two border chars)
+    inner = w - 2
+    # Space available for value (right-aligned)
+    val_w = inner - len(label_part) - len(hot_part) - 1  # 1 for space before value
+    if val_w < 1:
+        val_w = 1
+    val = str(value)
+    if len(val) > val_w:
+        val = val[:val_w - 1] + "…"
+    val = val.rjust(val_w)
+    row = v + label_part + " " + val + hot_part + " " + v
+    # Normalize to exactly w chars (floating-point arithmetic guard).
+    if len(row) < w:
+        # Insert extra space before closing border
+        row = row[:-1] + " " * (w - len(row)) + v
+    elif len(row) > w:
+        row = row[:w - 1] + v
+    return row
+
+
+def tab_strip_rows(
+    tabs: Tuple[str, ...],
+    active: int,
+    w: int,
+    bc: Optional[dict] = None,
+) -> Tuple[str, str]:
+    """Return (top_border_str, label_row_str) for a rectangular tab strip.
+
+    Each tab occupies an equal-width slot. The active tab uses
+    ``sidebar.tab.active`` styling (callers must apply it). Inactive
+    tabs use ``sidebar.tab``.
+
+    Returns two raw strings, each exactly ``w`` chars. Callers split the
+    label row into per-tab runs to apply per-tab styles.
+
+    Tab slot geometry: 4 tabs in W=36 → slot_w=8 for first 3, slot_w=7
+    for last (37 → trim one), or distributed. We use: slot_w = (w-(n+1))//n
+    with leftover distributed left-to-right.
+
+    Example top border (ASCII, 4 tabs, w=36):
+        +--------+--------+--------+-------+
+    Example label row:
+        | Set    | Sch    | Ctl    | Int   |
+    """
+    if bc is None:
+        bc = _BORDERS["ascii"]
+    n = len(tabs)
+    if n == 0:
+        return ("+" + "-" * (w - 2) + "+", "|" + " " * (w - 2) + "|")
+
+    # Distribute w chars into n slots + n+1 separators
+    total_inner = w - (n + 1)   # chars available for all slot interiors
+    slot_base = max(1, total_inner // n)
+    leftover = max(0, total_inner - slot_base * n)
+
+    tl = bc["tab_tl"]
+    tr = bc["tab_tr"]
+    sep = bc["tab_sep"]
+    h = bc["th"]
+    v = bc["tv"]
+
+    # Build top border
+    top_parts = [tl]
+    for i in range(n):
+        sw = slot_base + (1 if i < leftover else 0)
+        top_parts.append(h * sw)
+        top_parts.append(sep if i < n - 1 else tr)
+    top = "".join(top_parts)
+
+    # Build label row — returns the raw string; callers slice by slot to
+    # apply per-tab styles.
+    label_parts = [v]
+    for i in range(n):
+        sw = slot_base + (1 if i < leftover else 0)
+        label = (" " + tabs[i] + " ").ljust(sw)[:sw]
+        label_parts.append(label)
+        label_parts.append(v)
+    labels = "".join(label_parts)
+
+    # Both should be exactly w — guard against off-by-one
+    top = (top + " " * w)[:w]
+    labels = (labels + " " * w)[:w]
+    return top, labels
+
+
+def tab_strip_slot_ranges(
+    tabs: Tuple[str, ...],
+    w: int,
+) -> List[Tuple[int, int]]:
+    """Return list of (start_col, end_col) for each tab's label slot.
+
+    Used by the sidebar to know which column ranges to colour per tab.
+    Column indices are into the label row string (0-based, exclusive end).
+    The ranges cover the interior of each tab cell (not the separator chars).
+    """
+    n = len(tabs)
+    if n == 0:
+        return []
+    total_inner = w - (n + 1)
+    slot_base = max(1, total_inner // n)
+    leftover = max(0, total_inner - slot_base * n)
+    ranges = []
+    col = 1  # skip leading separator
+    for i in range(n):
+        sw = slot_base + (1 if i < leftover else 0)
+        ranges.append((col, col + sw))
+        col += sw + 1  # +1 for the separator
+    return ranges
+
+
+# ---------------------------------------------------------------------------
+# Theme registry accessors
+# ---------------------------------------------------------------------------
 
 def available_themes() -> Tuple[str, ...]:
     return tuple(_THEMES.keys())
@@ -595,6 +798,142 @@ def theme_palette(theme: str) -> dict:
     return _THEMES.get(theme, _AMBER)
 
 
+# ---------------------------------------------------------------------------
+# Vector rasteriser styles — consolidated from raster_vector.default_style()
+# ---------------------------------------------------------------------------
+#
+# These dicts feed ``theme_vector_style()``. They live here so all theme
+# data is in one file; ``raster_vector.default_style()`` is now a thin
+# shim that calls ``theme_vector_style()``.
+#
+# Colours are RGB tuples. The rasteriser draws in real RGB; the chrome
+# theme then tints the foreground at the terminal layer through map.* classes.
+
+_VECTOR_STYLES: Dict[str, Dict] = {
+    "paper": dict(
+        bg=(245, 240, 225),
+        water=(180, 200, 220),
+        park=(210, 230, 200),
+        building=(220, 215, 200),
+        road_color=(40, 30, 25),
+        label_color=(20, 20, 20),
+        halo_color=(245, 240, 225),
+        aircraft_color=(180, 60, 30),
+        aircraft_selected_color=(0, 0, 0),
+        aircraft_emergency_color=(220, 0, 0),
+        aircraft_label_color=(50, 30, 20),
+        aircraft_halo_color=(245, 240, 225),
+        road_colors={
+            10: (20, 15, 10),  9: (35, 30, 25),   8: (50, 45, 40),
+            7:  (65, 60, 55),  6: (80, 75, 70),    5: (95, 90, 85),
+            4: (110, 105, 100), 3: (125, 120, 115), 2: (140, 135, 130),
+            1: (155, 150, 145),
+        },
+    ),
+    "light": dict(
+        bg=(240, 240, 240),
+        water=(170, 195, 220),
+        park=(200, 225, 195),
+        building=(215, 215, 215),
+        road_color=(50, 50, 50),
+        label_color=(30, 30, 30),
+        halo_color=(240, 240, 240),
+        aircraft_color=(0, 50, 150),
+        aircraft_selected_color=(0, 0, 0),
+        aircraft_emergency_color=(200, 0, 0),
+        aircraft_label_color=(0, 50, 150),
+        aircraft_halo_color=(240, 240, 240),
+        road_colors={
+            10: (30, 30, 30),  9: (45, 45, 45),   8: (60, 60, 60),
+            7:  (75, 75, 75),  6: (90, 90, 90),    5: (105, 105, 105),
+            4: (120, 120, 120), 3: (135, 135, 135), 2: (150, 150, 150),
+            1: (165, 165, 165),
+        },
+    ),
+    "hicon": dict(
+        bg=(255, 255, 255),
+        water=(140, 170, 200),
+        park=(180, 220, 180),
+        building=(200, 200, 200),
+        road_color=(0, 0, 0),
+        label_color=(0, 0, 0),
+        halo_color=(255, 255, 255),
+        aircraft_color=(0, 0, 136),
+        aircraft_selected_color=(0, 0, 0),
+        aircraft_emergency_color=(180, 0, 0),
+        aircraft_label_color=(0, 0, 136),
+        aircraft_halo_color=(255, 255, 255),
+        road_colors={
+            10: (0, 0, 0),    9: (15, 15, 15),   8: (30, 30, 30),
+            7:  (45, 45, 45), 6: (60, 60, 60),    5: (75, 75, 75),
+            4:  (90, 90, 90), 3: (105, 105, 105), 2: (120, 120, 120),
+            1: (135, 135, 135),
+        },
+    ),
+    "ega": dict(
+        bg=(0, 0, 0),
+        water=(0, 0, 170),
+        park=(0, 170, 0),
+        building=(170, 170, 170),
+        road_color=(255, 255, 255),
+        label_color=(255, 255, 85),
+        halo_color=(0, 0, 0),
+        aircraft_color=(255, 255, 85),
+        aircraft_selected_color=(255, 255, 255),
+        aircraft_emergency_color=(255, 85, 85),
+        aircraft_label_color=(255, 255, 255),
+        aircraft_halo_color=(0, 0, 0),
+        road_colors={
+            10: (255, 255, 255), 9: (255, 255, 85),   8: (255, 255, 85),
+            7:  (170, 170, 170), 6: (170, 170, 170),  5: (85, 85, 85),
+            4:  (85, 85, 85),   3: (85, 85, 85),      2: (85, 85, 85),
+            1:  (85, 85, 85),
+        },
+    ),
+    "win31": dict(
+        bg=(0, 0, 0),
+        water=(0, 0, 255),
+        park=(0, 128, 0),
+        building=(192, 192, 192),
+        road_color=(255, 255, 255),
+        label_color=(255, 255, 0),
+        halo_color=(0, 0, 0),
+        aircraft_color=(255, 255, 0),
+        aircraft_selected_color=(255, 255, 255),
+        aircraft_emergency_color=(255, 0, 0),
+        aircraft_label_color=(255, 255, 255),
+        aircraft_halo_color=(0, 0, 0),
+        road_colors={
+            10: (255, 255, 255), 9: (255, 255, 0),    8: (255, 255, 0),
+            7:  (192, 192, 192), 6: (192, 192, 192),  5: (128, 128, 128),
+            4:  (128, 128, 128), 3: (128, 128, 128),  2: (128, 128, 128),
+            1:  (128, 128, 128),
+        },
+    ),
+    "night": dict(
+        bg=(0, 0, 0),
+        water=(50, 0, 0),
+        park=(80, 0, 0),
+        building=(100, 0, 0),
+        road_color=(220, 30, 30),
+        label_color=(255, 80, 80),        # slightly brighter — readable on black bg
+        halo_color=(0, 0, 0),
+        aircraft_color=(255, 60, 60),
+        aircraft_selected_color=(255, 200, 200),
+        aircraft_emergency_color=(255, 255, 255),
+        aircraft_label_color=(255, 80, 80),
+        aircraft_halo_color=(0, 0, 0),
+        road_colors={
+            10: (255, 50, 50),  9: (220, 40, 40),  8: (200, 35, 35),
+            7:  (180, 30, 30),  6: (160, 25, 25),  5: (140, 20, 20),
+            4:  (120, 15, 15),  3: (100, 10, 10),  2: (90, 8, 8),
+            1:  (80, 5, 5),
+        },
+    ),
+    # amber / green / dark / retro / and any unknown theme → VectorStyle()
+}
+
+
 def theme_vector_style(
     theme: str,
     user_overrides: Optional[Dict] = None,
@@ -604,6 +943,10 @@ def theme_vector_style(
     Imports lazily so this module doesn't drag in Pillow at import time
     (themes is loaded by ``cli --print-config`` etc.).
 
+    Per-theme VectorStyle data now lives in ``_VECTOR_STYLES`` above.
+    Themes not explicitly listed fall back to ``VectorStyle()`` defaults
+    (dark background, white roads — correct for amber/green/dark/retro).
+
     User overrides at ``cfg["theme"]["road_colors"]`` shape::
 
         {"road_colors": {"motorway": [255, 240, 100], ...}}
@@ -611,11 +954,13 @@ def theme_vector_style(
     Both class names (motorway, primary, ...) and numeric priorities
     (10, 8, ...) are accepted.
     """
-    from cartotui.raster_vector import (
-        ROAD_CLASS_PRIORITY, default_style,
-    )
+    from cartotui.raster_vector import ROAD_CLASS_PRIORITY, VectorStyle
 
-    style = default_style(theme)
+    kw = _VECTOR_STYLES.get(theme)
+    if kw is not None:
+        style = VectorStyle(**kw)
+    else:
+        style = VectorStyle()   # default: dark bg, white roads
 
     if not user_overrides:
         return style

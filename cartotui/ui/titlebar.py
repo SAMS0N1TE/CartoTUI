@@ -1,4 +1,11 @@
-"""Retro-styled top title bar showing app name + center of map."""
+"""Flat title bar — Win 3.1 style.
+
+Three-segment bar:  ``CartoTUI v0.8.3   +43.2081°, -71.5376° z12``
+
+No decorative glyphs (no ▌ ▐ ⟨ ⟩). The navy/white win31 theme provides
+the visual weight via colour alone, while CRT themes (amber/green/retro)
+do the same through their titlebar colour spec.
+"""
 
 from __future__ import annotations
 
@@ -18,23 +25,28 @@ class TitleBar(UIControl):
         return False
 
     def create_content(self, width: int, height: int) -> UIContent:
-        # Three-segment bar: [title]   [coords]   [version]
-        left = f"  ▌ {self.title} ▐ "
-        coords = f"⟨ {self.state.lat:>+9.4f}°, {self.state.lon:>+10.4f}° • z{self.state.z:02d} ⟩"
-        right = f" v{__version__}  "
+        # Left: app name + version
+        left = f"  {self.title} v{__version__}  "
+        # Centre: coordinates + zoom
+        coords = (f"{self.state.lat:>+9.4f}°, {self.state.lon:>+10.4f}°"
+                  f"  z{self.state.z:02d}")
+        # Right: a small padding so the bar doesn't look flush-right
+        right = "  "
 
+        # Distribute whitespace: centre-align the coords block
         gap_total = max(0, width - len(left) - len(coords) - len(right))
         gap_l = gap_total // 2
         gap_r = gap_total - gap_l
 
         runs = [
-            ("class:titlebar", left),
+            ("class:titlebar",     left),
             ("class:titlebar.dim", " " * gap_l),
-            ("class:titlebar", coords),
+            ("class:titlebar",     coords),
             ("class:titlebar.dim", " " * gap_r),
-            ("class:titlebar", right),
+            ("class:titlebar",     right),
         ]
-        # Ensure exactly `width` chars by trimming/padding.
+
+        # Ensure exactly `width` chars.
         rendered = "".join(text for _s, text in runs)
         if len(rendered) > width:
             rendered = rendered[:width]

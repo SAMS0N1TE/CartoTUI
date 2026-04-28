@@ -105,7 +105,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_inflight": 4,
     },
     "ui": {
-        "theme": "amber",                 # amber | green | paper | retro | dark | light | hicon | ega | win31 | night
+        "theme": "ega",                   # amber | green | paper | retro | dark | light | hicon | ega | win31 | night
         "mouse": True,
         "border_style": "heavy",          # ascii | heavy | rounded
         "show_latency": True,
@@ -333,7 +333,8 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     ui = c["ui"]
     ui["theme"] = _coerce_choice(ui.get("theme"),
-                                  ("amber", "green", "paper", "retro", "dark", "light"),
+                                  ("amber", "green", "paper", "retro", "dark", "light",
+                                   "hicon", "ega", "win31", "night"),
                                   DEFAULT_CONFIG["ui"]["theme"])
     ui["mouse"] = _coerce_bool(ui.get("mouse"), True)
     ui["border_style"] = _coerce_choice(ui.get("border_style"), ("ascii", "heavy", "rounded"),

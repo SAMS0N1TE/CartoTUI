@@ -87,6 +87,29 @@ class MapControl(UIControl):
         self._last_frame: Optional[_Frame] = None
         self._window = None
 
+        # Render dedup state. Both fields are guarded by ``_dedup_lock``.
+        #
+        # ``_inflight_key`` is the snap_key currently being processed
+        # by the worker (or None if idle). ``_last_enqueued_key`` is
+        # the snap_key of the most recent job we *put on the queue*.
+        # ``_enqueue`` checks both: it drops a request whose key
+        # matches inflight, OR matches last_enqueued AND the queue
+        # still has it pending. Once the queue drains (worker picked
+        # up the job), the last_enqueued check is gated by qsize so a
+        # genuine re-enqueue with the same key (e.g. user pans away
+        # then pans back) is allowed through.
+        #
+        # Why this exists: prompt_toolkit's display loop calls
+        # ``create_content`` on every frame. While the worker is
+        # busy producing the next render, every redraw saw "displayed
+        # frame's snap_key != current snap_key" and enqueued another
+        # job. Several jobs would queue up for the same key. The
+        # worker burned through them all, producing the user-visible
+        # "renders twice with subtle flicker" theme-cycle artifact.
+        self._dedup_lock = threading.Lock()
+        self._inflight_key: Optional[Tuple] = None
+        self._last_enqueued_key: Optional[Tuple] = None
+
         # Mouse drag bookkeeping.
         self._drag_anchor: Optional[Tuple[int, int]] = None
         self._drag_lat: Optional[float] = None
@@ -393,6 +416,21 @@ class MapControl(UIControl):
             ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
             ac_sel = self.state.selected_aircraft_icao or ""
             snap_key = (w, h, ac_gen, ac_sel) + snap
+        # Dedup. Skip enqueue if either:
+        #   1. The worker is already processing this exact key.
+        #   2. The most-recently-enqueued key matches AND the queue
+        #      still holds it pending (qsize > 0). Once qsize hits 0
+        #      the worker has picked up the job, and a fresh enqueue
+        #      with the same key (user panning back to a recent view)
+        #      should still go through — that case is handled by the
+        #      qsize gate.
+        with self._dedup_lock:
+            if self._inflight_key == snap_key:
+                return
+            if (self._last_enqueued_key == snap_key
+                    and self._req_q.qsize() > 0):
+                return
+            self._last_enqueued_key = snap_key
         with self._req_q.mutex:
             self._req_q.queue.clear()
         try:
@@ -412,6 +450,15 @@ class MapControl(UIControl):
             w, h, snap, snap_key = job
             (lat, lon, z, source, render_mode, palette, color, dither,
              theme, shaded, brightness, contrast, threshold_mode, _src_idx) = snap
+
+            # Mark this job as in-flight for the dedup check in
+            # ``_enqueue``. Cleared at the end of this iteration after
+            # ``app.invalidate()``. The render body has fine-grained
+            # try/except around all the dangerous operations
+            # (rasterise_view, composite, renderer.render), so we
+            # don't worry about exceptions escaping past this point.
+            with self._dedup_lock:
+                self._inflight_key = snap_key
 
             cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
@@ -591,6 +638,14 @@ class MapControl(UIControl):
             app = get_app_or_none()
             if app:
                 app.invalidate()
+
+            # Clear in-flight state so the next render with this same
+            # key (or any other) is allowed through. We do NOT clear
+            # ``_last_enqueued_key`` here — _enqueue's qsize check
+            # makes that field self-clearing once the queue drains.
+            with self._dedup_lock:
+                if self._inflight_key == snap_key:
+                    self._inflight_key = None
 
     # ------------------------------------------------------------------
     # Helpers

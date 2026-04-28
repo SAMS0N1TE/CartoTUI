@@ -435,8 +435,16 @@ def _inverse_color(rgb: Tuple[int, int, int]) -> Tuple[int, int, int]:
     The "near-black" #101010 / "near-white" #f0f0f0 choices keep some
     margin from pure values so the text reads as printed-on-paper
     rather than glowing. Slightly less harsh than #000/#fff.
+
+    Special case: near-pure reds (R dominant, G+B < R) always get a
+    near-black bg. BT.709 weights red at only 0.2126 so a saturated red
+    like (220,30,30) scores luma~50 and would otherwise get a white
+    background — which destroys the night-mode red-on-black aesthetic.
     """
     r, g, b = rgb
+    # Near-pure red: keep black background so night labels stay red-on-black.
+    if r > 160 and (g + b) < r:
+        return (16, 16, 16)
     # Luminance per BT.709, integer-arithmetic.
     luma = (2126 * r + 7152 * g + 722 * b) // 10000
     if luma >= 128:
