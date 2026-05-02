@@ -3,6 +3,8 @@
 Interactive map viewer for the terminal — vector or raster tiles rendered as
 ASCII, Unicode quadrants, or braille, in retro nav-system aesthetics.
 
+## WARNING: WIP, and the performance is trash as the moment. 
+
 <img width="1044" height="753" alt="TUI5" src="https://github.com/user-attachments/assets/d4b078d6-095f-4f21-92f9-066e885df719" />
 
 CartoTUI fetches map tiles, draws them into the terminal, and lets you pan
