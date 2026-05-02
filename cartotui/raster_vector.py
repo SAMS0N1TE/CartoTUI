@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -35,6 +34,9 @@ ROAD_CLASS_PRIORITY: Dict[str, int] = {
     "other":        1,
 }
 
+_MIN_POLY_PX = 2.0
+_MIN_LINE_PX = 3.0
+
 @dataclass
 class VectorStyle:
 
@@ -55,7 +57,7 @@ class VectorStyle:
     road_widths: Dict[int, int] = None
     road_colors: Dict[int, Tuple[int, int, int]] = None
 
-    draw_labels: bool = True
+    draw_labels: bool = False
 
     def __post_init__(self):
         if self.road_widths is None:
@@ -232,6 +234,54 @@ def _flatten_polygons(coords) -> Iterable[List[Tuple[float, float]]]:
                 if ring and isinstance(ring[0], tuple):
                     yield [tuple(p) for p in ring]
 
+def _bbox_extent_diag(coords) -> Tuple[float, float]:
+    if not coords:
+        return (0.0, 0.0)
+    first = coords[0]
+    if not first:
+        return (0.0, 0.0)
+
+    if isinstance(first[0], (int, float)):
+        min_x = max_x = first[0]
+        min_y = max_y = first[1]
+        for p in coords:
+            x, y = p[0], p[1]
+            if x < min_x: min_x = x
+            elif x > max_x: max_x = x
+            if y < min_y: min_y = y
+            elif y > max_y: max_y = y
+        return (max_x - min_x, max_y - min_y)
+
+    if isinstance(first[0][0], (int, float)):
+        ring = first
+        min_x = max_x = ring[0][0]
+        min_y = max_y = ring[0][1]
+        for p in ring:
+            x, y = p[0], p[1]
+            if x < min_x: min_x = x
+            elif x > max_x: max_x = x
+            if y < min_y: min_y = y
+            elif y > max_y: max_y = y
+        return (max_x - min_x, max_y - min_y)
+
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    for poly in coords:
+        if not poly:
+            continue
+        ring = poly[0]
+        if not ring:
+            continue
+        for p in ring:
+            x, y = p[0], p[1]
+            if x < min_x: min_x = x
+            elif x > max_x: max_x = x
+            if y < min_y: min_y = y
+            elif y > max_y: max_y = y
+    if min_x == float("inf"):
+        return (0.0, 0.0)
+    return (max_x - min_x, max_y - min_y)
+
 _WATER_LAYER_NAMES = {"water", "ocean", "rivers", "lakes"}
 _LANDUSE_LAYER_NAMES = {"landuse", "landcover", "natural"}
 _PARK_KINDS = {"park", "wood", "forest", "grass", "playground", "garden", "nature_reserve"}
@@ -240,7 +290,12 @@ _ROAD_LAYERS = {"roads", "transportation"}
 _PLACE_LAYERS = {"places"}
 
 def _draw_water_and_landuse(draw, tiles, style):
+    skipped_bldg = 0
+    drawn_bldg = 0
     for tile, sx, sy, px_per_ext in tiles:
+        ext_thresh = _MIN_POLY_PX / px_per_ext if px_per_ext > 0 else 0.0
+        check_size = ext_thresh > 1.0
+
         for layer_name in _WATER_LAYER_NAMES:
             layer = tile.layers.get(layer_name)
             if not layer:
@@ -249,6 +304,10 @@ def _draw_water_and_landuse(draw, tiles, style):
                 geom = feat.get("geometry") or {}
                 if geom.get("type") not in ("Polygon", "MultiPolygon"):
                     continue
+                if check_size:
+                    ew, eh = _bbox_extent_diag(geom["coordinates"])
+                    if ew < ext_thresh and eh < ext_thresh:
+                        continue
                 xformed = _xform_geom(geom["coordinates"], sx, sy, px_per_ext)
                 for ring in _flatten_polygons(xformed):
                     if len(ring) >= 3:
@@ -271,6 +330,10 @@ def _draw_water_and_landuse(draw, tiles, style):
                 fill = style.park if kind in _PARK_KINDS else None
                 if fill is None:
                     continue
+                if check_size:
+                    ew, eh = _bbox_extent_diag(geom["coordinates"])
+                    if ew < ext_thresh and eh < ext_thresh:
+                        continue
                 xformed = _xform_geom(geom["coordinates"], sx, sy, px_per_ext)
                 for ring in _flatten_polygons(xformed):
                     if len(ring) >= 3:
@@ -285,6 +348,12 @@ def _draw_water_and_landuse(draw, tiles, style):
                 geom = feat.get("geometry") or {}
                 if geom.get("type") not in ("Polygon", "MultiPolygon"):
                     continue
+                if check_size:
+                    ew, eh = _bbox_extent_diag(geom["coordinates"])
+                    if ew < ext_thresh and eh < ext_thresh:
+                        skipped_bldg += 1
+                        continue
+                drawn_bldg += 1
                 xformed = _xform_geom(geom["coordinates"], sx, sy, px_per_ext)
                 for ring in _flatten_polygons(xformed):
                     if len(ring) >= 3:
@@ -293,9 +362,24 @@ def _draw_water_and_landuse(draw, tiles, style):
                         except Exception:
                             pass
 
+    if log.isEnabledFor(logging.DEBUG) and (drawn_bldg + skipped_bldg) > 0:
+        log.debug(
+            "buildings: drew %d, skipped %d sub-pixel",
+            drawn_bldg, skipped_bldg,
+        )
+
 def _draw_roads(draw, tiles, style):
     items: List[Tuple[int, float, float, float, dict, dict]] = []
+    skipped = 0
     for tile, sx, sy, px_per_ext in tiles:
+        max_road_w = 1
+        for w in style.road_widths.values():
+            if w > max_road_w:
+                max_road_w = w
+        line_thresh_px = max(_MIN_LINE_PX, max_road_w * 0.5)
+        ext_thresh = line_thresh_px / px_per_ext if px_per_ext > 0 else 0.0
+        check_size = ext_thresh > 1.0
+
         for layer_name in _ROAD_LAYERS:
             layer = tile.layers.get(layer_name)
             if not layer:
@@ -308,6 +392,13 @@ def _draw_roads(draw, tiles, style):
                 cls = (props.get("class") or props.get("kind") or
                        props.get("pmap:kind") or "other").lower()
                 priority = ROAD_CLASS_PRIORITY.get(cls, 1)
+                width = style.road_widths.get(priority, 1)
+                if check_size:
+                    per_class_thresh = max(_MIN_LINE_PX, width * 0.5) / px_per_ext
+                    ew, eh = _bbox_extent_diag(geom["coordinates"])
+                    if max(ew, eh) < per_class_thresh:
+                        skipped += 1
+                        continue
                 items.append((priority, sx, sy, px_per_ext, geom, props))
 
     items.sort(key=lambda t: t[0])
@@ -320,12 +411,12 @@ def _draw_roads(draw, tiles, style):
             if len(line) < 2:
                 continue
             try:
-                draw.line(line, fill=color, width=width, joint="curve")
+                draw.line(line, fill=color, width=width)
             except Exception:
-                try:
-                    draw.line(line, fill=color, width=width)
-                except Exception:
-                    pass
+                pass
+
+    if log.isEnabledFor(logging.DEBUG) and (len(items) + skipped) > 0:
+        log.debug("roads: drew %d, skipped %d sub-width", len(items), skipped)
 
 def _draw_labels(draw, tiles, style, w: int, h: int):
     candidates: List[Tuple[int, float, float, str]] = []
