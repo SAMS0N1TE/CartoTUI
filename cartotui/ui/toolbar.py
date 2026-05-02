@@ -1,18 +1,3 @@
-"""Toolbar — Win 3.1 menu-bar style.
-
-Renders as a flat bar of action items. Each item shows the hotkey letter
-in ``toolbar.key`` colour (darkred for win31, bright for CRT themes) and
-the action label in ``toolbar`` colour, separated by a space:
-
-    Q Quit   ? Help   +/- Zoom   K Style   V Src   M View   T Theme ...
-
-No brackets around the hotkey letters — Win 3.1 menu bars indicated
-accelerators by underlining the letter; we approximate that with the key
-colour. The separator between items is two spaces.
-
-Mouse clicks on any part of an item (key + label) dispatch the same
-action as the keybinding.
-"""
 
 from __future__ import annotations
 
@@ -43,19 +28,15 @@ _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
     ("R",   "Reset"),
 ]
 
-# Separator between items
 _SEP = "  "
 
-
 def _is_disabled(state, key: str) -> bool:
-    """Decide whether a toolbar item is greyed out for the current state."""
     rm = state.render_mode
     if key == "D":
         return rm != "ascii"
     if key == "S":
         return rm == "ascii"
     return False
-
 
 class Toolbar(UIControl):
     def __init__(
@@ -78,7 +59,6 @@ class Toolbar(UIControl):
         self.on_theme_changed = on_theme_changed
         self.on_cycle_source = on_cycle_source
 
-        # Layout cache: (start_col, end_col, action_key)
         self._hit_zones: List[Tuple[int, int, str]] = []
 
     def is_focusable(self) -> bool:
@@ -89,7 +69,6 @@ class Toolbar(UIControl):
         zones: List[Tuple[int, int, str]] = []
         col = 0
 
-        # Leading margin
         runs.append(("class:toolbar", "  "))
         col += 2
 
@@ -105,12 +84,10 @@ class Toolbar(UIControl):
             col += len(label) + 1
             zones.append((zone_start, col, key))
 
-            # Separator between items (not after the last one)
             if idx < len(_TOOLBAR_ITEMS) - 1:
                 runs.append(("class:toolbar.dim", _SEP))
                 col += len(_SEP)
 
-        # Filler to right edge
         if col < width:
             runs.append(("class:toolbar", " " * (width - col)))
         elif col > width:

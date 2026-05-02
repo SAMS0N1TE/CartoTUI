@@ -1,9 +1,3 @@
-"""Central runtime state for the CartoTUI application.
-
-All map mutations go through `MapState`; the renderer thread reads via
-`snapshot()` to get a consistent (lat, lon, z) tuple. UI components mutate
-through methods that take the lock.
-"""
 
 from __future__ import annotations
 
@@ -18,21 +12,18 @@ from cartotui.geodesy import clamp_lat, viewport_deg_per_cell, wrap_lon
 
 __all__ = ["MapState"]
 
-
 @dataclass
 class MapState:
     cfg: Config
 
-    # Map view
     lat: float = field(init=False)
     lon: float = field(init=False)
     z: int = field(init=False)
     min_zoom: int = field(init=False)
     max_zoom: int = field(init=False)
 
-    # Display options (mutable at runtime)
-    source: str = field(init=False)        # "vector" | "raster"
-    render_mode: str = field(init=False)   # "ascii" | "quadrant" | "braille"
+    source: str = field(init=False)
+    render_mode: str = field(init=False)
     palette: str = field(init=False)
     color: bool = field(init=False)
     dither: str = field(init=False)
@@ -40,23 +31,18 @@ class MapState:
     theme: str = field(init=False)
     shaded_blocks: bool = field(init=False)
 
-    # Image-level adjustments (manual, user-tunable)
     brightness: float = field(init=False)
     contrast: float = field(init=False)
-    threshold_mode: str = field(init=False)   # adaptive | fixed | percentile | edge
+    threshold_mode: str = field(init=False)
 
-    # Source switcher — index into a registry of sources
     source_idx: int = field(init=False, default=0)
 
-    # UI hints
     last_render_ms: float = 0.0
     info_msg: str = ""
-    info_msg_until: float = 0.0  # epoch seconds; status bar shows until this
+    info_msg_until: float = 0.0
     heading_deg: float = 0.0
-    pending_input: str = ""  # for goto-prompt
+    pending_input: str = ""
 
-    # Sidebar UI state — not in snapshot() because rendering doesn't depend
-    # on them; UI components read them directly. Default sidebar visible.
     sidebar_visible: bool = True
     sidebar_tab: int = 0
     selected_aircraft_icao: Optional[str] = None
@@ -71,7 +57,6 @@ class MapState:
         self.min_zoom = int(m["min_zoom"])
         self.max_zoom = int(m["max_zoom"])
 
-        # Resolve "mode" to source + render_mode.
         mode = str(m.get("mode", "vector"))
         if mode == "vector":
             self.source = "vector"
@@ -96,10 +81,6 @@ class MapState:
         self.theme = str(self.cfg["ui"].get("theme", "amber"))
 
         self._normalize_center()
-
-    # ------------------------------------------------------------------
-    # Mutation helpers (all lock-protected)
-    # ------------------------------------------------------------------
 
     def _normalize_center(self) -> None:
         self.lat = clamp_lat(self.lat)
@@ -126,7 +107,6 @@ class MapState:
         cell_w_px: int = 8,
         cell_h_px: int = 16,
     ) -> None:
-        """Pan by dx/dy cells, scaled by current zoom and latitude."""
         if dx_cells == 0 and dy_cells == 0:
             return
         with self._lock:
@@ -162,8 +142,6 @@ class MapState:
 
     def cycle_theme(self) -> None:
         with self._lock:
-            # Pull the live list from themes.available_themes() so any theme
-            # added later (e.g. high-contrast) is included automatically.
             try:
                 from cartotui.themes import available_themes
                 order = list(available_themes())
@@ -207,16 +185,9 @@ class MapState:
 
     def cycle_threshold(self) -> None:
         with self._lock:
-            # Adaptive first because it's the new default. The legacy modes
-            # remain reachable via the cycle for users who specifically want
-            # them on certain tile sources.
             order = ["adaptive", "percentile", "edge", "fixed"]
             i = order.index(self.threshold_mode) if self.threshold_mode in order else 0
             self.threshold_mode = order[(i + 1) % len(order)]
-
-    # ------------------------------------------------------------------
-    # Sidebar / traffic UI
-    # ------------------------------------------------------------------
 
     def toggle_sidebar(self) -> None:
         with self._lock:
@@ -229,10 +200,6 @@ class MapState:
     def select_aircraft(self, icao: Optional[str]) -> None:
         with self._lock:
             self.selected_aircraft_icao = icao.upper() if icao else None
-
-    # ------------------------------------------------------------------
-    # Info / status messaging
-    # ------------------------------------------------------------------
 
     def set_info(self, msg: str, ttl_s: float = 3.0) -> None:
         with self._lock:
@@ -247,13 +214,7 @@ class MapState:
                 return ""
             return self.info_msg
 
-    # ------------------------------------------------------------------
-    # Snapshot for render thread
-    # ------------------------------------------------------------------
-
     def snapshot(self) -> Tuple:
-        """Returns (lat, lon, z, source, render_mode, palette, color, dither,
-        theme, shaded, brightness, contrast, threshold_mode, source_idx)."""
         with self._lock:
             return (
                 self.lat,

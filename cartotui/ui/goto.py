@@ -1,8 +1,3 @@
-"""Goto prompt — a single-line input that lets the user type `lat, lon[, z]`.
-
-Visible only while active (a tiny floating dialog). Pressing Enter parses the
-value and recentres the map; Esc cancels.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit
 from prompt_toolkit.widgets import Frame, TextArea
-
 
 def _parse(s: str) -> Optional[Tuple[float, float, Optional[int]]]:
     parts = [p.strip() for p in s.replace(";", ",").split(",")]
@@ -33,7 +27,6 @@ def _parse(s: str) -> Optional[Tuple[float, float, Optional[int]]]:
     if not (-85.05 <= lat <= 85.05 and -180.0 <= lon <= 180.0):
         return None
     return lat, lon, z
-
 
 class GotoPrompt:
     def __init__(
@@ -64,7 +57,6 @@ class GotoPrompt:
             parsed = _parse(text)
             if parsed is None:
                 self._error = "Bad format — try `42.36, -71.06, 12`"
-                # Keep the field, just nudge.
                 return
             lat, lon, z = parsed
             self.on_submit(lat, lon, z)

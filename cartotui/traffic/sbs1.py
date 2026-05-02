@@ -1,29 +1,3 @@
-"""SBS-1 BaseStation traffic source.
-
-Secondary adapter for users who already run ``dump1090`` (or any compatible
-ADS-B feeder) on their network. SBS-1 BaseStation is a CSV-over-TCP format
-that's been the de-facto standard for ~20 years; ``dump1090 --net`` exposes
-it on port 30003 by default::
-
-    MSG,3,111,11111,4CA853,111111,2024/01/01,12:00:00.000,2024/01/01,...,52.4567,-1.2345,...
-
-The format splits one aircraft's state across many message types:
-
-    MSG,1 — callsign / identification
-    MSG,3 — altitude + lat/lon
-    MSG,4 — ground speed + track + vertical rate
-    MSG,5 — alt only
-    MSG,6 — squawk + emergency flags
-    MSG,7 — air/ground status
-    MSG,8 — air/ground status
-
-We don't try to be exhaustive — fields-as-they-arrive merging on the
-``Aircraft`` instance handles partial records.
-
-LandShark is the primary supported source for this project; SBS-1 is here
-so a dump1090 user (or someone testing on a laptop) can also feed CartoTUI
-without rebuilding firmware.
-"""
 
 from __future__ import annotations
 
@@ -37,14 +11,7 @@ from cartotui.traffic.source import TrafficSource
 
 log = logging.getLogger("cartotui.traffic.sbs1")
 
-
 def parse_sbs1_line(line: str) -> Optional[Aircraft]:
-    """Parse one SBS-1 BaseStation CSV line into an Aircraft partial.
-
-    Returns None for non-MSG records or malformed lines. Field positions
-    follow the BaseStation spec — see http://woodair.net/sbs/article/barebones42_socket_data.htm
-    for the canonical reference.
-    """
     if not line or not line.startswith("MSG,"):
         return None
     parts = line.split(",")
@@ -69,10 +36,6 @@ def parse_sbs1_line(line: str) -> Optional[Aircraft]:
         except (TypeError, ValueError):
             return None
 
-    # Field index reference (1-based in the spec, 0-based here):
-    #   10 callsign, 11 altitude, 12 ground_speed, 13 track,
-    #   14 lat, 15 lon, 16 vertical_rate, 17 squawk,
-    #   18 alert(?), 19 emergency, 20 spi, 21 on_ground
     if msg_type in ("1",):
         cs = f(10, str)
         if cs:
@@ -115,10 +78,7 @@ def parse_sbs1_line(line: str) -> Optional[Aircraft]:
 
     return a
 
-
 class SBS1TCPSource(TrafficSource):
-    """Reads SBS-1 BaseStation CSV from a TCP server (typically dump1090
-    on port 30003)."""
 
     name = "sbs1"
 
@@ -164,8 +124,6 @@ class SBS1TCPSource(TrafficSource):
                     except socket.timeout:
                         chunk = b""
                     if chunk == b"":
-                        # Either timeout (no data) or peer closed. Use a brief
-                        # ping-style send to detect closure.
                         try:
                             sock.send(b"")
                         except OSError:
@@ -173,7 +131,6 @@ class SBS1TCPSource(TrafficSource):
                     else:
                         buf += chunk
                         rate_bytes += len(chunk)
-                        # SBS is line-delimited.
                         while b"\n" in buf:
                             line, buf = buf.split(b"\n", 1)
                             text = line.decode("ascii", errors="replace").strip()

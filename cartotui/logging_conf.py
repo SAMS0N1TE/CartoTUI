@@ -1,19 +1,3 @@
-"""Logging setup for CartoTUI.
-
-The TUI runs full-screen via prompt_toolkit's alt-screen. Anything written to
-stderr while the alt-screen is active will bleed through prompt_toolkit's
-renderer and corrupt the visible UI — log lines stack on top of the map,
-sidebars get overwritten, and the terminal becomes unreadable.
-
-To avoid that, we never attach a stderr StreamHandler. If the user has
-configured a log file, we use a RotatingFileHandler. Otherwise we install
-one at a default location under the OS log/cache dir so the logs are still
-recoverable after a session.
-
-Tests and `--print-config` paths can opt out by passing a config with
-``logging.file`` explicitly set to the empty string ``""`` — in that case
-we attach only a NullHandler and emit nothing anywhere.
-"""
 
 from __future__ import annotations
 
@@ -28,9 +12,7 @@ __all__ = ["setup_logging"]
 
 _LOGGER = logging.getLogger("cartotui")
 
-
 def _default_log_dir() -> str:
-    """Pick a reasonable default directory to put session logs in."""
     if platform.system() == "Windows":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
         return os.path.join(base, "CartoTUI", "Logs")
@@ -41,7 +23,6 @@ def _default_log_dir() -> str:
         "cartotui",
     )
 
-
 def setup_logging(cfg: Config) -> logging.Logger:
     level_name = cfg["logging"].get("level", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -51,19 +32,12 @@ def setup_logging(cfg: Config) -> logging.Logger:
 
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-    # Always start clean so re-init in tests is safe.
     for h in list(root.handlers):
         root.removeHandler(h)
 
     log_file_cfg = cfg["logging"].get("file")
 
-    # Distinguish three cases:
-    #   None       -> caller didn't configure; auto-pick a default file path
-    #   ""         -> caller explicitly suppressed file logging (tests etc)
-    #   "<path>"   -> caller wants logs in this specific file
     if log_file_cfg == "":
-        # Suppress all log output. NullHandler stops the "no handler" warning
-        # from logging without writing anywhere.
         root.addHandler(logging.NullHandler())
     else:
         if log_file_cfg is None:
@@ -83,13 +57,8 @@ def setup_logging(cfg: Config) -> logging.Logger:
             fh.setFormatter(fmt)
             root.addHandler(fh)
         except OSError:
-            # If we can't open the log file (read-only fs, permission denied,
-            # weird path on Windows), swallow it silently — emitting *anything*
-            # to stderr at this point would be the very corruption we're
-            # trying to avoid. Drop logs on the floor instead.
             root.addHandler(logging.NullHandler())
 
-    # Quiet noisy libraries unless we're in DEBUG.
     if level > logging.DEBUG:
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("PIL").setLevel(logging.WARNING)

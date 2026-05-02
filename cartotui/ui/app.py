@@ -1,4 +1,3 @@
-"""Top-level application composition for CartoTUI."""
 
 from __future__ import annotations
 
@@ -32,15 +31,11 @@ from cartotui.vector_source import VectorTileSource
 
 log = logging.getLogger("cartotui.app")
 
-
 class CartoTUIApp:
     def __init__(self, cfg: Optional[Config] = None) -> None:
         self.cfg = cfg or Config.load()
         self.state = MapState(self.cfg)
 
-        # Build the source registry. The user's configured tile_url / vector
-        # source becomes the initial selection; if not in the registry it's
-        # added as a custom entry at the end.
         self.sources = build_source_list(self.cfg.data)
         self.state.source_idx = self._initial_source_idx()
 
@@ -55,7 +50,6 @@ class CartoTUIApp:
             parallel_downloads=int(ncfg["parallel_downloads"]),
         )
 
-        # Vector tile source — reads PMTiles or hits a vector tile URL.
         self.vector_source = VectorTileSource(
             self.cfg["vector"],
             cache_dir=Path(self.cfg["cache"]["dir"]) / "vector",
@@ -70,10 +64,6 @@ class CartoTUIApp:
             shaded_blocks=bool(rcfg.get("shaded_blocks", False)),
         )
 
-        # Traffic / aircraft tracking. The registry exists even when no
-        # source is configured — the sidebar Integration tab can still
-        # render "no source" cleanly. The source itself is started in run()
-        # so config errors don't crash __init__.
         traffic_cfg = self.cfg.data.get("traffic", {}) if hasattr(self.cfg, "data") else {}
         self.aircraft_registry = AircraftRegistry(
             stale_timeout_s=float(traffic_cfg.get("stale_timeout_s", 60.0)),
@@ -87,7 +77,6 @@ class CartoTUIApp:
             on_select_aircraft=self._on_select_aircraft,
         )
 
-        # Widgets
         self.titlebar = TitleBar(self.state, title=self.cfg["app"].get("title", "CartoTUI"))
         self.statusbar = StatusBar(self.state, self.cfg)
         self.compass = Compass(self.state)
@@ -116,7 +105,6 @@ class CartoTUIApp:
             on_cycle_source=self._cycle_source,
         )
 
-        # Layout
         self.map_window = Window(
             content=self.map_control,
             wrap_lines=False,
@@ -131,8 +119,6 @@ class CartoTUIApp:
         if vp.get("show_titlebar", True):
             rows.append(Window(content=self.titlebar, height=1, style="class:titlebar"))
 
-        # Map + sidebar. The sidebar is a ConditionalContainer that folds
-        # away when state.sidebar_visible is False — Tab toggles it.
         body = VSplit([
             self.map_window,
             self.sidebar,
@@ -144,10 +130,8 @@ class CartoTUIApp:
         if vp.get("show_statusbar", True):
             rows.append(Window(content=self.statusbar, height=1, style="class:statusbar"))
 
-        # The help pane is a conditional row so it folds away when hidden.
         rows.append(self.help_pane)
 
-        # Goto prompt sits above status; conditional too.
         rows.insert(-1, self.goto_prompt)
 
         self.root = HSplit(rows)
@@ -160,12 +144,8 @@ class CartoTUIApp:
             full_screen=True,
             mouse_support=bool(self.cfg["ui"].get("mouse", True)),
             style=DynamicStyle(lambda: self._current_style),
-            refresh_interval=0.5,  # keep status timing live
+            refresh_interval=0.5,
         )
-
-    # ------------------------------------------------------------------
-    # Run / lifecycle
-    # ------------------------------------------------------------------
 
     def run(self) -> None:
         try:
@@ -179,10 +159,6 @@ class CartoTUIApp:
                 pass
             self.map_control.shutdown()
 
-    # ------------------------------------------------------------------
-    # Action handlers
-    # ------------------------------------------------------------------
-
     def _toggle_help(self) -> None:
         self.help_pane.toggle()
         self.app.invalidate()
@@ -195,15 +171,11 @@ class CartoTUIApp:
         self.map_control.focus()
 
     def _on_select_aircraft(self, icao) -> None:
-        """Wired to both sidebar (clicking a row) and map_control (clicking
-        a plotted aircraft). icao=None deselects."""
         self.state.select_aircraft(icao)
         self.map_control.request_render()
         self.app.invalidate()
 
     def _on_search_submit(self, text: str) -> None:
-        """Sidebar Search tab submit. Resolves lat,lon (with optional zoom)
-        via the same parser the goto prompt uses."""
         from cartotui.ui.goto import _parse
         text = (text or "").strip()
         if not text:
@@ -219,7 +191,6 @@ class CartoTUIApp:
         self.app.exit()
 
     def _initial_source_idx(self) -> int:
-        """Find which registry entry matches the user's current config."""
         cur_raster = self.cfg["network"].get("tile_url", "")
         v = self.cfg["vector"]
         cur_vector_backend = v.get("source")
@@ -244,8 +215,6 @@ class CartoTUIApp:
     def _cycle_source(self) -> None:
         if not self.sources:
             return
-        # Skip sources that need a key we don't have, to avoid silently
-        # showing a blank map.
         current = self.state.source_idx
         n = len(self.sources)
         for step in range(1, n + 1):
@@ -259,33 +228,20 @@ class CartoTUIApp:
             self.map_control.swap_to_source(src)
             self.state.set_info(f"Source → {src.name}")
             return
-        # No usable sources found beyond current.
         self.state.set_info("No other sources available")
 
     def _reload_theme(self) -> None:
-        """Rebuild the prompt_toolkit style from the current state.theme."""
-        # Sync the cfg snapshot so make_style sees the new theme.
         self.cfg.update({"ui": {"theme": self.state.theme}})
         self._current_style = make_style(self.cfg)
-        # Vector renderer reads theme directly from snapshot, so re-render too.
         self.map_control.request_render()
         self.app.invalidate()
-
-    # ------------------------------------------------------------------
-    # Key bindings
-    # ------------------------------------------------------------------
 
     def _build_key_bindings(self) -> KeyBindings:
         kb = KeyBindings()
         step = int(self.cfg["ui"].get("pan_step_cells", 6))
 
-        # Disable map keybindings while goto prompt is visible.
         active = Condition(lambda: not self.goto_prompt.visible)
 
-        # Map-focused = no goto, and sidebar isn't focused. Digit/letter
-        # bindings get this filter so when the user is typing in the
-        # sidebar's search field they don't accidentally trigger zoom-to-N
-        # or theme cycle.
         from prompt_toolkit.application.current import get_app
 
         def _map_active() -> bool:
@@ -308,8 +264,6 @@ class CartoTUIApp:
         @kb.add("tab", filter=active)
         def _(event):
             self.state.toggle_sidebar()
-            # If we just hid the sidebar and it had focus, return focus to
-            # the map.
             if not self.state.sidebar_visible:
                 try:
                     event.app.layout.focus(self.map_window)
@@ -319,7 +273,6 @@ class CartoTUIApp:
 
         @kb.add("f2", filter=active)
         def _(event):
-            """Focus toggle between map and sidebar."""
             try:
                 if event.app.layout.current_window is self.sidebar.window:
                     event.app.layout.focus(self.map_window)
@@ -329,13 +282,6 @@ class CartoTUIApp:
             except Exception:
                 pass
 
-        # ----- Sidebar tab cycling at the global level ------------------
-        # These work whether the sidebar is focused or not, so long as it
-        # is visible. Ctrl+Left/Right is the primary; Alt+Left/Right is a
-        # fallback for terminals that swallow Ctrl+arrow (Windows Terminal
-        # under some profiles, certain SSH chains, tmux without
-        # `xterm-keys on`, etc.). F3/F4 is the most-portable fallback —
-        # function keys are escape-coded with no modifier munging.
         sidebar_visible_filter = Condition(
             lambda: self.state.sidebar_visible and not self.goto_prompt.visible
         )
@@ -354,10 +300,6 @@ class CartoTUIApp:
             self.sidebar.control.cycle_tab(-1)
             event.app.invalidate()
 
-        # Direct-jump to a tab. We can't make plain "1".."4" global because
-        # those collide with map zoom-to-N. So we use F5..F8 (always free)
-        # as the universal hotkey, and keep "1".."4" as a sidebar-focused
-        # binding (already in sidebar.keybindings()).
         for i in range(4):
             @kb.add(f"f{5 + i}", filter=sidebar_visible_filter)
             def _(event, idx=i):
@@ -466,7 +408,6 @@ class CartoTUIApp:
             self.state.set_info(f"Threshold → {self.state.threshold_mode}")
             self.map_control.request_render()
 
-        # Brightness — Shift+= / Shift+-
         @kb.add("[", filter=map_active)
         def _(event):
             self.state.adjust_brightness(-0.1)
@@ -479,7 +420,6 @@ class CartoTUIApp:
             self.state.set_info(f"Brightness → {self.state.brightness:.2f}")
             self.map_control.request_render()
 
-        # Contrast — { / }
         @kb.add("{", filter=map_active)
         def _(event):
             self.state.adjust_contrast(-0.1)
@@ -515,10 +455,6 @@ class CartoTUIApp:
                 int(self.cfg["map"]["zoom"]),
             )
 
-        # Merge sidebar's own keybindings. They activate only when the
-        # sidebar window has focus — checked inside each handler via the
-        # current window — and don't conflict with map keys because the
-        # map_active filter excludes "sidebar focused" already.
         from prompt_toolkit.key_binding import merge_key_bindings
 
         def _sidebar_focused() -> bool:
@@ -528,8 +464,6 @@ class CartoTUIApp:
                 return False
         sidebar_kb_filter = Condition(_sidebar_focused)
         sidebar_kb = self.sidebar.keybindings()
-        # We can't easily wrap an existing KB with a filter, so we copy
-        # bindings into a new KB with the sidebar-focus filter on each.
         wrapped = KeyBindings()
         for binding in sidebar_kb.bindings:
             wrapped.add(*binding.keys, filter=sidebar_kb_filter)(binding.handler)

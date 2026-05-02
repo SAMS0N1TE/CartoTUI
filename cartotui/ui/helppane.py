@@ -1,4 +1,3 @@
-"""Help overlay — toggled with `h` or `?`. Renders as a styled multi-line pane."""
 
 from __future__ import annotations
 
@@ -59,7 +58,6 @@ _HELP_LINES = [
     ("title", " ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ "),
 ]
 
-
 class HelpControl(UIControl):
     def is_focusable(self) -> bool:
         return False
@@ -71,7 +69,6 @@ class HelpControl(UIControl):
             if kind == "title":
                 rows.append(to_formatted_text([("class:help.title", line)]))
             elif kind == "kv":
-                # Style the key prefix in green; the rest in normal help colour.
                 rows.append(to_formatted_text([("class:help.key", line[:18]),
                                                 ("class:help.text", line[18:])]))
             else:
@@ -83,7 +80,6 @@ class HelpControl(UIControl):
             return to_formatted_text([("class:help.text", " " * width)])
 
         return UIContent(get_line=get_line, line_count=max(1, len(rows)))
-
 
 class HelpPane:
     def __init__(self) -> None:

@@ -1,9 +1,3 @@
-"""Configuration loader / saver for CartoTUI.
-
-A single JSON file per user, validated on load against schema defaults so a
-truncated or hand-edited config still produces a working app. All settings have
-sensible fallbacks and are clamped into safe ranges.
-"""
 
 from __future__ import annotations
 
@@ -16,10 +10,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
 __all__ = ["Config", "DEFAULT_CONFIG", "default_config_path"]
-
-# ---------------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------------
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "app": {
@@ -34,34 +24,27 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "show_toolbar": True,
         "show_titlebar": True,
         "help_panel": False,
-        # Right-side tabbed sidebar (Settings/Search/Controls/Integration).
         "show_sidebar": True,
         "sidebar_width": 36,
     },
     "map": {
-        "center_lat": 42.3601,            # Boston as a neutral starting point
+        "center_lat": 42.3601,
         "center_lon": -71.0589,
         "zoom": 4,
         "min_zoom": 0,
         "max_zoom": 19,
-        "mode": "vector",                  # vector | ascii | quadrant | braille
+        "mode": "vector",
         "palette": "shades",
         "overzoom": 2,
         "max_composite_px": 1400,
     },
     "vector": {
-        # Source can be "protomaps_api", "pmtiles_url", or "mvt_url"
         "source": "pmtiles_url",
-        # For pmtiles_url: HTTP-accessible .pmtiles archive (range-request)
-        # Default is the small public Firenze sample so first-run "just works".
         "pmtiles_url": "https://protomaps.github.io/PMTiles/protomaps(vector)ODbL_firenze.pmtiles",
-        # For protomaps_api: requires a key
         "protomaps_api_key": "",
         "protomaps_api_url": "https://api.protomaps.com/tiles/v4/{z}/{x}/{y}.mvt",
-        # For mvt_url: any raw {z}/{x}/{y}.mvt template
         "mvt_url": "",
-        # Style preset
-        "style": "auto",                  # auto | nav | minimal | full
+        "style": "auto",
     },
     "network": {
         "tile_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -72,13 +55,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "parallel_downloads": 8,
     },
     "cache": {
-        "dir": None,                       # auto-resolved per OS when None
+        "dir": None,
         "max_bytes": 256 * 1024 * 1024,
         "prune_watermark": 0.85,
     },
     "render": {
         "color": True,
-        "dither": "none",                 # none | atkinson | bayer | floyd
+        "dither": "none",
         "contrast": 1.05,
         "brightness": 1.0,
         "gamma": 1.0,
@@ -87,34 +70,23 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sharpen_threshold": 3,
         "edge_boost": False,
         "invert": False,
-        # Quadrant/braille thresholding
-        "subpixel_threshold": "adaptive",  # adaptive | fixed | percentile | edge
-        "subpixel_percentile": 55,            # 0..100; lower = more "filled" pixels
-        "shaded_blocks": False,               # quadrant/braille: combine block + palette
-        # When True, vector geometry (water, parks, roads, place labels)
-        # is stamped directly into the row data as character-mode
-        # primitives — see cartotui/ui/map_overlay.py. The PIL-rasterised
-        # basemap still renders underneath as a coarse fill. This is the
-        # readable "DOS map app" path; turn it off to get the legacy
-        # full-PIL-render behaviour.
+        "subpixel_threshold": "adaptive",
+        "subpixel_percentile": 55,
+        "shaded_blocks": False,
         "vector_overlay": True,
     },
     "prefetch": {
         "enable": True,
-        "ring_radius": 1,                  # tiles around current view
+        "ring_radius": 1,
         "max_inflight": 4,
     },
     "ui": {
-        "theme": "ega",                   # amber | green | paper | retro | dark | light | hicon | ega | win31 | night
+        "theme": "ega",
         "mouse": True,
-        "border_style": "heavy",          # ascii | heavy | rounded
+        "border_style": "heavy",
         "show_latency": True,
-        "pan_step_cells": 6,              # pan by N cells per arrow press
+        "pan_step_cells": 6,
     },
-    # ----- Aircraft trail rendering -----
-    # Walks each aircraft's position-history deque and stamps fading
-    # trail dots behind it. The duration here is the soft cap — the
-    # registry's TRAIL_MAX_SAMPLES is a hard ceiling.
     "aircraft_trails": {
         "enabled": True,
         "duration_s": 60.0,
@@ -125,35 +97,25 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "rotate_bytes": 5 * 1024 * 1024,
         "rotate_keep": 3,
     },
-    # ----- Traffic / aircraft tracking -----
     "traffic": {
         "enabled": False,
-        "source": "disabled",          # "landshark" | "landshark_tui" | "sbs1" | "disabled"
+        "source": "disabled",
         "stale_timeout_s": 60.0,
         "landshark": {
-            "port": "",                # e.g. "/dev/ttyUSB0" or "COM4"
-            "baudrate": 115200,        # 115200 for TUI mode, 921600 for JSONL
-            "format": "auto",          # "auto" picks by baud; "tui" or "jsonl" forces
+            "port": "",
+            "baudrate": 115200,
+            "format": "auto",
         },
         "sbs1": {
             "host": "localhost",
             "port": 30003,
         },
     },
-    # ----- User theme overrides -----
-    # Empty by default; presence of a key under "chrome" or "road_colors"
-    # overrides the corresponding entry in the chosen theme. See
-    # cartotui.themes.theme_vector_style for the schema.
     "theme": {
-        "chrome": {},                  # {class_name: style_spec}
-        "road_colors": {},             # {class_or_priority: [r, g, b]}
+        "chrome": {},
+        "road_colors": {},
     },
 }
-
-# ---------------------------------------------------------------------------
-# OS path helpers
-# ---------------------------------------------------------------------------
-
 
 def _config_home() -> str:
     if platform.system() == "Windows":
@@ -163,7 +125,6 @@ def _config_home() -> str:
         return os.path.join(os.path.expanduser("~/Library/Application Support"), "CartoTUI")
     return os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "cartotui")
 
-
 def _cache_home() -> str:
     if platform.system() == "Windows":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
@@ -172,18 +133,11 @@ def _cache_home() -> str:
         return os.path.join(os.path.expanduser("~/Library/Caches"), "CartoTUI")
     return os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "cartotui")
 
-
 def default_config_path() -> str:
     env = os.environ.get("CARTOTUI_CONFIG")
     if env:
         return os.path.expanduser(env)
     return os.path.join(_config_home(), "config.json")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
 
 def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(a)
@@ -193,7 +147,6 @@ def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[k] = v
     return out
-
 
 def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -210,7 +163,6 @@ def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
             pass
         raise
 
-
 def _coerce_num(v: Any, default: float, bounds: Optional[Tuple[float, float]] = None) -> float:
     try:
         x = float(v)
@@ -221,7 +173,6 @@ def _coerce_num(v: Any, default: float, bounds: Optional[Tuple[float, float]] = 
         x = max(lo, min(hi, x))
     return x
 
-
 def _coerce_int(v: Any, default: int, bounds: Optional[Tuple[int, int]] = None) -> int:
     try:
         x = int(v)
@@ -231,7 +182,6 @@ def _coerce_int(v: Any, default: int, bounds: Optional[Tuple[int, int]] = None) 
         lo, hi = bounds
         x = max(lo, min(hi, x))
     return x
-
 
 def _coerce_bool(v: Any, default: bool) -> bool:
     if isinstance(v, bool):
@@ -244,17 +194,10 @@ def _coerce_bool(v: Any, default: bool) -> bool:
             return False
     return default
 
-
 def _coerce_choice(v: Any, choices: Tuple[str, ...], default: str) -> str:
     if isinstance(v, str) and v in choices:
         return v
     return default
-
-
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
-
 
 def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     c = _deep_merge(DEFAULT_CONFIG, cfg or {})
@@ -356,20 +299,12 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     return c
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class Config:
-    """Validated nested config with load / save / update operations."""
 
     data: Dict[str, Any] = field(default_factory=lambda: _validate({}))
     path: str = field(default_factory=default_config_path)
 
-    # Mapping-style access for convenience.
     def __getitem__(self, k: str) -> Any:
         return self.data[k]
 

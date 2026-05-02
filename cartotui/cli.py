@@ -1,4 +1,3 @@
-"""Command-line entry point for CartoTUI."""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ import sys
 from cartotui import __version__
 from cartotui.config import Config, default_config_path
 from cartotui.logging_conf import setup_logging
-
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -67,7 +65,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     return p
 
-
 def _apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
     overrides = {}
     if args.lat is not None or args.lon is not None or args.zoom is not None \
@@ -88,8 +85,6 @@ def _apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
     if args.theme is not None:
         overrides.setdefault("ui", {})["theme"] = args.theme
 
-    # Vector source overrides — picking any of these implicitly switches
-    # vector.source to match.
     if args.protomaps_key is not None:
         overrides.setdefault("vector", {})["source"] = "protomaps_api"
         overrides["vector"]["protomaps_api_key"] = args.protomaps_key
@@ -102,7 +97,6 @@ def _apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
 
     if overrides:
         cfg.update(overrides)
-
 
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
@@ -126,15 +120,12 @@ def main(argv=None) -> int:
         sys.stderr.write("Standard output is not a TTY; cartotui needs an interactive terminal.\n")
         return 1
 
-    # Lazy import so --print-config works even if prompt_toolkit is broken.
     from cartotui.ui.app import CartoTUIApp
 
     try:
         app = CartoTUIApp(cfg)
         app.run()
     except Exception as e:
-        # The TUI takes over the terminal; if we crash inside it the user
-        # might just see "back to the prompt". Make the failure loud.
         import traceback
         sys.stderr.write("\n")
         sys.stderr.write("CartoTUI crashed:\n")
@@ -147,7 +138,6 @@ def main(argv=None) -> int:
         )
         return 1
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

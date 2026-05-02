@@ -1,4 +1,3 @@
-"""Allow `python -m cartotui` to launch the app."""
 
 from cartotui.cli import main
 

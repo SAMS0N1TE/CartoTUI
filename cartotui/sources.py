@@ -1,21 +1,3 @@
-"""Built-in tile source registry.
-
-A ``Source`` is a small descriptor that says where to fetch tiles from. Two
-families:
-
-  * Raster sources — `{z}/{x}/{y}.png` URLs that the standard ``TileCache``
-    can fetch.
-  * Vector sources — backed by ``VectorTileSource`` (Protomaps API, raw MVT,
-    or PMTiles archives).
-
-Pressing ``[K]`` in-app cycles through the registry; the source changes
-without restarting and the new tiles flow into both the cache and the
-vector pipeline.
-
-Users can extend the registry via ``vector.custom_sources`` /
-``network.custom_raster_sources`` in their config — the in-app cycler
-appends those after the built-ins.
-"""
 
 from __future__ import annotations
 
@@ -24,24 +6,19 @@ from typing import List, Optional
 
 __all__ = ["Source", "BUILTIN_SOURCES", "build_source_list"]
 
-
 @dataclass
 class Source:
-    """A named tile source that can be selected at runtime."""
 
-    name: str                       # short label shown in status / toolbar
-    description: str                # tooltip-ish longer text
-    kind: str                       # "raster" | "vector"
-    url_template: str               # for raster: PNG tile URL; for vector mvt_url
-    vector_backend: Optional[str] = None  # protomaps_api | pmtiles_url | mvt_url
+    name: str
+    description: str
+    kind: str
+    url_template: str
+    vector_backend: Optional[str] = None
     pmtiles_url: str = ""
-    needs_key: bool = False         # whether this source requires an API key
-    attribution: str = ""           # human-readable attribution
+    needs_key: bool = False
+    attribution: str = ""
 
-
-# Built-in registry. The first source that doesn't need a key is the default.
 BUILTIN_SOURCES: List[Source] = [
-    # ---- Raster basemaps ----
     Source(
         name="OSM",
         description="OpenStreetMap standard",
@@ -85,7 +62,6 @@ BUILTIN_SOURCES: List[Source] = [
         attribution="© OpenStreetMap, © CARTO",
     ),
 
-    # ---- Vector ----
     Source(
         name="Protomaps",
         description="Protomaps hosted vector basemap (needs API key)",
@@ -97,13 +73,7 @@ BUILTIN_SOURCES: List[Source] = [
     ),
 ]
 
-
 def build_source_list(cfg: dict) -> List[Source]:
-    """Compose the runtime source list: built-ins + any user customs from config.
-
-    ``cfg`` is the top-level Config dict. We look in ``vector.custom_sources``
-    (a list of Source-shaped dicts) and append them after the built-ins.
-    """
     sources = list(BUILTIN_SOURCES)
     custom = []
     if isinstance(cfg, dict):

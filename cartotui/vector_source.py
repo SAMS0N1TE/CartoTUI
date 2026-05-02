@@ -1,25 +1,3 @@
-"""Vector tile source — fetches MVT tiles from one of several backends.
-
-Three backend modes:
-
-  * ``pmtiles_url`` — the URL of an HTTP-accessible ``.pmtiles`` archive.
-    The archive is read by HTTP range requests (no full download); this is
-    the recommended mode for self-hosted basemaps and Protomaps daily builds.
-  * ``protomaps_api`` — Protomaps' hosted basemap API. Requires an API key.
-  * ``mvt_url`` — any raw ``{z}/{x}/{y}.mvt`` URL template.
-
-All modes return decoded MVT layer data as a Python dict shaped roughly:
-
-    {
-      "roads":  {"features": [{"properties": {...}, "geometry": {...}}, ...]},
-      "places": {...},
-      ...
-    }
-
-Geometries are GeoJSON-like dicts with coordinates in *tile-local pixel space*
-(0..extent on each axis, where extent is typically 4096). Callers convert
-those to canvas pixels via ``geometry_xform``.
-"""
 
 from __future__ import annotations
 
@@ -33,51 +11,36 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
-# Pure-Python MVT decoder bundled with cartotui — never fails to import
-# regardless of whether mapbox-vector-tile, shapely, pyclipper etc are
-# available. We keep an optional fallback to mapbox_vector_tile.decode for
-# users who already have it installed (it's marginally faster on huge tiles
-# thanks to its C++ protobuf bindings, but our pure-python version is plenty
-# fast for terminal-sized renders).
 from cartotui.mvt_decoder import decode as _pure_decode
 
 try:
-    import mapbox_vector_tile  # type: ignore
-except ImportError:  # pragma: no cover
+    import mapbox_vector_tile
+except ImportError:
     mapbox_vector_tile = None
 
 try:
-    from pmtiles import reader as pmtiles_reader  # type: ignore
-    from pmtiles.tile import Compression, TileType, zxy_to_tileid  # type: ignore
-except ImportError:  # pragma: no cover
+    from pmtiles import reader as pmtiles_reader
+    from pmtiles.tile import Compression, TileType, zxy_to_tileid
+except ImportError:
     pmtiles_reader = None
-    Compression = None  # type: ignore
-    TileType = None  # type: ignore
-    zxy_to_tileid = None  # type: ignore
+    Compression = None
+    TileType = None
+    zxy_to_tileid = None
 
 log = logging.getLogger("cartotui.vector")
 
 __all__ = ["VectorTileSource", "VectorTile"]
 
-
 @dataclass
 class VectorTile:
-    """A decoded vector tile and its metadata."""
 
     z: int
     x: int
     y: int
-    extent: int                 # tile-local coordinate extent (typically 4096)
-    layers: Dict[str, dict]     # layer name → decoded layer dict
-
+    extent: int
+    layers: Dict[str, dict]
 
 class VectorTileSource:
-    """Unified vector-tile fetcher with on-disk caching.
-
-    The cache stores the *raw* MVT bytes (possibly gzip-compressed) on disk
-    and the decoded result in an LRU-ish in-memory dict, so panning around
-    the same area is essentially free after the first fetch.
-    """
 
     def __init__(
         self,
@@ -100,27 +63,17 @@ class VectorTileSource:
         self._pm_reader = None
         self._pm_header: Optional[dict] = None
         self._pm_url: Optional[str] = None
-        # Circuit breaker — set to a URL string when that URL failed
-        # to open. Subsequent calls to _ensure_pmtiles() short-circuit
-        # rather than re-attempting (and re-logging) the failure on
-        # every tile fetch.
         self._pm_failed_url: Optional[str] = None
 
         self._closed = False
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def get_tile(self, z: int, x: int, y: int) -> Optional[VectorTile]:
-        """Fetch + decode one vector tile, returning None on failure."""
         key = (z, x, y)
         with self._lock:
             cached = self._decoded.get(key)
             if cached is not None:
                 return cached
 
-        # Try disk cache first (raw bytes).
         raw = self._load_raw_from_disk(z, x, y)
         if raw is None:
             raw = self._fetch_raw(z, x, y)
@@ -135,7 +88,6 @@ class VectorTileSource:
 
         with self._lock:
             if len(self._decoded) >= self._max_cached:
-                # Drop oldest insertion — dict order is insertion order.
                 drop = next(iter(self._decoded))
                 self._decoded.pop(drop, None)
             self._decoded[key] = tile
@@ -150,12 +102,7 @@ class VectorTileSource:
         except Exception:
             pass
 
-    # ------------------------------------------------------------------
-    # Disk cache
-    # ------------------------------------------------------------------
-
     def _disk_path(self, z: int, x: int, y: int) -> Path:
-        # Namespace by source so switching backends doesn't poison cache.
         return self.cache_dir / self._source_namespace() / str(z) / str(x) / f"{y}.mvt"
 
     def _source_namespace(self) -> str:
@@ -183,10 +130,6 @@ class VectorTileSource:
             p.write_bytes(raw)
         except OSError as e:
             log.debug("Failed to cache MVT %d/%d/%d: %s", z, x, y, e)
-
-    # ------------------------------------------------------------------
-    # Fetch dispatch
-    # ------------------------------------------------------------------
 
     def _fetch_raw(self, z: int, x: int, y: int) -> Optional[bytes]:
         src = self.cfg.get("source", "pmtiles_url")
@@ -216,17 +159,11 @@ class VectorTileSource:
         return self._http_get(url_tmpl.format(z=z, x=x, y=y))
 
     def _http_get(self, url: str) -> Optional[bytes]:
-        # Log the first URL we try (with key redacted) so the user can
-        # reproduce the request with curl if something goes wrong.
         with self._lock:
             if not getattr(self, "_logged_first_url", False):
                 self._logged_first_url = True
                 log.info("vector source first request: %s", _redact_key(url))
 
-        # Some tile providers serve the MVT content type only when explicitly
-        # requested via the Accept header. Request both protobuf MIME types
-        # plus a wildcard fallback for providers that aren't picky.
-        # Origin/Referer help with providers that gate access on those.
         headers = {
             "Accept": "application/x-protobuf, application/vnd.mapbox-vector-tile, */*",
             "Origin": "http://localhost",
@@ -238,13 +175,9 @@ class VectorTileSource:
             self._log_failure_once(url, f"network error: {e.__class__.__name__}: {e}")
             return None
         if r.status_code == 404:
-            # 404 on a single tile is normal at the edges of coverage; don't
-            # spam the log for those.
             log.debug("404 for %s", _redact_key(url))
             return None
         if r.status_code != 200:
-            # Read the body so we can show what the server is complaining
-            # about — usually a JSON error object from Protomaps.
             try:
                 body = r.text[:200]
             except Exception:
@@ -259,10 +192,6 @@ class VectorTileSource:
         return r.content
 
     def _log_failure_once(self, url: str, msg: str) -> None:
-        """Log the same failure exactly once per (url-pattern, message) so
-        the log surfaces *what's wrong* without spamming for every tile."""
-        # Strip the {z}/{x}/{y} numerics so all tile-fetch failures collapse
-        # to the same key.
         import re
         canon = re.sub(r"/\d+/\d+/\d+\.", "/{z}/{x}/{y}.", url)
         canon = _redact_key(canon)
@@ -275,10 +204,6 @@ class VectorTileSource:
             self._logged_failures.add(sig)
         log.warning("vector tile fetch failed: %s — %s", canon, msg)
 
-    # ------------------------------------------------------------------
-    # PMTiles
-    # ------------------------------------------------------------------
-
     def _ensure_pmtiles(self) -> bool:
         if pmtiles_reader is None:
             log.warning("pmtiles package not installed")
@@ -289,16 +214,9 @@ class VectorTileSource:
             return False
         if self._pm_reader is not None and self._pm_url == url:
             return True
-        # Circuit breaker: if this URL already failed to open this run,
-        # don't keep retrying it on every tile fetch. Without this, a
-        # broken pmtiles URL produces hundreds of "Failed to open
-        # PMTiles" warnings per second as the renderer sweeps tiles.
         if self._pm_failed_url == url:
             return False
 
-        # HTTP range source. The reader expects a callable taking (offset, length)
-        # and returning bytes. We need to fetch the header first to know
-        # tile compression and root directory layout.
         session = self._session
 
         def get_bytes(offset: int, length: int) -> bytes:
@@ -339,14 +257,13 @@ class VectorTileSource:
             return None
         if raw is None or len(raw) == 0:
             return None
-        # Decompress per header.
         comp = self._pm_header.get("tile_compression") if self._pm_header else None
         try:
             if Compression and comp == Compression.GZIP:
                 raw = gzip.decompress(raw)
             elif Compression and comp == Compression.BROTLI:
                 try:
-                    import brotli  # type: ignore
+                    import brotli
                     raw = brotli.decompress(raw)
                 except ImportError:
                     log.warning("PMTiles uses brotli but brotli pkg is not installed")
@@ -356,13 +273,8 @@ class VectorTileSource:
             return None
         return raw
 
-    # ------------------------------------------------------------------
-    # Decode
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _decompress_if_needed(raw: bytes) -> bytes:
-        # Some servers serve gzip-compressed tiles even when the URL says .mvt.
         if len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B:
             try:
                 return gzip.decompress(raw)
@@ -377,8 +289,6 @@ class VectorTileSource:
 
     def _decode(self, raw: bytes) -> Optional[Dict[str, dict]]:
         raw = self._decompress_if_needed(raw)
-        # Pure-python decoder first — works even when mapbox-vector-tile (and
-        # its C-extension transitive deps shapely/pyclipper) aren't installed.
         try:
             decoded = _pure_decode(raw, y_coord_down=True)
             if decoded:
@@ -386,8 +296,6 @@ class VectorTileSource:
         except Exception as e:
             log.debug("pure-python MVT decode failed: %s", e)
 
-        # Fall back to mapbox-vector-tile if it's installed — primarily for
-        # users who had it set up with the old version and still want it.
         if mapbox_vector_tile is None:
             log.warning(
                 "MVT decode failed and mapbox-vector-tile not installed as "
@@ -402,20 +310,11 @@ class VectorTileSource:
             log.warning("MVT decode failed (both decoders): %s", e)
             return None
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _short_hash(s: str) -> str:
     import hashlib
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:10]
 
-
 def _redact_key(url: str) -> str:
-    """Replace ``key=...`` query param value with a fingerprint, so the URL
-    can safely appear in logs without leaking the API key."""
     import re
 
     def _sub(m):

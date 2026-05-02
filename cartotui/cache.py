@@ -1,10 +1,3 @@
-"""Persistent tile cache with HTTP fetch, overzoom fallback, and prefetch.
-
-A single TileCache instance is shared across the app. It namespaces tiles by a
-hash of the URL template so switching tile providers doesn't poison the cache.
-Disk reads / writes are tiny per tile so the simple lock is fine here; the
-expensive cost is HTTP, which is parallelised through a ThreadPoolExecutor.
-"""
 
 from __future__ import annotations
 
@@ -27,14 +20,11 @@ log = logging.getLogger("cartotui.cache")
 
 __all__ = ["TileCache"]
 
-
 def _style_dir(base_dir: Path, url_template: str) -> Path:
     h = hashlib.sha1(url_template.encode("utf-8")).hexdigest()[:10]
     return base_dir / h
 
-
 class TileCache:
-    """Thread-safe XYZ tile cache with overzoom fallback and async prefetch."""
 
     def __init__(
         self,
@@ -81,22 +71,13 @@ class TileCache:
         )
         self._closed = False
 
-    # ------------------------------------------------------------------
-    # Path helpers
-    # ------------------------------------------------------------------
-
     def _tile_path(self, z: int, x: int, y: int) -> Path:
         return self.root_dir / str(z) / str(x) / f"{y}.png"
 
     def _ensure_dir(self, p: Path) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # Public fetch
-    # ------------------------------------------------------------------
-
     def get_tile_exact(self, z: int, x: int, y: int) -> Optional[Image.Image]:
-        """Return a tile from cache, fetching it synchronously if needed."""
         n = 2 ** z
         if not (0 <= x < n and 0 <= y < n):
             return None
@@ -121,7 +102,6 @@ class TileCache:
         y: int,
         overzoom_levels: int = 2,
     ) -> Optional[Image.Image]:
-        """Fetch a tile, falling back to a cropped/upscaled parent tile."""
         img = self.get_tile_exact(z, x, y)
         if img is not None:
             return img
@@ -147,12 +127,7 @@ class TileCache:
                 log.debug("Overzoom failed at z=%d step=%d: %s", z, step, e)
         return None
 
-    # ------------------------------------------------------------------
-    # Prefetch
-    # ------------------------------------------------------------------
-
     def prefetch(self, tiles: Iterable[Tuple[int, int, int]]) -> List[Future]:
-        """Schedule tiles for background download. Already-cached tiles skip."""
         if self._closed:
             return []
         futures: List[Future] = []
@@ -168,10 +143,6 @@ class TileCache:
                 self._inflight.add((z, x, y))
             futures.append(self._executor.submit(self._download_silent, z, x, y))
         return futures
-
-    # ------------------------------------------------------------------
-    # Internal HTTP
-    # ------------------------------------------------------------------
 
     def _download(self, z: int, x: int, y: int) -> Optional[Image.Image]:
         url = self.url_template.format(z=z, x=x, y=y)
@@ -198,19 +169,13 @@ class TileCache:
         return img
 
     def _download_silent(self, z: int, x: int, y: int) -> None:
-        """Background prefetch — discards the image, stores to disk only."""
         try:
             self._download(z, x, y)
         finally:
             with self._inflight_lock:
                 self._inflight.discard((z, x, y))
 
-    # ------------------------------------------------------------------
-    # Maintenance
-    # ------------------------------------------------------------------
-
     def prune(self, max_bytes: int, watermark: float = 0.85) -> int:
-        """Delete oldest tiles when cache exceeds max_bytes. Returns bytes freed."""
         try:
             files: List[Tuple[Path, int, float]] = []
             total = 0

@@ -1,8 +1,3 @@
-"""ASCII compass rose widget — a real little graphic, not a one-liner.
-
-It picks one of eight cardinal arrows, plus a numeric heading and the current
-zoom, in a tidy boxed mini-panel. Width is fixed by the host Window.
-"""
 
 from __future__ import annotations
 
@@ -22,11 +17,9 @@ _ARROWS = [
     (315, "↖"),
 ]
 
-
 def _arrow_for(deg: float) -> str:
     deg = deg % 360
     return min(_ARROWS, key=lambda d: min(abs(d[0] - deg), 360 - abs(d[0] - deg)))[1]
-
 
 def _compass_for(deg: float) -> str:
     deg = deg % 360
@@ -46,7 +39,6 @@ def _compass_for(deg: float) -> str:
         return "W"
     return "NW"
 
-
 class Compass(UIControl):
     def __init__(self, state: MapState):
         self.state = state
@@ -60,8 +52,6 @@ class Compass(UIControl):
         cardinal = _compass_for(deg)
         z = self.state.z
 
-        # Lay out a tidy 8-wide rose. Width assumed >= 9.
-        # Default render plus padding to width.
         rose_lines = [
             "  N    ",
             " ╲ │ ╱ ",
@@ -79,21 +69,19 @@ class Compass(UIControl):
         def get_line(i: int):
             if 0 <= i < len(all_lines):
                 line = all_lines[i]
-                # Pad/trim to width.
                 if len(line) < width:
                     line = line + " " * (width - len(line))
                 else:
                     line = line[:width]
-                # Special highlight on the centre arrow.
                 if i == 2:
                     return to_formatted_text([
                         ("class:compass.label", line[:3]),
                         ("class:compass", line[3:5]),
                         ("class:compass.label", line[5:]),
                     ])
-                if i == len(rose_lines) + 1:  # cardinal + degrees
+                if i == len(rose_lines) + 1:
                     return to_formatted_text([("class:compass", line)])
-                if i == len(rose_lines) + 2:  # zoom
+                if i == len(rose_lines) + 2:
                     return to_formatted_text([("class:compass.label", line)])
                 return to_formatted_text([("class:compass.label", line)])
             return to_formatted_text([("class:compass.label", " " * width)])

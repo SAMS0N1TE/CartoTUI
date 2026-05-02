@@ -1,25 +1,3 @@
-"""Right-edge tabbed sidebar — Win 3.1 group-box chrome.
-
-Four tabs:
-
-  * **Set**  (Settings) — theme, palette, render mode, dither, color,
-    threshold, brightness, contrast.
-  * **Sch**  (Search)   — text input that resolves to lat/lon.
-  * **Ctl**  (Controls) — quick-reference of keys.
-  * **Int**  (Integration) — LandShark/SBS-1 status + aircraft list.
-
-Tab labels are abbreviated so four tabs render as proper rectangular
-slots at the default sidebar width of 36 chars.
-
-Chrome layout (Win 3.1 property-sheet style):
-  * Title row: sidebar.title class (navy bar w/white text for win31).
-  * Tab strip: two rows — border top + label row. Active tab uses
-    sidebar.tab.active, inactive uses sidebar.tab. Border chars adapt
-    to the current theme (ASCII for win31, heavy Unicode for others).
-  * Group boxes: border top with caption-in-border, body rows with
-    ``| Label:  value [key] |`` form layout, border bottom.
-  * Hotkey brackets: ``[t]`` at right edge of each value row.
-"""
 
 from __future__ import annotations
 
@@ -46,29 +24,20 @@ from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import LinkStatus, TrafficSource
 from cartotui.ui.state import MapState
 
-
-# Abbreviated tab labels — must fit 4 slots in the sidebar width (default 36).
 SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration")
 _TAB_ABBREV: Tuple[str, ...] = ("Set", "Sch", "Ctl", "Int")
 
-# Public sentinels — index ↔ name lookups.
 TAB_SETTINGS    = 0
 TAB_SEARCH      = 1
 TAB_CONTROLS    = 2
 TAB_INTEGRATION = 3
 
-
 def _get_bc(cfg: Config) -> dict:
-    """Return the border-char dict for the current theme/border_style config."""
     theme = cfg["ui"].get("theme", "amber")
     style = cfg["ui"].get("border_style", "heavy")
     return border_chars(style, theme)
 
-
 class SidebarControl(UIControl):
-    """Renders the sidebar body. Mouse clicks on tab labels and aircraft rows
-    are intercepted via a small per-frame hitmap that ``mouse_handler``
-    consults."""
 
     def __init__(
         self,
@@ -87,21 +56,10 @@ class SidebarControl(UIControl):
         self.on_select_aircraft = on_select_aircraft
         self.on_search_submit = on_search_submit
         self.width_chars = max(28, int(width_chars))
-
-        # Hitmap built each frame: list of (y, x0, x1, action)
-        # action is a callable; mouse handler invokes it on click.
         self._hits: List[Tuple[int, int, int, Callable[[], None]]] = []
-
-        # Search field state.
         self.search_text: str = ""
         self.search_focused: bool = False
-
-        # Cached scroll offset for aircraft list.
         self.aircraft_scroll: int = 0
-
-    # ------------------------------------------------------------------
-    # UIControl interface
-    # ------------------------------------------------------------------
 
     def is_focusable(self) -> bool:
         return True
@@ -112,10 +70,6 @@ class SidebarControl(UIControl):
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
         return max_available_height
 
-    # ------------------------------------------------------------------
-    # Tab switching helpers (called by app keybindings too)
-    # ------------------------------------------------------------------
-
     def set_tab(self, idx: int) -> None:
         idx = max(0, min(len(SIDEBAR_TABS) - 1, int(idx)))
         self.state.sidebar_tab = idx
@@ -123,10 +77,6 @@ class SidebarControl(UIControl):
 
     def cycle_tab(self, delta: int) -> None:
         self.set_tab((self.state.sidebar_tab + delta) % len(SIDEBAR_TABS))
-
-    # ------------------------------------------------------------------
-    # Body builders — one per tab
-    # ------------------------------------------------------------------
 
     def _build_settings_lines(self, w: int, bc: dict) -> List:
         s = self.state
@@ -161,9 +111,8 @@ class SidebarControl(UIControl):
         lines.append(self._section("Search", w, bc))
         lines.append([("class:sidebar.label", v + " Goto:"),
                       ("class:sidebar",       " " * max(0, w - len(v + " Goto:") - 1) + v)])
-        # Input box — full-width inside borders
         focus_cls = "class:sidebar.input.focus" if self.search_focused else "class:sidebar.input"
-        field_w = max(4, w - 4)  # 2 border chars + 1 space each side
+        field_w = max(4, w - 4)  
         text = (self.search_text or " ")
         field_text = (text + " " * field_w)[:field_w]
         lines.append([
@@ -354,7 +303,6 @@ class SidebarControl(UIControl):
         if ac.emergency:
             marker = "!"
         inner = f" {marker} {label} FL{alt_text} {sp_text}kt"
-        # Fit inside group-box borders
         inner_w = w - 2
         inner = (inner + " " * inner_w)[:inner_w]
         text = v + inner + v
@@ -368,10 +316,6 @@ class SidebarControl(UIControl):
         new = None if (cur and cur.upper() == icao.upper()) else icao.upper()
         self.on_select_aircraft(new)
 
-    # ------------------------------------------------------------------
-    # Frame composition
-    # ------------------------------------------------------------------
-
     def create_content(self, width: int, height: int) -> UIContent:
         width = max(10, int(width))
         height = max(1, int(height))
@@ -380,43 +324,33 @@ class SidebarControl(UIControl):
 
         bc = _get_bc(self.cfg)
 
-        # Title row — "CartoTUI" in sidebar.title style (navy bar for win31)
-        title_text = " CartoTUI"
+        title_text = " Terminalbay.com"
         rows.append([("class:sidebar.title", title_text.ljust(width))])
 
-        # Tab strip — two rows: border top + labels
         top_str, label_str = tab_strip_rows(_TAB_ABBREV, self.state.sidebar_tab, width, bc)
         rows.append([("class:sidebar.tab", top_str)])
 
-        # Build label row with per-tab styling
         slot_ranges = tab_strip_slot_ranges(_TAB_ABBREV, width)
         label_runs = []
         for i, (s0, s1) in enumerate(slot_ranges):
-            # Separator before this tab (column s0-1 is the separator char)
             sep_pos = s0 - 1
-            # Add the left separator from the raw string
             sep_char = label_str[sep_pos] if sep_pos >= 0 else ""
             if i == 0:
-                # Leading separator
                 label_runs.append(("class:sidebar.tab", label_str[0:s0]))
             tab_cls = ("class:sidebar.tab.active"
                        if i == self.state.sidebar_tab else "class:sidebar.tab")
             slot_text = label_str[s0:s1]
             label_runs.append((tab_cls, slot_text))
-            # Register tab click hit (row index will be adjusted by offset below)
             self._hits.append((2, s0, s1, (lambda idx=i: self.set_tab(idx))))
-            # Trailing separator
             if s1 < len(label_str):
                 label_runs.append(("class:sidebar.tab", label_str[s1:s1 + 1]))
 
-        # Pad if label_str has trailing chars after last tab
         last_s1 = slot_ranges[-1][1] + 1 if slot_ranges else 0
         if last_s1 < len(label_str):
             label_runs.append(("class:sidebar.tab", label_str[last_s1:]))
 
         rows.append(label_runs)
 
-        # Body — dispatch to active tab
         tab = self.state.sidebar_tab
         if tab == TAB_SETTINGS:
             body = self._build_settings_lines(width, bc)
@@ -427,18 +361,15 @@ class SidebarControl(UIControl):
         else:
             body = self._build_integration_lines(width, bc)
 
-        # Adjust hit y-coords: body rows are offset by len(rows)
         offset = len(rows)
         self._hits = [(y + offset if y >= 2 else y + offset, x0, x1, fn)
                       for (y, x0, x1, fn) in self._hits]
 
         rows.extend(body)
 
-        # Pad to height with blank sidebar-styled lines.
         while len(rows) < height:
             rows.append([("class:sidebar", " " * width)])
 
-        # Trim if longer than height.
         if len(rows) > height:
             rows = rows[:height]
 
@@ -448,10 +379,6 @@ class SidebarControl(UIControl):
                                 else to_formatted_text([("class:sidebar", " " * width)]),
             line_count=len(formatted),
         )
-
-    # ------------------------------------------------------------------
-    # Mouse
-    # ------------------------------------------------------------------
 
     def mouse_handler(self, ev: MouseEvent):
         if ev.event_type != MouseEventType.MOUSE_UP:
@@ -464,10 +391,6 @@ class SidebarControl(UIControl):
         if self.state.sidebar_tab == TAB_SEARCH:
             self.search_focused = True
         return None
-
-    # ------------------------------------------------------------------
-    # Text input handling for search box
-    # ------------------------------------------------------------------
 
     def search_keystroke(self, char: str) -> None:
         self.search_text += char
@@ -484,25 +407,8 @@ class SidebarControl(UIControl):
             self.on_search_submit(text)
             self.search_text = ""
 
-    # ------------------------------------------------------------------
-    # Group-box layout helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _section(title: str, w: int, bc: dict) -> List:
-        """Group-box top border with caption.
-
-        Border chars render in ``sidebar.dim`` — plain and unobtrusive.
-        Only the title text uses ``sidebar.section`` colour so it stands
-        out without the whole row glowing.  Result looks like:
-
-            +- Display ----------------------+   (amber/green/retro — dim + and -)
-            +- Display ----------------------+   (win31 — same chars, different bg)
-
-        Win31's ``sidebar.section`` is white-on-navy so the title reads as
-        a mini title-bar label. CRT themes get accent-coloured text on a
-        dark bg without bold — plain 1980s terminal config style.
-        """
         h = bc["h"]
         tl = bc["tl"]
         tr = bc["tr"]
@@ -517,25 +423,15 @@ class SidebarControl(UIControl):
 
     @staticmethod
     def _section_end(w: int, bc: dict) -> List:
-        """Group-box bottom border."""
         text = group_box_bottom(w, bc)
         return [("class:sidebar.dim", text)]
 
     @staticmethod
     def _kv(label: str, value: str, w: int, bc: dict,
             hot: Optional[str] = None) -> List:
-        """Form-style key-value row inside a group box.
-
-        Format: ``| Label:   value [hot] |``
-
-        Rendered as label (sidebar.label) + value (sidebar.value) +
-        hotkey (sidebar.hotkey). The border chars (``|`` or ``│``) are
-        rendered in ``sidebar.dim``.
-        """
         v = bc["v"]
         label_str = " " + label + ":"
         hot_str = f" [{hot}]" if hot else ""
-        # Inner content width (excluding two border chars)
         inner = w - 2
         val_w = inner - len(label_str) - len(hot_str) - 1
         if val_w < 1:
@@ -553,17 +449,13 @@ class SidebarControl(UIControl):
             runs.append(("class:sidebar.hotkey", hot_str))
         runs.append(("class:sidebar.value", " "))
         runs.append(("class:sidebar.dim", v))
-        # Normalize: count chars consumed
         consumed = sum(len(t) for _, t in runs)
         if consumed < w:
-            # Insert padding before closing border
-            runs[-1] = ("class:sidebar.dim", v)  # pop placeholder
+            runs[-1] = ("class:sidebar.dim", v)
             runs.insert(-1, ("class:sidebar.value", " " * (w - consumed)))
         elif consumed > w:
-            # Trim value
             excess = consumed - w
             val = val[:-excess] if excess < len(val) else " "
-            # Rebuild
             runs = [
                 ("class:sidebar.dim",    v),
                 ("class:sidebar.label",  label_str),
@@ -575,7 +467,6 @@ class SidebarControl(UIControl):
             runs.append(("class:sidebar.dim", v))
         return runs
 
-
 def _human_bytes(n: float) -> str:
     if n < 1024:
         return f"{n:.0f} B"
@@ -583,15 +474,7 @@ def _human_bytes(n: float) -> str:
         return f"{n/1024:.1f} kB"
     return f"{n/1024/1024:.2f} MB"
 
-
-# ---------------------------------------------------------------------------
-# Container façade — what app.py uses
-# ---------------------------------------------------------------------------
-
-
 class Sidebar:
-    """Wrapper that gives the sidebar a ``__pt_container__`` and a width
-    that respects ``MapState.sidebar_visible``."""
 
     def __init__(
         self,
@@ -623,10 +506,6 @@ class Sidebar:
 
     def __pt_container__(self):
         return self.container
-
-    # ------------------------------------------------------------------
-    # Keybindings — registered when the sidebar takes focus.
-    # ------------------------------------------------------------------
 
     def keybindings(self) -> KeyBindings:
         kb = KeyBindings()

@@ -1,4 +1,3 @@
-"""Bottom status bar showing render mode, palette, latency, and info messages."""
 
 from __future__ import annotations
 
@@ -7,7 +6,6 @@ from prompt_toolkit.layout.controls import UIContent, UIControl
 
 from cartotui.config import Config
 from cartotui.ui.state import MapState
-
 
 class StatusBar(UIControl):
     def __init__(self, state: MapState, cfg: Config) -> None:
@@ -40,22 +38,17 @@ class StatusBar(UIControl):
         info = self.state.current_info()
         info_seg = f"⟨ {info} ⟩ " if info else ""
 
-        # Compose the line.
         runs = [("class:statusbar", left)]
-        # Middle: info message
         runs.append(("class:statusbar.dim", " " * 1))
         runs.append(("class:statusbar", info_seg))
-        # Filler then right
         rendered_left_mid = sum(len(t) for _s, t in runs)
         right_text = "".join(t for _s, t in right_parts)
         gap = max(0, width - rendered_left_mid - len(right_text))
         runs.append(("class:statusbar.dim", " " * gap))
         runs.extend(right_parts)
 
-        # Trim/pad to exactly width.
         rendered = "".join(t for _s, t in runs)
         if len(rendered) > width:
-            # crude truncation, preserve first/last segments
             runs = [("class:statusbar", rendered[:width])]
         elif len(rendered) < width:
             runs.append(("class:statusbar.dim", " " * (width - len(rendered))))

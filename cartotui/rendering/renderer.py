@@ -1,35 +1,3 @@
-"""Renderer dispatcher and three backends: ASCII, quadrant, braille.
-
-A render pass turns a Pillow RGB image into a list of styled rows suitable for
-prompt_toolkit's `FormattedText`. Each row is a list of (style, text) runs;
-adjacent cells with the same colour are merged so terminal output is compact.
-
-Backends:
-  * ASCII     — one cell per char, palette glyph by luminance, optional dither.
-  * Quadrant  — 2×2 subpixels per cell using Unicode block elements.
-  * Braille   — 2×4 subpixels per cell using Unicode braille patterns.
-
-# Smart braille → quadrant fallback
-
-Braille is great for rendering vector geometry (sharp 1-bit roads,
-building outlines) because each braille cell encodes 8 binary
-sub-pixels and the *binary-ness* matches the source. It's a bad fit
-for continuous-tone raster tiles (OSM-style cream-and-grey terrain
-with overlaid antialiased lines): every sub-pixel makes its own
-threshold decision, so flat land regions speckle and you can't read
-anything.
-
-The renderer detects this combination and silently downgrades to
-quadrant mode unless the caller explicitly opts out. The signal
-comes from the new ``source_kind`` argument to ``Renderer.render()``:
-when it's ``"raster"`` and ``mode == "braille"``, we route to the
-quadrant backend instead. The caller is told what happened via
-``Renderer.last_effective_mode`` so the status bar can show e.g.
-``BRAILLE→QUAD``.
-
-This can be turned off with ``auto_downgrade_braille_on_raster=False``
-on the Renderer for users who want the old behaviour back.
-"""
 
 from __future__ import annotations
 
@@ -56,47 +24,29 @@ __all__ = [
     "default_palettes",
 ]
 
-
 def default_palettes() -> Dict[str, str]:
     return {
-        # The keeper from the old set — uniform-width block shading.
         "shades":     " ░▒▓█",
-        # Fine 8-step block shading for richer tonal range.
         "blocks":     " ▁▂▃▄▅▆▇█",
-        # Dot density palette — sparse to dense circular fill.
         "dots":       " ·∙•●⬤",
-        # Hatching — diagonal stripes, evokes old map fills.
         "hatch":      " ░▒▓",
-        # Ink — high-contrast 3-step for strong B&W cartography look.
         "ink":        " ▒█",
-        # Topographic — block shades plus solid for "altitude" feel.
         "topo":       " ░▒▓█▓▒░ ",
-        # Heatmap-style — uses block elements for density steps.
         "heat":       " ░▒▓█",
-        # Mono dot — pure 2-level for crispest line work.
         "binary":     " █",
-        # DOS-style 11-step ASCII ramp — the classic text-art look.
-        # Pairs especially well with quadrant mode + bayer dither for
-        # a recognisable "Magellan / Garmin / DOS GPS" feel.
         "dos":        " .,:;+=*#%@",
-        # Same idea but coarser, 5 steps — good when you want the look
-        # without the density of the full ramp at small terminals.
         "dos5":       " .+#@",
     }
-
 
 def _rgb_to_style(r: int, g: int, b: int) -> str:
     return f"fg:#{r:02x}{g:02x}{b:02x}"
 
-
 def _luminance(arr_u8: np.ndarray) -> np.ndarray:
-    """Return Rec. 601 luminance in [0, 1] for an HxWx3 uint8 array."""
     return (
         0.299 * arr_u8[..., 0]
         + 0.587 * arr_u8[..., 1]
         + 0.114 * arr_u8[..., 2]
     ).astype(np.float32) / 255.0
-
 
 def _quantize(lum: np.ndarray, levels: int, mode: str) -> np.ndarray:
     if mode == "atkinson":
@@ -107,9 +57,7 @@ def _quantize(lum: np.ndarray, levels: int, mode: str) -> np.ndarray:
         return dither_mod.floyd_steinberg(lum, levels)
     return dither_mod.quantize_no_dither(lum, levels)
 
-
 def _emit_row(glyphs: List[str], styles: List[str]) -> LineFrag:
-    """Run-length-encode (style, glyph) pairs into a LineFrag."""
     if not glyphs:
         return [("", "")]
     out: LineFrag = []
@@ -125,13 +73,10 @@ def _emit_row(glyphs: List[str], styles: List[str]) -> LineFrag:
     out.append((cur_style, "".join(buf)))
     return out
 
-
 def _emit_row_color_fast(
-    glyphs: np.ndarray,    # 1-D array of single-char strings, shape (W,)
-    rgb: np.ndarray,       # 2-D uint8 array shape (W, 3)
+    glyphs: np.ndarray,
+    rgb: np.ndarray,
 ) -> LineFrag:
-    """Vectorised colour RLE. Builds a packed int per cell, finds runs in
-    numpy, and only formats the style string per *run* — not per pixel."""
     w = rgb.shape[0]
     if w == 0:
         return [("", "")]
@@ -149,12 +94,6 @@ def _emit_row_color_fast(
         out.append((style, "".join(glyph_list[s:e])))
     return out
 
-
-# ---------------------------------------------------------------------------
-# Backends
-# ---------------------------------------------------------------------------
-
-
 class AsciiBackend:
     name = "ascii"
 
@@ -166,8 +105,6 @@ class AsciiBackend:
     ) -> None:
         self.threshold_mode = threshold_mode
         self.percentile = float(percentile)
-        # `shaded` is unused in ASCII mode but accepted so the constructor is
-        # uniform across backends.
         self.shaded = bool(shaded)
 
     def render(
@@ -191,10 +128,6 @@ class AsciiBackend:
         glyph_chars = list(palette) if palette else list(" .")
         levels = len(glyph_chars)
         if dither and dither != "none":
-            # Flip orientation so 'feature' pixels (the contrast we want to
-            # see) become the high-luminance end of the dither input. After
-            # this, dither distributes error correctly on both light and
-            # dark themes.
             from cartotui.rendering.threshold import estimate_orientation
             flip_lum = lum if estimate_orientation(lum) == "dark" else (1.0 - lum)
             idx = _quantize(flip_lum, levels, dither)
@@ -216,15 +149,12 @@ class AsciiBackend:
                 frame.append([("", "".join(glyphs_arr[idx[y]].tolist()))])
         return frame
 
-
-# Quadrant glyphs indexed by 4-bit pattern (TL, TR, BL, BR).
 _QUAD_GLYPHS = [
     " ", "▗", "▖", "▄",
     "▝", "▐", "▞", "▟",
     "▘", "▚", "▌", "▙",
     "▀", "▜", "▛", "█",
 ]
-
 
 class QuadrantBackend:
     name = "quadrant"
@@ -321,8 +251,6 @@ class QuadrantBackend:
                 frame.append([("", "".join(cell_glyphs[y].tolist()))])
         return frame
 
-
-# Braille bit positions per (row, col) in a 4×2 sub-pixel block.
 _BRAILLE_BITS = np.array(
     [
         [0x01, 0x08],
@@ -332,7 +260,6 @@ _BRAILLE_BITS = np.array(
     ],
     dtype=np.uint8,
 )
-
 
 class BrailleBackend:
     name = "braille"
@@ -414,12 +341,6 @@ class BrailleBackend:
                 frame.append([("", "".join(chr(int(c)) for c in glyphs_int[y]))])
         return frame
 
-
-# ---------------------------------------------------------------------------
-# Dispatcher
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class Renderer:
     palettes: Dict[str, str]
@@ -427,14 +348,7 @@ class Renderer:
     subpixel_threshold: str = "adaptive"
     subpixel_percentile: float = 55.0
     shaded_blocks: bool = False
-    # When True (default), feeding a raster source into braille mode
-    # silently downgrades to quadrant. Continuous-tone raster + 8
-    # binary sub-pixels per cell = unreadable speckle. The downgrade
-    # gives flat tonal regions a single palette glyph per cell instead
-    # of a randomised stipple. Set False to opt out.
     auto_downgrade_braille_on_raster: bool = True
-    # Last mode actually used by render(). Different from the requested
-    # mode iff the auto-downgrade fired. The status bar reads this.
     last_effective_mode: str = field(default="ascii", init=False)
 
     def __post_init__(self) -> None:
@@ -488,27 +402,13 @@ class Renderer:
         return next(iter(self.palettes.values()), " .")
 
     def cell_pixel_size(self, mode: str) -> Tuple[int, int]:
-        """Return (width_px, height_px) per character cell for the given mode."""
         if mode == "quadrant":
             return 2, 2
         if mode == "braille":
             return 2, 4
-        return 1, 2  # ASCII: roughly square character footprint
+        return 1, 2
 
     def _resolve_mode(self, mode: str, source_kind: Optional[str]) -> str:
-        """Apply the auto-downgrade rule. Returns the mode actually used.
-
-        Continuous-tone raster + 8 binary braille sub-pixels per cell is
-        the canonical "completely unreadable" combination — flat land
-        regions of a 50% grey raster tile have noisy luminance, the
-        sub-pixel threshold flips on every neighbour, and the cell
-        becomes a randomised stipple instead of a coherent shade. Even
-        the threshold rewrite can't save this — the information density
-        is wrong for the destination format. The fix is to use a
-        2x2-subpixel cell instead, which thresholds 4 sub-pixels and
-        almost always finds them all on the same side, so cells become
-        single palette glyphs instead of stippled noise.
-        """
         if mode != "braille":
             return mode
         if source_kind != "raster":
@@ -528,16 +428,6 @@ class Renderer:
         dither: str = "none",
         source_kind: Optional[str] = None,
     ) -> FrameFrag:
-        """Render an image to a list of styled rows.
-
-        ``source_kind`` is a hint to the dispatcher: ``"raster"`` for
-        OSM-style continuous-tone tiles, ``"vector"`` for the output of
-        the vector rasteriser (binary-ish geometry already), ``None``
-        when the caller doesn't know. ``None`` is treated as "no
-        downgrade hint" — equivalent to ``"vector"`` for routing
-        purposes — which preserves backward compatibility for callers
-        that pre-date the smart-downgrade.
-        """
         effective_mode = self._resolve_mode(mode, source_kind)
         self.last_effective_mode = effective_mode
         backend = self._backends.get(effective_mode) or self._backends["ascii"]

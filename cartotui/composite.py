@@ -1,9 +1,3 @@
-"""Tile composition.
-
-Glue tiles together into a single RGB image centred on a target lat/lon and
-zoom, then apply image-level adjustments (brightness, contrast, gamma,
-sharpen, edge boost, invert) before handing off to a renderer.
-"""
 
 from __future__ import annotations
 
@@ -21,7 +15,6 @@ log = logging.getLogger("cartotui.composite")
 
 __all__ = ["composite_from_tiles", "tiles_for_view"]
 
-
 def tiles_for_view(
     lat: float,
     lon: float,
@@ -30,11 +23,6 @@ def tiles_for_view(
     height_px: int,
     margin_tiles: int = 1,
 ) -> Tuple[List[Tuple[int, int, int]], int, int, float, float]:
-    """Return (tiles, start_x, start_y, frac_xt, frac_yt) for a view.
-
-    `tiles` is a list of (z, x, y) triples; coordinates are wrapped in x for
-    the antimeridian and clipped in y so we never request invalid tiles.
-    """
     xt, yt = latlon_to_tile_xy(lat, lon, z)
     tx, ty = int(xt), int(yt)
     n = 2 ** z
@@ -54,7 +42,6 @@ def tiles_for_view(
             out.append((z, x, y))
     return out, start_x, start_y, xt, yt
 
-
 def composite_from_tiles(
     cache: TileCache,
     lat: float,
@@ -72,14 +59,12 @@ def composite_from_tiles(
     edge_boost: bool = False,
     invert: bool = False,
 ) -> Image.Image:
-    """Render a width_px × height_px image centred on (lat, lon) at zoom `z`."""
     width_px = max(1, int(width_px))
     height_px = max(1, int(height_px))
 
     tiles, start_x, start_y, xt, yt = tiles_for_view(lat, lon, z, width_px, height_px)
     n = 2 ** z
 
-    # Compute the tile grid dimensions actually used.
     tiles_x = math.ceil(width_px / TILE_SIZE) + 2
     tiles_y = math.ceil(height_px / TILE_SIZE) + 2
     base = Image.new("RGB", (tiles_x * TILE_SIZE, tiles_y * TILE_SIZE), (24, 26, 32))
@@ -88,24 +73,18 @@ def composite_from_tiles(
         img = cache.get_tile_with_overzoom(z_t, x_t, y_t, overzoom_levels)
         if img is None:
             continue
-        # Reverse the wrap to get the dx/dy slot in the grid.
         dy = y_t - start_y
-        # x_t was wrapped; figure out which dx slot it represents.
-        # We try every slot until we find one whose unwrapped value matches.
         for dx in range(tiles_x):
             if (start_x + dx) % n == x_t:
                 base.paste(img, (dx * TILE_SIZE, dy * TILE_SIZE))
                 break
 
-    # Crop centred on the target lat/lon.
     cx = (xt - start_x) * TILE_SIZE
     cy = (yt - start_y) * TILE_SIZE
     left = int(round(cx - width_px / 2))
     top = int(round(cy - height_px / 2))
     img = base.crop((left, top, left + width_px, top + height_px))
 
-    # Image-level adjustments. Each is wrapped because Pillow occasionally
-    # raises on weird inputs and a black tile is better than a crash.
     if brightness != 1.0:
         try:
             img = ImageEnhance.Brightness(img).enhance(brightness)
@@ -148,7 +127,6 @@ def composite_from_tiles(
 
     return img
 
-
 def prefetch_ring(
     cache: TileCache,
     lat: float,
@@ -158,7 +136,6 @@ def prefetch_ring(
     height_px: int,
     ring_radius: int = 1,
 ) -> Iterable[Tuple[int, int, int]]:
-    """Yield (z, x, y) tiles in a ring outside the current view, for prefetch."""
     visible, start_x, start_y, _xt, _yt = tiles_for_view(lat, lon, z, width_px, height_px)
     visible_set = set(visible)
     n = 2 ** z
