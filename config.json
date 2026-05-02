@@ -8,7 +8,7 @@
     "title": "CartoTUI"
   },
   "cache": {
-    "dir": "C:\\Users\\DEV\\AppData\\Local\\CartoTUI\\Cache\\tiles",
+    "dir": "C:\\Users\\*YOUR USERNAME*\\AppData\\Local\\CartoTUI\\Cache\\tiles",
     "max_bytes": 268435456,
     "prune_watermark": 0.85
   },
