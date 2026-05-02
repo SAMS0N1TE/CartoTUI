@@ -2,8 +2,6 @@
 
 > **Work in progress. Performance is currently poor.**
 
-# CartoTUI
-
 Interactive map viewer for the terminal with vector or raster tiles rendered as
 ASCII, Unicode quadrants, or braille.
 
