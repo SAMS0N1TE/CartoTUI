@@ -18,6 +18,8 @@ Full documentation is in the [wiki](https://github.com/SAMS0N1TE/CartoTUI/wiki).
   <img width="49%" src="https://github.com/user-attachments/assets/6c9655b4-73f0-4898-a193-355df6d324b4" />
 </p>
 
+<img width="2378" height="1353" alt="TUI4" src="https://github.com/user-attachments/assets/28798b99-3298-498c-829c-5dae81bf51f8" />
+
 ## License
 
 [MIT](LICENSE)
