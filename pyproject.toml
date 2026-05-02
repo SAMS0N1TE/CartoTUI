@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cartotui"
 version = "0.8.3"
-description = "Interactive ASCII map viewer for the terminal — vector tile rendering with retro nav-system aesthetics."
+description = "Interactive ASCII map viewer for the terminal — vector and raster tile rendering."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "SAMS0N1TE" }]
@@ -26,6 +26,7 @@ dependencies = [
     "numpy>=1.24",
     "requests>=2.31",
     "pmtiles>=3.4",
+    "pyserial>=3.5",
 ]
 
 [project.optional-dependencies]
