@@ -125,19 +125,6 @@ Three strategies for converting image luminance to "filled" sub-pixels:
 
 Cycle at runtime with `u`. The status bar shows the current mode.
 
-## Themes
-
-| Theme    | Look                                                       |
-|----------|------------------------------------------------------------|
-| `amber`  | Amber-on-black CRT, like an old Garmin (default)           |
-| `green`  | Green phosphor, like a Magellan or first-gen TomTom        |
-| `paper`  | Black ink on cream paper for daytime use                   |
-| `retro`  | The old v0.6 retro theme                                   |
-| `dark`   | Neutral dark                                               |
-| `light`  | Neutral light                                              |
-
-Cycle through them at runtime with `t`.
-
 ## Render modes & palettes
 
 The renderer turns an image into terminal characters by mapping luminance
@@ -148,10 +135,6 @@ The renderer turns an image into terminal characters by mapping luminance
 | `ascii`    | 1×1                 | Glyph picked from palette by luminance       |
 | `quadrant` | 2×2                 | Unicode block elements `▘▝▖▗▀▄▌▐█▙▟▚▞▛▜`     |
 | `braille`  | 2×4                 | Densest detail; eight sub-pixels per cell    |
-
-In v0.8, **palette length drives sub-pixel density** in all three backends.
-A 5-step palette like `shades` produces 5× more visual range in
-quadrant/braille mode than the old 1-bit behaviour.
 
 Default palettes (cycle with `p`):
 
@@ -246,13 +229,6 @@ self-hosting or using a commercial provider for heavy use.
 For vector tiles, recommended free options are Protomaps (hosted API or
 self-hosted PMTiles archives). See [protomaps.com](https://protomaps.com/).
 
-## Development
-
-```bash
-pip install -e ".[dev]"
-pytest               # 71 tests
-ruff check .
-```
 
 ## License
 
