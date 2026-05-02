@@ -22,4 +22,4 @@ Full documentation is in the [wiki](https://github.com/SAMS0N1TE/CartoTUI/wiki).
 
 ## License
 
-[MIT](LICENSE)
+[License](LICENSE)
