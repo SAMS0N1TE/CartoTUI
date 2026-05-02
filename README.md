@@ -20,6 +20,4 @@ Full documentation is in the [wiki](https://github.com/SAMS0N1TE/CartoTUI/wiki).
 
 <img width="2378" height="1353" alt="TUI4" src="https://github.com/user-attachments/assets/28798b99-3298-498c-829c-5dae81bf51f8" />
 
-## License
-
 [License](LICENSE)
