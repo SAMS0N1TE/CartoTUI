@@ -1,23 +1,23 @@
 """Traffic source factory.
 
 Builds the right ``TrafficSource`` for the user's config. Auto-detection
-of the LandShark wire format (JSONL vs ESP_LOG TUI) does *not* branch
+of the LakeShark wire format (JSONL vs ESP_LOG TUI) does *not* branch
 on baudrate any more — the two share a baud now, so the only reliable
 discriminator is what's actually on the wire. Sniffing happens inside
-``LandSharkSerialSource`` itself; the factory just picks the source
+``LakeSharkSerialSource`` itself; the factory just picks the source
 class the user asked for.
 
 # Source values
 
-  * ``"landshark"``     — JSONL events on a UART (preferred path).
-  * ``"landshark_tui"`` — ESP_LOG fallback parser (system console UART).
+  * ``"lakeshark"``     — JSONL events on a UART (preferred path).
+  * ``"lakeshark_tui"`` — ESP_LOG fallback parser (system console UART).
   * ``"sbs1"``          — TCP port 30003 of a dump1090 instance.
   * ``"disabled"``      — explicit no-op. Returns NullTrafficSource.
 
 # Auto-promote rules
 
 If ``traffic.enabled`` is True but ``source`` is ``"disabled"``, and a
-``landshark.port`` is configured, we promote to ``"landshark"``. This
+``lakeshark.port`` is configured, we promote to ``"lakeshark"``. This
 saves one round-trip of "I set port but nothing happens." Strings the
 factory doesn't recognise (typos like ``"enabled"`` or ``"true"``)
 fall through to NullTrafficSource — they are *not* auto-promoted, so
@@ -31,17 +31,17 @@ from typing import TYPE_CHECKING
 
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import LinkStatus, TrafficSource, NullTrafficSource
-from cartotui.traffic.landshark import (
+from cartotui.traffic.lakeshark import (
     DEFAULT_TX_PIN,
-    LandSharkSerialSource,
-    LandSharkReplaySource,
+    LakeSharkSerialSource,
+    LakeSharkReplaySource,
     looks_like_jsonl,
     parse_frame,
     split_frames,
     event_to_aircraft,
     event_to_status_update,
 )
-from cartotui.traffic.landshark_tui import LandSharkTUISource
+from cartotui.traffic.lakeshark_tui import LakeSharkTUISource
 from cartotui.traffic.sbs1 import SBS1TCPSource
 
 log = logging.getLogger("cartotui.traffic")
@@ -52,9 +52,9 @@ __all__ = [
     "LinkStatus",
     "TrafficSource",
     "NullTrafficSource",
-    "LandSharkSerialSource",
-    "LandSharkReplaySource",
-    "LandSharkTUISource",
+    "LakeSharkSerialSource",
+    "LakeSharkReplaySource",
+    "LakeSharkTUISource",
     "SBS1TCPSource",
     "build_source",
     "looks_like_jsonl",
@@ -80,30 +80,30 @@ def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
     enabled = bool(cfg.get("enabled", False))
     source = str(cfg.get("source", "disabled")).lower().strip()
 
-    # Auto-promote: enabled + port set + source is "disabled" → landshark.
+    # Auto-promote: enabled + port set + source is "disabled" → lakeshark.
     # We don't promote on unknown values so typos stay visible.
     if enabled and source == "disabled":
-        ls_cfg = cfg.get("landshark", {})
+        ls_cfg = cfg.get("lakeshark", {})
         if ls_cfg.get("port"):
-            log.info("Auto-promoting source=disabled → landshark "
+            log.info("Auto-promoting source=disabled → lakeshark "
                      "(traffic.enabled=true and port is set).")
-            source = "landshark"
+            source = "lakeshark"
 
     if not enabled:
         return NullTrafficSource(registry)
 
-    if source == "landshark":
-        ls = cfg.get("landshark", {})
-        return LandSharkSerialSource(
+    if source == "lakeshark":
+        ls = cfg.get("lakeshark", {})
+        return LakeSharkSerialSource(
             registry,
             port=str(ls.get("port", "")),
             baudrate=int(ls.get("baudrate", 115200)),
             tx_pin=int(ls.get("tx_pin", DEFAULT_TX_PIN)),
         )
 
-    if source == "landshark_tui":
-        ls = cfg.get("landshark", {})
-        return LandSharkTUISource(
+    if source == "lakeshark_tui":
+        ls = cfg.get("lakeshark", {})
+        return LakeSharkTUISource(
             registry,
             port=str(ls.get("port", "")),
             baudrate=int(ls.get("baudrate", 115200)),
@@ -124,7 +124,7 @@ def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
     # bad value in the sidebar detail so the user can spot the typo.
     log.warning(
         "Unrecognised traffic.source = %r; expected one of "
-        "'landshark', 'landshark_tui', 'sbs1', 'disabled'.", source,
+        "'lakeshark', 'lakeshark_tui', 'sbs1', 'disabled'.", source,
     )
     null = NullTrafficSource(registry)
     null._set_status(detail=f"unknown source: {source!r}")

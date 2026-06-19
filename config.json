@@ -64,7 +64,7 @@
   },
   "traffic": {
     "enabled": true,
-    "landshark": {
+    "lakeshark": {
       "baudrate": 115200,
       "format": "auto",
       "port": "COM29"
@@ -73,7 +73,7 @@
       "host": "localhost",
       "port": 30003
     },
-    "source": "landshark",
+    "source": "lakeshark",
     "stale_timeout_s": 60.0
   },
   "ui": {

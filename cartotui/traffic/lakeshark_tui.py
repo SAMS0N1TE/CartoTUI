@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import TrafficSource
 
-log = logging.getLogger("cartotui.traffic.landshark_tui")
+log = logging.getLogger("cartotui.traffic.lakeshark_tui")
 
 _PREFIX = r"\[(?P<src>\w+)\]\s+"
 
@@ -140,9 +140,9 @@ def fields_to_status_update(fields: dict) -> dict:
             pass
     return out
 
-class LandSharkTUISource(TrafficSource):
+class LakeSharkTUISource(TrafficSource):
 
-    name = "landshark-tui"
+    name = "lakeshark-tui"
 
     def __init__(
         self,
@@ -185,7 +185,7 @@ class LandSharkTUISource(TrafficSource):
                 ser = self._open_serial()
             except Exception as e:
                 self._set_status(connected=False, detail=f"open failed: {e}")
-                log.warning("LandShark TUI open failed: %s", e)
+                log.warning("LakeShark TUI open failed: %s", e)
                 if self._stop_evt.wait(timeout=backoff):
                     return
                 backoff = min(backoff * 2, 8.0)
@@ -244,7 +244,7 @@ class LandSharkTUISource(TrafficSource):
                         self.registry.prune_stale(now)
                         last_prune = now
             except Exception as e:
-                log.warning("LandShark TUI read failed: %s", e)
+                log.warning("LakeShark TUI read failed: %s", e)
                 self._set_status(connected=False, detail=f"read error: {e}")
                 try:
                     ser.close()

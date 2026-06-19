@@ -193,7 +193,7 @@ class SidebarControl(UIControl):
         registry = self.get_registry()
         v = bc["v"]
 
-        lines.append(self._section("LandShark Link", w, bc))
+        lines.append(self._section("LakeShark Link", w, bc))
         if traffic is None:
             lines.append([("class:sidebar.dim", (v + " not configured").ljust(w - 1) + v)])
             lines.append(self._section_end(w, bc))
@@ -234,7 +234,7 @@ class SidebarControl(UIControl):
 
         if (st.bytes_per_sec > 100 and st.msgs_per_sec < 0.1
                 and st.messages_total == 0):
-            ls_cfg = self.cfg.get("traffic", {}).get("landshark", {})
+            ls_cfg = self.cfg.get("traffic", {}).get("lakeshark", {})
             tx_pin = int(ls_cfg.get("tx_pin", 48))
             baud = int(ls_cfg.get("baudrate", 115200))
             lines.append([("class:sidebar.warn",

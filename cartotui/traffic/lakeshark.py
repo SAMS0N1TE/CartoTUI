@@ -10,7 +10,7 @@ from typing import Callable, Iterable, Iterator, Optional, Tuple
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import LinkStatus, TrafficSource
 
-log = logging.getLogger("cartotui.traffic.landshark")
+log = logging.getLogger("cartotui.traffic.lakeshark")
 
 RS = 0x1E
 
@@ -249,9 +249,9 @@ def looks_like_jsonl(buf: bytes) -> bool:
 
 DEFAULT_TX_PIN = 48
 
-class LandSharkSerialSource(TrafficSource):
+class LakeSharkSerialSource(TrafficSource):
 
-    name = "landshark"
+    name = "lakeshark"
 
     def __init__(
         self,
@@ -294,7 +294,7 @@ class LandSharkSerialSource(TrafficSource):
                 ser = self._open_serial()
             except Exception as e:
                 self._set_status(connected=False, detail=f"open failed: {e}")
-                log.warning("LandShark serial open failed: %s", e)
+                log.warning("LakeShark serial open failed: %s", e)
                 if self._stop_evt.wait(timeout=backoff):
                     return
                 backoff = min(backoff * 2, 8.0)
@@ -352,7 +352,7 @@ class LandSharkSerialSource(TrafficSource):
                         self.registry.prune_stale(now)
                         last_prune = now
             except Exception as e:
-                log.warning("LandShark serial read failed: %s", e)
+                log.warning("LakeShark serial read failed: %s", e)
                 self._set_status(connected=False, detail=f"read error: {e}")
                 try:
                     ser.close()
@@ -384,9 +384,9 @@ class LandSharkSerialSource(TrafficSource):
 
         self.registry.upsert(ac)
 
-class LandSharkReplaySource(TrafficSource):
+class LakeSharkReplaySource(TrafficSource):
 
-    name = "landshark-replay"
+    name = "lakeshark-replay"
 
     def __init__(
         self,

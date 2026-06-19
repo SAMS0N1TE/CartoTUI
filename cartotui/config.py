@@ -101,7 +101,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": False,
         "source": "disabled",
         "stale_timeout_s": 60.0,
-        "landshark": {
+        "lakeshark": {
             "port": "",
             "baudrate": 115200,
             "format": "auto",
