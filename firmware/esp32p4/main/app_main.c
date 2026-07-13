@@ -2,7 +2,6 @@
 #include "carto/raster.h"
 
 #include "bsp/esp-bsp.h"
-#include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -11,7 +10,6 @@
 
 #define MAP_W 720
 #define MAP_H 720
-#define LANE_BIT_RATE_MBPS 480
 
 static const char *TAG = "cartomap";
 
@@ -35,12 +33,7 @@ static void draw_test_scene(carto_framebuffer *fb, const carto_style *s) {
 }
 
 void app_main(void) {
-    bsp_display_config_t disp_cfg = {
-        .dsi_bus = {
-            .phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
-            .lane_bit_rate_mbps = LANE_BIT_RATE_MBPS,
-        },
-    };
+    bsp_display_config_t disp_cfg = {0};
 
     esp_lcd_panel_handle_t panel = NULL;
     esp_lcd_panel_io_handle_t io = NULL;
