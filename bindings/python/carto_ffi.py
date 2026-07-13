@@ -50,6 +50,22 @@ class Renderer:
         self._style = (c_char * 256)()
         L.carto_style_default(cast(self._style, c_void_p))
 
+        self._tile_cache = {}
+        self._tile_lru = []
+        self._tile_cache_max = 512
+
+    def _store_tile(self, k, raw):
+        buf = None
+        if raw:
+            arr = (c_ubyte * len(raw)).from_buffer_copy(raw)
+            buf = (arr, len(raw))
+        self._tile_cache[k] = buf
+        self._tile_lru.append(k)
+        if len(self._tile_lru) > self._tile_cache_max:
+            old = self._tile_lru.pop(0)
+            self._tile_cache.pop(old, None)
+        return buf
+
     def render_tile(self, tile: bytes, z: int, x: int, y: int, w: int, h: int) -> bytes:
         L = self.lib
         arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
@@ -87,15 +103,28 @@ class Renderer:
         ty0 = int(math.floor((cy - h / 2.0) / tile_px))
         ty1 = int(math.floor((cy + h / 2.0) / tile_px))
 
-        drawn = 0
+        tiles = []
         for ty in range(ty0, ty1 + 1):
             for tx in range(tx0, tx1 + 1):
-                if tx < 0 or ty < 0 or tx >= n or ty >= n:
-                    continue
-                tile = fetch(z, tx, ty)
-                if tile:
-                    mvt = (c_ubyte * len(tile)).from_buffer_copy(tile)
-                    L.carto_render_tile(ctx, mvt, len(tile), tx, ty, z)
-                    drawn += 1
+                if 0 <= tx < n and 0 <= ty < n:
+                    tiles.append((tx, ty))
+
+        missing = [(z, tx, ty) for (tx, ty) in tiles if (z, tx, ty) not in self._tile_cache]
+        if len(missing) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(missing))) as ex:
+                for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
+                    self._store_tile(k, raw)
+        elif missing:
+            k = missing[0]
+            self._store_tile(k, fetch(k[0], k[1], k[2]))
+
+        drawn = 0
+        for (tx, ty) in tiles:
+            buf = self._tile_cache.get((z, tx, ty))
+            if buf:
+                arr, ln = buf
+                L.carto_render_tile(ctx, arr, ln, tx, ty, z)
+                drawn += 1
         L.carto_end(ctx)
         return bytes(pixels), drawn
