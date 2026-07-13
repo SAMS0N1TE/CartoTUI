@@ -8,9 +8,13 @@
 extern "C" {
 #endif
 
+typedef struct { int x, y; } carto_ipt;
+
 uint16_t carto_rgb565(carto_rgb c);
 
 void carto_put_px(carto_framebuffer *fb, int x, int y, carto_rgb c);
+void carto_fill_polygon(carto_framebuffer *fb, const carto_ipt *pts, int n, carto_rgb c);
+void carto_polyline(carto_framebuffer *fb, const carto_ipt *pts, int n, int width, carto_rgb c);
 void carto_fill_rect(carto_framebuffer *fb, int x, int y, int w, int h, carto_rgb c);
 void carto_draw_line(carto_framebuffer *fb, int x0, int y0, int x1, int y1,
                      int width, carto_rgb c);

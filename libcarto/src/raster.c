@@ -62,6 +62,51 @@ void carto_draw_line(carto_framebuffer *fb, int x0, int y0, int x1, int y1,
     }
 }
 
+void carto_polyline(carto_framebuffer *fb, const carto_ipt *pts, int n, int width, carto_rgb c) {
+    if (!fb || !pts || n < 2) return;
+    for (int i = 0; i + 1 < n; ++i)
+        carto_draw_line(fb, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, width, c);
+}
+
+void carto_fill_polygon(carto_framebuffer *fb, const carto_ipt *pts, int n, carto_rgb c) {
+    if (!fb || !pts || n < 3) return;
+
+    int miny = pts[0].y, maxy = pts[0].y;
+    for (int i = 1; i < n; ++i) {
+        if (pts[i].y < miny) miny = pts[i].y;
+        if (pts[i].y > maxy) maxy = pts[i].y;
+    }
+    if (miny < 0) miny = 0;
+    if (maxy >= fb->height) maxy = fb->height - 1;
+
+    int xints[2048];
+    for (int y = miny; y <= maxy; ++y) {
+        double yc = (double)y + 0.5;
+        int cnt = 0;
+        for (int i = 0; i < n; ++i) {
+            int j = (i + 1) % n;
+            double y0 = pts[i].y, y1 = pts[j].y;
+            double x0 = pts[i].x, x1 = pts[j].x;
+            if ((y0 <= yc && y1 > yc) || (y1 <= yc && y0 > yc)) {
+                double t = (yc - y0) / (y1 - y0);
+                int xi = (int)(x0 + t * (x1 - x0));
+                if (cnt < 2048) xints[cnt++] = xi;
+            }
+        }
+        for (int a = 1; a < cnt; ++a) {
+            int key = xints[a], b = a - 1;
+            while (b >= 0 && xints[b] > key) { xints[b + 1] = xints[b]; --b; }
+            xints[b + 1] = key;
+        }
+        for (int k = 0; k + 1 < cnt; k += 2) {
+            int xa = xints[k], xb = xints[k + 1];
+            if (xa < 0) xa = 0;
+            if (xb >= fb->width) xb = fb->width - 1;
+            for (int x = xa; x <= xb; ++x) carto_put_px(fb, x, y, c);
+        }
+    }
+}
+
 static int carto_edge(int ax, int ay, int bx, int by, int px, int py) {
     return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
 }
