@@ -118,23 +118,20 @@ class CartoTUIApp:
 
         vp = self.cfg["viewport"]
 
-        floats = []
-        if vp.get("show_toolbar", True):
-            self.toolbar_window = Window(
-                content=self.toolbar, height=4, style="class:toolbar")
-            floats.append(Float(content=self.toolbar_window, bottom=1, left=2, right=2))
+        floats = [Float(
+            content=self.sidebar.container,
+            top=1, bottom=1, right=1, width=self.sidebar.width_chars,
+        )]
         map_area = FloatContainer(content=self.map_window, floats=floats)
 
         rows = []
         if vp.get("show_titlebar", True):
             rows.append(Window(content=self.titlebar, height=1, style="class:titlebar"))
 
-        body = VSplit([
-            map_area,
-            self.sidebar,
-        ])
-        rows.append(body)
+        rows.append(map_area)
 
+        if vp.get("show_toolbar", True):
+            rows.append(Window(content=self.toolbar, height=1, style="class:toolbar"))
         if vp.get("show_statusbar", True):
             rows.append(Window(content=self.statusbar, height=1, style="class:statusbar"))
 

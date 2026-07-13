@@ -7,7 +7,6 @@ from prompt_toolkit.formatted_text import to_formatted_text
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
-from cartotui.themes import border_chars
 from cartotui.ui.map_control import MapControl
 from cartotui.ui.state import MapState
 
@@ -28,7 +27,6 @@ _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
     ("R",   "Reset"),
 ]
 
-_ROWS = [_TOOLBAR_ITEMS[0:7], _TOOLBAR_ITEMS[7:14]]
 _MOVE = getattr(MouseEventType, "MOUSE_MOVE", None)
 
 
@@ -41,7 +39,7 @@ def _is_disabled(state, key: str) -> bool:
     return False
 
 
-def _clip_runs(runs, width, fill="class:toolbar"):
+def _clip_runs(runs, width):
     out = []
     used = 0
     for style, text in runs:
@@ -53,7 +51,7 @@ def _clip_runs(runs, width, fill="class:toolbar"):
             out.append((style, text))
             used += len(text)
     if used < width:
-        out.append((fill, " " * (width - used)))
+        out.append(("class:toolbar", " " * (width - used)))
     return out
 
 
@@ -78,23 +76,22 @@ class Toolbar(UIControl):
         self.on_theme_changed = on_theme_changed
         self.on_cycle_source = on_cycle_source
 
-        self._hit_zones: List[Tuple[int, int, int, str]] = []
+        self._hit_zones: List[Tuple[int, int, str]] = []
         self._hover_key: Optional[str] = None
         self._press_key: Optional[str] = None
 
     def is_focusable(self) -> bool:
         return False
 
-    def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
-        return 4
+    def create_content(self, width: int, height: int) -> UIContent:
+        w = max(4, width)
+        runs = []
+        zones: List[Tuple[int, int, str]] = []
+        col = 0
+        runs.append(("class:toolbar", " "))
+        col += 1
 
-    def _bc(self) -> dict:
-        ui = self.state.cfg["ui"]
-        return border_chars(ui.get("border_style", "heavy"), ui.get("theme", "amber"))
-
-    def _button_row(self, items, inner_w, panel_line, xoff, zones):
-        segs = []
-        for key, label in items:
+        for key, label in _TOOLBAR_ITEMS:
             disabled = _is_disabled(self.state, key)
             pressed = (not disabled) and self._press_key == key
             hover = (not disabled) and not pressed and self._hover_key == key
@@ -106,55 +103,33 @@ class Toolbar(UIControl):
                 box = kc = lc = "class:toolbar reverse"
             else:
                 box, kc, lc = "class:toolbar.dim", "class:toolbar.key", "class:toolbar"
-            seg = [(box, "["), (kc, key), (lc, " " + label), (box, "]")]
-            segs.append((seg, len(key) + len(label) + 3, key))
 
-        total = sum(sw for _, sw, _ in segs) + max(0, len(segs) - 1)
-        lead = max(0, (inner_w - total) // 2)
-        runs = [("class:toolbar", " " * lead)]
-        x = lead
-        for i, (seg, sw, key) in enumerate(segs):
-            zones.append((panel_line, x + xoff, x + sw + xoff, key))
-            runs.extend(seg)
-            x += sw
-            if i < len(segs) - 1:
-                runs.append(("class:toolbar", " "))
-                x += 1
-        return _clip_runs(runs, inner_w)
+            zs = col
+            runs.append((box, "["))
+            runs.append((kc, key))
+            runs.append((lc, " " + label))
+            runs.append((box, "]"))
+            col += 1 + len(key) + 1 + len(label) + 1
+            zones.append((zs, col, key))
+            runs.append(("class:toolbar", " "))
+            col += 1
 
-    def create_content(self, width: int, height: int) -> UIContent:
-        w = max(6, width)
-        inner = w - 2
-        bc = self._bc()
-        h, v = bc["h"], bc["v"]
-        tl, tr, bl, br = bc["tl"], bc["tr"], bc["bl"], bc["br"]
-
-        zones: List[Tuple[int, int, int, str]] = []
-        r1 = self._button_row(_ROWS[0], inner, 1, 1, zones)
-        r2 = self._button_row(_ROWS[1], inner, 2, 1, zones)
         self._hit_zones = zones
-
-        top = [("class:toolbar", tl + h * inner + tr)]
-        mid1 = [("class:toolbar", v)] + r1 + [("class:toolbar", v)]
-        mid2 = [("class:toolbar", v)] + r2 + [("class:toolbar", v)]
-        bottom = [("class:toolbar", bl + h * inner + br)]
-        lines = [to_formatted_text(x) for x in (top, mid1, mid2, bottom)]
-
+        formatted = to_formatted_text(_clip_runs(runs, w))
         return UIContent(
-            get_line=lambda i: lines[i] if 0 <= i < len(lines)
-                                else [("class:toolbar", " " * w)],
-            line_count=len(lines),
+            get_line=lambda i: formatted if i == 0 else [("class:toolbar", " " * w)],
+            line_count=1,
         )
 
-    def _key_at(self, x: int, y: int) -> Optional[str]:
-        for (py, x0, x1, key) in self._hit_zones:
-            if py == y and x0 <= x < x1:
+    def _key_at(self, x: int) -> Optional[str]:
+        for (x0, x1, key) in self._hit_zones:
+            if x0 <= x < x1:
                 return key
         return None
 
     def mouse_handler(self, mouse_event: MouseEvent):
         et = mouse_event.event_type
-        key = self._key_at(mouse_event.position.x, mouse_event.position.y)
+        key = self._key_at(mouse_event.position.x)
         changed = False
 
         if et == MouseEventType.MOUSE_DOWN:
