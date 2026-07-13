@@ -60,6 +60,18 @@ raster panning responsive: while you pan it uses only already-cached tiles
 real tiles in the background, then reloads full quality when you stop — like a
 web map. Turn it off with `set render.dynamic_quality false`.
 
+## Performance
+
+A full-colour terminal map is dominated by the colour escape codes the terminal
+has to parse — a 120×50 map is ~170 KB per frame in truecolor. Two knobs help,
+especially on slower terminals:
+
+- **Colours** (Render widget → Colours, or `set render.color_depth 256`) —
+  256-colour cuts per-frame output ~35%, 16-colour ~65%, with little visible
+  loss on a terminal map. Takes effect live.
+- **Max FPS** (`set ui.max_fps 30`) — caps and coalesces redraws so input stays
+  responsive during fast panning; lower it on slow terminals.
+
 ## Snapshots
 
 Click `[PNG]` or `[HTML]` in the top-right of the title bar, press `x` for a PNG,

@@ -80,6 +80,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "road_highlight": False,
         "raster_tint": "none",
         "dynamic_quality": True,
+        "color_depth": "truecolor",
     },
     "prefetch": {
         "enable": True,
@@ -93,6 +94,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "show_latency": True,
         "pan_step_cells": 6,
         "panels": [],
+        "max_fps": 30,
     },
     "aircraft_trails": {
         "enabled": True,
@@ -314,6 +316,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["road_highlight"] = _coerce_bool(r.get("road_highlight"), False)
     r["raster_tint"] = _coerce_choice(r.get("raster_tint"), ("none", "theme"), "none")
     r["dynamic_quality"] = _coerce_bool(r.get("dynamic_quality"), True)
+    r["color_depth"] = _coerce_choice(r.get("color_depth"), ("truecolor", "256", "16"), "truecolor")
 
     pf = c["prefetch"]
     pf["enable"]       = _coerce_bool(pf.get("enable"), DEFAULT_CONFIG["prefetch"]["enable"])
@@ -327,6 +330,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                          DEFAULT_CONFIG["ui"]["border_style"])
     ui["show_latency"] = _coerce_bool(ui.get("show_latency"), True)
     ui["pan_step_cells"] = _coerce_int(ui.get("pan_step_cells"), 6, (1, 64))
+    ui["max_fps"] = _coerce_int(ui.get("max_fps"), 30, (5, 120))
     if not isinstance(ui.get("panels"), list):
         ui["panels"] = []
 

@@ -27,6 +27,10 @@ class RenderWidget(Widget):
                     width, action=self._toggle_tint)
         self.add_kv("Pan quality", "dynamic" if r.get("dynamic_quality", True) else "full",
                     width, action=self._toggle_dynamic)
+        self.add_kv("Colours", {"truecolor": "truecolor", "256": "256 (faster)",
+                                "16": "16 (fastest)"}.get(r.get("color_depth", "truecolor"),
+                                                          r.get("color_depth", "truecolor")),
+                    width, action=self._cycle_depth)
         scale = int(r.get("vector_scale", 6))
         self.add_kv("Quality", _QUALITY.get(scale, str(scale)), width, action=self._cycle_quality)
         self.add_section("Image", width)
@@ -61,6 +65,17 @@ class RenderWidget(Widget):
     def _toggle_dynamic(self) -> None:
         cur = bool(self.ctx.cfg["render"].get("dynamic_quality", True))
         self._apply({"render": {"dynamic_quality": not cur}})
+
+    def _cycle_depth(self) -> None:
+        order = ["truecolor", "256", "16"]
+        cur = self.ctx.cfg["render"].get("color_depth", "truecolor")
+        i = order.index(cur) if cur in order else 0
+        self.ctx.cfg.update({"render": {"color_depth": order[(i + 1) % len(order)]}})
+        try:
+            self.ctx.cfg.save()
+        except Exception:
+            pass
+        self.ctx.refresh()
 
     def _cycle_quality(self) -> None:
         order = [3, 4, 6, 8]

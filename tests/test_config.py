@@ -39,6 +39,15 @@ def test_dynamic_quality_defaults():
     assert _validate({"render": {"dynamic_quality": False}})["render"]["dynamic_quality"] is False
 
 
+def test_perf_settings():
+    c = _validate({})
+    assert c["ui"]["max_fps"] == 30
+    assert c["render"]["color_depth"] == "truecolor"
+    assert _validate({"ui": {"max_fps": 999}})["ui"]["max_fps"] == 120
+    assert _validate({"render": {"color_depth": "bad"}})["render"]["color_depth"] == "truecolor"
+    assert _validate({"render": {"color_depth": "256"}})["render"]["color_depth"] == "256"
+
+
 def test_unknown_nested_keys_preserved():
     c = _validate({"traffic": {"lakeshark": {"tx_pin": 48, "baudrate": 921600}}})
     assert c["traffic"]["lakeshark"]["tx_pin"] == 48

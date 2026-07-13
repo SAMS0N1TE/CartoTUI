@@ -172,12 +172,18 @@ class CartoTUIApp:
 
         self.kb = self._build_key_bindings()
         self._current_style = make_style(self.cfg)
+        from prompt_toolkit.output import ColorDepth
+        _depths = {"truecolor": ColorDepth.DEPTH_24_BIT,
+                   "256": ColorDepth.DEPTH_8_BIT, "16": ColorDepth.DEPTH_4_BIT}
+        max_fps = int(self.cfg["ui"].get("max_fps", 30))
         self.app = Application(
             layout=Layout(self.root, focused_element=self.map_window),
             key_bindings=self.kb,
             full_screen=True,
             mouse_support=bool(self.cfg["ui"].get("mouse", True)),
             style=DynamicStyle(lambda: self._current_style),
+            color_depth=lambda: _depths.get(self.cfg["render"].get("color_depth", "truecolor")),
+            min_redraw_interval=1.0 / max(5, max_fps),
             refresh_interval=0.5,
         )
 
