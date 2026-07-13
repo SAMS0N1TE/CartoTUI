@@ -1,6 +1,6 @@
 from PIL import Image
 
-from cartotui.radar import RadarSource, _is_precip_tile, RADAR_MAX_Z
+from cartotui.radar import RADAR_MAX_Z, RadarSource, _is_precip_tile
 
 
 def _stub():

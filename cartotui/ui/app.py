@@ -400,19 +400,22 @@ class CartoTUIApp:
 
     def _apply_theme_render(self, name: str) -> None:
         from cartotui import theme_loader
-        rp = theme_loader.theme_render(name)
-        if not rp:
-            return
+        from cartotui.config import DEFAULT_CONFIG
+        rp = theme_loader.theme_render(name) or {}
         st = self.state
-        try:
-            if "brightness" in rp:
-                st.brightness = max(0.2, min(3.0, float(rp["brightness"])))
-            if "contrast" in rp:
-                st.contrast = max(0.2, min(3.0, float(rp["contrast"])))
-        except (TypeError, ValueError):
-            pass
-        if rp.get("dither") in ("none", "bayer", "atkinson", "floyd"):
-            st.dither = rp["dither"]
+        dr = DEFAULT_CONFIG["render"]
+
+        def _num(key, default):
+            try:
+                return max(0.2, min(3.0, float(rp[key])))
+            except (KeyError, TypeError, ValueError):
+                return float(default)
+
+        st.brightness = _num("brightness", dr["brightness"])
+        st.contrast = _num("contrast", dr["contrast"])
+        dith = rp.get("dither", dr["dither"])
+        st.dither = dith if dith in ("none", "bayer", "atkinson", "floyd") else dr["dither"]
+
         if rp.get("palette"):
             st.palette = str(rp["palette"])
         if rp.get("view") in ("ascii", "quadrant", "braille", "half"):

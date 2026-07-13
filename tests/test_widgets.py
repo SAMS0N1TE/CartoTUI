@@ -1,9 +1,12 @@
 from cartotui.config import Config
+from cartotui.snapshot import frame_to_html
 from cartotui.ui.state import MapState
 from cartotui.ui.widgets import (
-    WidgetContext, WidgetManager, DEFAULT_WIDGET_ORDER, widget_names,
+    DEFAULT_WIDGET_ORDER,
+    WidgetContext,
+    WidgetManager,
+    widget_names,
 )
-from cartotui.snapshot import frame_to_html
 
 
 def _manager():

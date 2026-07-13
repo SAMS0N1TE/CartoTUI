@@ -1,8 +1,8 @@
 import numpy as np
 from PIL import Image
 
-from cartotui.rendering.renderer import Renderer, default_palettes, _resample
-from cartotui.rendering.libcarto_backend import _rgb565_to_image, _rgb565_lut
+from cartotui.rendering.libcarto_backend import _rgb565_lut, _rgb565_to_image
+from cartotui.rendering.renderer import Renderer, _resample, default_palettes
 
 
 def _img(w=720, h=600):

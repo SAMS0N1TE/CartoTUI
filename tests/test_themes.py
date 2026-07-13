@@ -1,6 +1,6 @@
 from cartotui import theme_loader as T
-from cartotui.themes import theme_vector_style, apply_road_highlight, make_style
 from cartotui.config import Config
+from cartotui.themes import apply_road_highlight, make_style, theme_vector_style
 
 
 def test_all_builtins_present():

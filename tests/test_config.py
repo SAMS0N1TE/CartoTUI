@@ -1,4 +1,4 @@
-from cartotui.config import _validate, DEFAULT_CONFIG
+from cartotui.config import DEFAULT_CONFIG, _validate
 
 
 def test_defaults_roundtrip():
