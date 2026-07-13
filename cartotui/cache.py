@@ -77,7 +77,8 @@ class TileCache:
     def _ensure_dir(self, p: Path) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
 
-    def get_tile_exact(self, z: int, x: int, y: int) -> Optional[Image.Image]:
+    def get_tile_exact(self, z: int, x: int, y: int,
+                       cached_only: bool = False) -> Optional[Image.Image]:
         n = 2 ** z
         if not (0 <= x < n and 0 <= y < n):
             return None
@@ -93,6 +94,8 @@ class TileCache:
                 except OSError:
                     pass
 
+        if cached_only:
+            return None
         return self._download(z, x, y)
 
     def get_tile_with_overzoom(
@@ -101,8 +104,9 @@ class TileCache:
         x: int,
         y: int,
         overzoom_levels: int = 2,
+        cached_only: bool = False,
     ) -> Optional[Image.Image]:
-        img = self.get_tile_exact(z, x, y)
+        img = self.get_tile_exact(z, x, y, cached_only=cached_only)
         if img is not None:
             return img
 
@@ -111,7 +115,8 @@ class TileCache:
             if parent_z < 0:
                 break
             factor = 2 ** step
-            parent = self.get_tile_exact(parent_z, x // factor, y // factor)
+            parent = self.get_tile_exact(parent_z, x // factor, y // factor,
+                                         cached_only=cached_only)
             if parent is None:
                 continue
             sub_w = parent.width // factor

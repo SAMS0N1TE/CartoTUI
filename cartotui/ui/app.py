@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
 from prompt_toolkit.styles import DynamicStyle
 
 from cartotui.cache import TileCache
@@ -17,7 +19,8 @@ from cartotui.config import Config
 from cartotui.rendering.renderer import Renderer, default_palettes
 from cartotui.sources import build_source_list
 from cartotui.themes import make_style
-from cartotui.traffic import AircraftRegistry, build_source as build_traffic_source
+from cartotui.traffic import AircraftRegistry
+from cartotui.traffic import build_source as build_traffic_source
 from cartotui.ui.compass import Compass
 from cartotui.ui.goto import GotoPrompt
 from cartotui.ui.helppane import HelpPane
@@ -27,6 +30,7 @@ from cartotui.ui.state import MapState
 from cartotui.ui.statusbar import StatusBar
 from cartotui.ui.titlebar import TitleBar
 from cartotui.ui.toolbar import Toolbar
+from cartotui.ui.widgets import DEFAULT_WIDGET_ORDER, WidgetContext, WidgetManager
 from cartotui.vector_source import VectorTileSource
 
 log = logging.getLogger("cartotui.app")
@@ -77,7 +81,8 @@ class CartoTUIApp:
             on_select_aircraft=self._on_select_aircraft,
         )
 
-        self.titlebar = TitleBar(self.state, title=self.cfg["app"].get("title", "CartoTUI"))
+        self.titlebar = TitleBar(self.state, title=self.cfg["app"].get("title", "CartoTUI"),
+                                 on_snapshot=self._snapshot)
         self.statusbar = StatusBar(self.state, self.cfg)
         self.compass = Compass(self.state)
         self.help_pane = HelpPane()
@@ -94,6 +99,7 @@ class CartoTUIApp:
         )
         self.sidebar.control.on_perf_changed = (
             lambda: self.map_control.request_render(force=True))
+        self.sidebar.control.on_hide = self._hide_sidebar
 
         palettes = list(default_palettes().keys())
         self.toolbar = Toolbar(
@@ -116,13 +122,36 @@ class CartoTUIApp:
         )
         self.map_control.bind_window(self.map_window)
 
+        self.widget_manager = WidgetManager(
+            WidgetContext(
+                state=self.state,
+                cfg=self.cfg,
+                map_control=self.map_control,
+                aircraft_registry=self.aircraft_registry,
+                get_traffic=lambda: self.traffic_source,
+                on_theme_changed=self._reload_theme,
+                request_render=lambda: self.map_control.request_render(force=True),
+                invalidate=self._invalidate,
+                snapshot=self._snapshot,
+                save_profile=self._save_profile,
+            ),
+            order=DEFAULT_WIDGET_ORDER,
+        )
+        self.map_control.widget_manager = self.widget_manager
+
+        from cartotui.radar import RadarSource
+        self.radar_source = RadarSource(user_agent=ncfg["user_agent"])
+        self.map_control.radar_source = self.radar_source
+        self._radar_stop = threading.Event()
+
         vp = self.cfg["viewport"]
 
         floats = [Float(
             content=self.sidebar.container,
             top=1, right=1, width=self.sidebar.width_chars,
         )]
-        map_area = FloatContainer(content=self.map_window, floats=floats)
+        map_area = FloatContainer(content=self.map_window, floats=list(floats))
+        self.widget_manager.attach(map_area, floats)
 
         rows = []
         if vp.get("show_titlebar", True):
@@ -143,12 +172,18 @@ class CartoTUIApp:
 
         self.kb = self._build_key_bindings()
         self._current_style = make_style(self.cfg)
+        from prompt_toolkit.output import ColorDepth
+        _depths = {"truecolor": ColorDepth.DEPTH_24_BIT,
+                   "256": ColorDepth.DEPTH_8_BIT, "16": ColorDepth.DEPTH_4_BIT}
+        max_fps = int(self.cfg["ui"].get("max_fps", 30))
         self.app = Application(
             layout=Layout(self.root, focused_element=self.map_window),
             key_bindings=self.kb,
             full_screen=True,
             mouse_support=bool(self.cfg["ui"].get("mouse", True)),
             style=DynamicStyle(lambda: self._current_style),
+            color_depth=lambda: _depths.get(self.cfg["render"].get("color_depth", "truecolor")),
+            min_redraw_interval=1.0 / max(5, max_fps),
             refresh_interval=0.5,
         )
 
@@ -156,13 +191,140 @@ class CartoTUIApp:
         try:
             log.info("Starting CartoTUI %s", os.environ.get("USER", ""))
             self.traffic_source.start()
+            threading.Thread(target=self._radar_loop, daemon=True, name="radar").start()
             self.app.run()
         finally:
+            self._radar_stop.set()
             try:
                 self.traffic_source.stop(timeout_s=2.0)
             except Exception:
                 pass
             self.map_control.shutdown()
+
+    def _radar_loop(self) -> None:
+        rs = self.radar_source
+        while not self._radar_stop.is_set():
+            rd = self.cfg.get("overlays", {}).get("radar", {})
+            if not rd.get("enabled"):
+                rs.animate = False
+                self._radar_stop.wait(1.0)
+                continue
+            if rd.get("animate"):
+                rs.animate = True
+                try:
+                    rs.refresh_frames()
+                    rs.advance()
+                except Exception:
+                    pass
+                self.map_control.request_render(force=True)
+                self._radar_stop.wait(max(0.15, float(rd.get("frame_interval", 0.6))))
+            else:
+                rs.animate = False
+                try:
+                    rs.refresh_frames()
+                    changed = rs.latest_changed()
+                except Exception:
+                    changed = False
+                if changed:
+                    self.map_control.request_render(force=True)
+                self._radar_stop.wait(30.0)
+
+    def _invalidate(self) -> None:
+        app = get_app_or_none()
+        if app is not None:
+            app.invalidate()
+
+    def _snapshot(self, kind: str) -> None:
+        import os
+        import threading
+
+        from cartotui import snapshot as snap
+
+        if kind == "open":
+            self._open_path(snap.snapshot_dir())
+            self.state.set_info(f"Snapshots: {snap.snapshot_dir()}", ttl_s=8.0)
+            self._invalidate()
+            return
+
+        long_side = int(self.cfg["snapshot"].get("png_long_side", 1600))
+        open_after = bool(self.cfg["snapshot"].get("open_after", True))
+
+        def work():
+            try:
+                if kind == "html":
+                    path = self.map_control.snapshot_html(snap.new_path("html"))
+                else:
+                    path = self.map_control.snapshot_png(snap.new_path("png"), long_side=long_side)
+                self.state.last_snapshot = path
+                self.state.set_info(f"Saved → {path}", ttl_s=12.0)
+                if open_after:
+                    self._open_path(os.path.dirname(path))
+            except Exception as e:
+                self.state.set_info(f"Snapshot failed: {e}", ttl_s=10.0)
+            self._invalidate()
+
+        self.state.set_info(f"Saving {kind.upper()} ({long_side}px)…", ttl_s=12.0)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _open_path(self, path: str) -> None:
+        import os
+        import platform
+        import subprocess
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception:
+            pass
+
+    def _save_profile(self) -> None:
+        st = self.state
+        r = self.cfg["render"]
+        mode = "vector" if st.source == "vector" else st.render_mode
+        patch = {
+            "map": {
+                "center_lat": round(st.lat, 6),
+                "center_lon": round(st.lon, 6),
+                "zoom": int(st.z),
+                "mode": mode,
+                "palette": st.palette,
+            },
+            "render": {
+                "color": bool(st.color),
+                "dither": st.dither,
+                "brightness": round(st.brightness, 3),
+                "contrast": round(st.contrast, 3),
+                "subpixel_threshold": st.threshold_mode,
+                "shaded_blocks": bool(st.shaded_blocks),
+                "vector_render_mode": st.render_mode if st.source == "vector"
+                else r.get("vector_render_mode", "ascii"),
+            },
+            "ui": {"theme": st.theme},
+        }
+        self.cfg.update(patch)
+        try:
+            self.widget_manager.save_layout()
+        except Exception:
+            pass
+        try:
+            self.cfg.save()
+            self.state.set_info(f"Profile saved → {self.cfg.path}", ttl_s=10.0)
+        except Exception as e:
+            self.state.set_info(f"Save failed: {e}", ttl_s=10.0)
+        self._invalidate()
+
+    def _hide_sidebar(self) -> None:
+        self.state.sidebar_visible = False
+        app = get_app_or_none()
+        if app is not None:
+            try:
+                app.layout.focus(self.map_window)
+            except Exception:
+                pass
+            app.invalidate()
 
     def _toggle_help(self) -> None:
         self.help_pane.toggle()
@@ -237,9 +399,40 @@ class CartoTUIApp:
 
     def _reload_theme(self) -> None:
         self.cfg.update({"ui": {"theme": self.state.theme}})
+        self._apply_theme_render(self.state.theme)
         self._current_style = make_style(self.cfg)
-        self.map_control.request_render()
+        self.map_control.request_render(force=True)
         self.app.invalidate()
+
+    def _apply_theme_render(self, name: str) -> None:
+        from cartotui import theme_loader
+        from cartotui.config import DEFAULT_CONFIG
+        rp = theme_loader.theme_render(name) or {}
+        st = self.state
+        dr = DEFAULT_CONFIG["render"]
+
+        def _num(key, default):
+            try:
+                return max(0.2, min(3.0, float(rp[key])))
+            except (KeyError, TypeError, ValueError):
+                return float(default)
+
+        st.brightness = _num("brightness", dr["brightness"])
+        st.contrast = _num("contrast", dr["contrast"])
+        dith = rp.get("dither", dr["dither"])
+        st.dither = dith if dith in ("none", "bayer", "atkinson", "floyd") else dr["dither"]
+
+        if rp.get("palette"):
+            st.palette = str(rp["palette"])
+        if rp.get("view") in ("ascii", "quadrant", "braille", "half"):
+            st.set_render_mode(rp["view"])
+        patch = {}
+        for k in ("road_highlight", "raster_tint", "vector_engine",
+                  "vector_scale", "vector_render_mode"):
+            if k in rp:
+                patch[k] = rp[k]
+        if patch:
+            self.cfg.update({"render": patch})
 
     def _build_key_bindings(self) -> KeyBindings:
         kb = KeyBindings()
@@ -451,6 +644,19 @@ class CartoTUIApp:
         @kb.add("g", filter=map_active)
         def _(event):
             self._show_goto()
+
+        @kb.add("w", filter=map_active)
+        def _(event):
+            self.widget_manager.toggle("widgets")
+            self.state.set_info("Widgets panel")
+
+        @kb.add("x", filter=map_active)
+        def _(event):
+            self._snapshot("png")
+
+        @kb.add("c-s")
+        def _(event):
+            self._save_profile()
 
         @kb.add("r", filter=map_active)
         def _(event):

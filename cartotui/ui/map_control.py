@@ -16,11 +16,12 @@ from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
 from cartotui.cache import TileCache
 from cartotui.composite import composite_from_tiles, prefetch_ring
-from cartotui.raster_vector import default_style, last_aircraft_hitboxes, rasterise_view
-from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
-from cartotui.ui.map_overlay import apply_vector_overlay, clear_classify_cache as _clear_vector_overlay_cache
+from cartotui.raster_vector import rasterise_view
 from cartotui.rendering.renderer import Renderer
+from cartotui.themes import theme_vector_style
 from cartotui.traffic.aircraft import AircraftRegistry
+from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
+from cartotui.ui.map_overlay import apply_vector_overlay
 from cartotui.ui.state import MapState
 from cartotui.vector_source import VectorTileSource
 
@@ -52,6 +53,8 @@ class MapControl(UIControl):
         self.vector_source = vector_source
         self.aircraft_registry = aircraft_registry
         self.on_select_aircraft = on_select_aircraft
+        self.widget_manager = None
+        self.radar_source = None
 
         self._raster_caches: dict = {}
         self._vector_sources: dict = {}
@@ -80,6 +83,16 @@ class MapControl(UIControl):
         self._drag_lon: Optional[float] = None
         self._drag_moved = False
         self._mouse_was_down = False
+
+        self._pan_until = 0.0
+        self._last_render_panning = False
+
+    def _mark_panning(self) -> None:
+        self._pan_until = time.monotonic() + 0.16
+
+    def _panning(self) -> bool:
+        return (bool(self.cfg["render"].get("dynamic_quality", True))
+                and time.monotonic() < self._pan_until)
 
     def swap_to_source(self, source) -> None:
         from pathlib import Path
@@ -164,11 +177,17 @@ class MapControl(UIControl):
 
         rows = self._normalise_rows(self._last_frame, width, height)
         chx, chy = width // 2, height // 2
+        cross_row = None
         if self.state.crosshair and 0 <= chy < height and 0 <= chx < width:
-            rows[chy] = self._overlay_crosshair(rows[chy], chx, self.state.crosshair)
+            cross_row = self._overlay_crosshair(rows[chy], chx, self.state.crosshair)
+
+        def get_line(i: int):
+            if i == chy and cross_row is not None:
+                return cross_row
+            return rows[i] if 0 <= i < height else [("", " " * width)]
 
         return UIContent(
-            get_line=lambda i: rows[i] if 0 <= i < height else [("", " " * width)],
+            get_line=get_line,
             line_count=height,
             cursor_position=Point(x=chx, y=chy),
         )
@@ -179,6 +198,16 @@ class MapControl(UIControl):
         et = mouse_event.event_type
         x = mouse_event.position.x
         y = mouse_event.position.y
+
+        wm = self.widget_manager
+        if wm is not None and wm.is_dragging():
+            if et == MouseEventType.MOUSE_MOVE:
+                wm.drag_to(x, y)
+            elif et == MouseEventType.MOUSE_UP:
+                wm.end_drag()
+            elif et == MouseEventType.MOUSE_DOWN:
+                wm.end_drag(save=False)
+            return None
 
         if et == MouseEventType.SCROLL_UP:
             self.zoom(+1)
@@ -206,6 +235,7 @@ class MapControl(UIControl):
             self.state.set_center(self._drag_lat, self._drag_lon)
             self.state.pan_cells(-dx, -dy)
             self._drag_moved = True
+            self._mark_panning()
             self.request_render()
             return None
 
@@ -293,6 +323,7 @@ class MapControl(UIControl):
         cw, ch = self._cell_pixel_size()
         self.state.pan_cells(dx_cells, dy_cells, cw, ch)
         self.state.set_info(f"Pan ({dx_cells:+d}, {dy_cells:+d})")
+        self._mark_panning()
         self.request_render()
 
     def zoom(self, delta: int) -> None:
@@ -358,8 +389,11 @@ class MapControl(UIControl):
     def _render_worker(self) -> None:
         while not self._stop.is_set():
             try:
-                job = self._req_q.get(timeout=0.2)
+                job = self._req_q.get(timeout=0.1)
             except queue.Empty:
+                if self._last_render_panning and not self._panning():
+                    self._last_render_panning = False
+                    self.request_render(force=True)
                 continue
             if job is None or self._stop.is_set():
                 break
@@ -373,6 +407,8 @@ class MapControl(UIControl):
 
             cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
+            panning = self._panning()
+            self._last_render_panning = panning
             scale = int(self.cfg["render"].get("vector_scale", 6)) if source == "vector" else 4
             px_w = max(64, min(max_px, w * cell_w_px * scale))
             px_h = max(64, min(max_px, h * cell_h_px * scale))
@@ -389,8 +425,17 @@ class MapControl(UIControl):
             sel_icao = self.state.selected_aircraft_icao
             if self.aircraft_registry is not None:
                 ac_overlay = self.aircraft_registry.with_position()
+
+            try:
+                theme_overrides = self.cfg.data.get("theme", {})
+            except Exception:
+                theme_overrides = {}
+            style = theme_vector_style(theme, theme_overrides)
+            if bool(self.cfg["render"].get("road_highlight", False)):
+                from cartotui.themes import apply_road_highlight
+                apply_road_highlight(style)
+
             if source == "vector" and self.vector_source is not None:
-                style = default_style(theme)
                 engine = self.cfg["render"].get("vector_engine", "libcarto")
                 if engine == "libcarto":
                     try:
@@ -398,11 +443,23 @@ class MapControl(UIControl):
                         pf_enable = bool(self.cfg["prefetch"].get("enable", True))
                         img = rasterise_view_libcarto(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
-                            preload=pf_enable,
+                            preload=pf_enable and not panning,
+                            cached_only=panning,
                         )
+                        if panning:
+                            try:
+                                self.vector_source.prefetch_viewport(lat, lon, z, px_w, px_h)
+                            except Exception:
+                                pass
                     except Exception as e:
                         log.warning("libcarto rasterise failed (%s); using python path", e)
                         img = None
+                    if img is None and panning:
+                        try:
+                            bg = (style.bg.r, style.bg.g, style.bg.b)
+                        except Exception:
+                            bg = (24, 26, 32)
+                        img = Image.new("RGB", (px_w, px_h), bg)
                 if img is None:
                     try:
                         img = rasterise_view(
@@ -429,24 +486,44 @@ class MapControl(UIControl):
                     sharpen = min(80, cfg_sharpen)
                 else:
                     sharpen = cfg_sharpen
+                overzoom = int(self.cfg["map"].get("overzoom", 2))
+                if panning:
+                    sharpen = 0
+                    overzoom = max(overzoom, 5)
                 try:
                     img = composite_from_tiles(
                         self.cache,
                         lat, lon, z,
                         px_w, px_h,
-                        overzoom_levels=int(self.cfg["map"].get("overzoom", 2)),
+                        overzoom_levels=overzoom,
                         contrast=float(contrast),
                         brightness=float(brightness),
-                        gamma=float(r.get("gamma", 1.0)),
+                        gamma=1.0 if panning else float(r.get("gamma", 1.0)),
                         sharpen_percent=sharpen,
                         sharpen_radius=float(r.get("sharpen_radius", 1.5)),
                         sharpen_threshold=int(r.get("sharpen_threshold", 3)),
-                        edge_boost=bool(r.get("edge_boost", False)),
+                        edge_boost=False if panning else bool(r.get("edge_boost", False)),
                         invert=bool(r.get("invert", False)),
+                        cached_only=panning,
                     )
                 except Exception as e:
                     log.warning("Composite failed: %s", e)
                     img = Image.new("RGB", (px_w, px_h), (24, 26, 32))
+
+                if img is not None and self.cfg["render"].get("raster_tint", "none") == "theme":
+                    try:
+                        from PIL import ImageOps
+                        hi = max((style.road_color, style.label_color),
+                                 key=lambda c: c[0] + c[1] + c[2])
+                        img = ImageOps.colorize(
+                            img.convert("L"),
+                            black=tuple(style.bg), white=tuple(hi), mid=tuple(style.building),
+                        )
+                    except Exception as e:
+                        log.debug("raster tint failed: %s", e)
+
+            if img is not None:
+                img = self._apply_radar(img, lat, lon, z)
 
             effective_color = bool(color)
 
@@ -467,7 +544,7 @@ class MapControl(UIControl):
                         center_lat=lat, center_lon=lon, z=z,
                         term_w=w, term_h=h,
                         canvas_px_w=px_w, canvas_px_h=px_h,
-                        style=default_style(theme),
+                        style=style,
                     )
                 except Exception as e:
                     log.debug("Vector overlay failed: %s", e)
@@ -482,7 +559,7 @@ class MapControl(UIControl):
                         center_lat=lat, center_lon=lon, z=z,
                         term_w=w, term_h=h,
                         canvas_px_w=px_w, canvas_px_h=px_h,
-                        style=default_style(theme),
+                        style=style,
                         selected_icao=sel_icao,
                         show_trails=trails_enabled,
                         trail_duration_s=trails_duration,
@@ -507,13 +584,19 @@ class MapControl(UIControl):
                 pf = self.cfg["prefetch"]
                 if pf.get("enable", True):
                     try:
+                        max_inflight = int(pf.get("max_inflight", 4))
+                        want = []
+                        if panning:
+                            from cartotui.composite import tiles_for_view
+                            vis = tiles_for_view(lat, lon, z, px_w, px_h)[0]
+                            want = list(vis)
                         ring = list(prefetch_ring(
                             self.cache, lat, lon, z, px_w, px_h,
                             ring_radius=int(pf.get("ring_radius", 1)),
                         ))
-                        if ring:
-                            max_inflight = int(pf.get("max_inflight", 4))
-                            self.cache.prefetch(ring[:max_inflight])
+                        combined = want + ring[:max_inflight]
+                        if combined:
+                            self.cache.prefetch(combined)
                     except Exception as e:
                         log.debug("Prefetch failed: %s", e)
 
@@ -527,6 +610,93 @@ class MapControl(UIControl):
 
     def _cell_pixel_size(self) -> Tuple[int, int]:
         return self.renderer.cell_pixel_size(self.state.render_mode)
+
+    def _apply_radar(self, img, lat, lon, z):
+        rd = self.cfg.get("overlays", {}).get("radar", {})
+        if not rd.get("enabled") or self.radar_source is None or img is None:
+            return img
+        try:
+            return self.radar_source.composite_onto(
+                img, lat, lon, z, img.width, img.height,
+                opacity=float(rd.get("opacity", 0.65)),
+                color=int(rd.get("color", 4)),
+                smooth=int(rd.get("smooth", 1)),
+                snow=int(rd.get("snow", 1)),
+                which=rd.get("frame", "latest"),
+            )
+        except Exception as e:
+            log.debug("radar overlay failed: %s", e)
+            return img
+
+    def snapshot_png(self, path: str, long_side: int = 2048) -> str:
+        from cartotui.themes import apply_road_highlight, theme_vector_style
+        term_w = max(20, self._last_w)
+        term_h = max(10, self._last_h)
+        long_side = max(512, min(4096, int(long_side)))
+        aw, ah = term_w * 8, term_h * 16
+        s = long_side / float(max(aw, ah))
+        px_w = max(64, int(aw * s))
+        px_h = max(64, int(ah * s))
+
+        lat, lon, z = self.state.lat, self.state.lon, self.state.z
+        theme = self.state.theme
+        source = self.state.source
+        try:
+            theme_overrides = self.cfg.data.get("theme", {})
+        except Exception:
+            theme_overrides = {}
+        style = theme_vector_style(theme, theme_overrides)
+        if bool(self.cfg["render"].get("road_highlight", False)):
+            apply_road_highlight(style)
+
+        img = None
+        if source == "vector" and self.vector_source is not None:
+            engine = self.cfg["render"].get("vector_engine", "libcarto")
+            if engine == "libcarto":
+                try:
+                    from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
+                    img = rasterise_view_libcarto(self.vector_source, lat, lon, z, px_w, px_h, style=style)
+                except Exception:
+                    img = None
+            if img is None:
+                try:
+                    img = rasterise_view(self.vector_source, lat, lon, z, px_w, px_h, style=style)
+                except Exception:
+                    img = None
+        if img is None:
+            r = self.cfg["render"]
+            img = composite_from_tiles(
+                self.cache, lat, lon, z, px_w, px_h,
+                overzoom_levels=int(self.cfg["map"].get("overzoom", 2)),
+                contrast=float(self.state.contrast), brightness=float(self.state.brightness),
+                gamma=float(r.get("gamma", 1.0)),
+                sharpen_percent=int(r.get("sharpen_percent", 150)),
+                sharpen_radius=float(r.get("sharpen_radius", 1.5)),
+                sharpen_threshold=int(r.get("sharpen_threshold", 3)),
+                edge_boost=bool(r.get("edge_boost", False)),
+                invert=bool(r.get("invert", False)),
+            )
+            if self.cfg["render"].get("raster_tint", "none") == "theme":
+                from PIL import ImageOps
+                hi = max((style.road_color, style.label_color), key=lambda c: sum(c))
+                img = ImageOps.colorize(img.convert("L"), black=tuple(style.bg),
+                                        white=tuple(hi), mid=tuple(style.building))
+        else:
+            from PIL import ImageEnhance
+            if abs(self.state.brightness - 1.0) > 1e-3:
+                img = ImageEnhance.Brightness(img).enhance(self.state.brightness)
+            if abs(self.state.contrast - 1.0) > 1e-3:
+                img = ImageEnhance.Contrast(img).enhance(self.state.contrast)
+
+        img = self._apply_radar(img, lat, lon, z)
+        img.save(path)
+        return path
+
+    def snapshot_html(self, path: str) -> str:
+        from cartotui.snapshot import save_html
+        frame = self._last_frame
+        rows = frame.rows if frame is not None else []
+        return save_html(rows, self.state.theme, path, title="CartoTUI map")
 
     def _drain_results(self) -> Optional[_Frame]:
         frame: Optional[_Frame] = None
@@ -547,8 +717,10 @@ class MapControl(UIControl):
 
     @staticmethod
     def _normalise_rows(frame: _Frame, width: int, height: int):
-        out = []
         src = frame.rows
+        if frame.width == width and frame.height == height and len(src) == height:
+            return src
+        out = []
         for y in range(height):
             if y < len(src) and src[y]:
                 runs = []

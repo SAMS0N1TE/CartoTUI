@@ -38,6 +38,7 @@ class MapState:
     source_idx: int = field(init=False, default=0)
 
     last_render_ms: float = 0.0
+    last_snapshot: str = ""
     info_msg: str = ""
     info_msg_until: float = 0.0
     heading_deg: float = 0.0
@@ -58,12 +59,14 @@ class MapState:
         self.max_zoom = int(m["max_zoom"])
 
         mode = str(m.get("mode", "vector"))
+        rcfg = self.cfg["render"]
         if mode == "vector":
             self.source = "vector"
-            self.render_mode = "ascii"
+            vrm = str(rcfg.get("vector_render_mode", "ascii"))
+            self.render_mode = vrm if vrm in ("ascii", "quadrant", "braille", "half") else "ascii"
         else:
             self.source = "raster"
-            self.render_mode = mode if mode in ("ascii", "quadrant", "braille") else "ascii"
+            self.render_mode = mode if mode in ("ascii", "quadrant", "braille", "half") else "ascii"
 
         self.palette = str(m.get("palette", "shades"))
 
@@ -123,12 +126,12 @@ class MapState:
 
     def set_render_mode(self, mode: str) -> None:
         with self._lock:
-            if mode in ("ascii", "quadrant", "braille"):
+            if mode in ("ascii", "quadrant", "braille", "half"):
                 self.render_mode = mode
 
     def cycle_render_mode(self) -> None:
         with self._lock:
-            order = ["ascii", "quadrant", "braille"]
+            order = ["ascii", "quadrant", "braille", "half"]
             i = order.index(self.render_mode) if self.render_mode in order else 0
             self.render_mode = order[(i + 1) % len(order)]
 

@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from cartotui.geodesy import latlon_to_tile_xy

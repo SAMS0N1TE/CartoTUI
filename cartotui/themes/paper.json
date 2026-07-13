@@ -1,0 +1,32 @@
+{
+  "name": "paper",
+  "border": "auto",
+  "ui": {
+    "bg": "#e8dfc4",
+    "fg": "#1a1408",
+    "dim": "#6b5f3f",
+    "accent": "#8a5a1a",
+    "key": "#046a04",
+    "section": "#7a3a00",
+    "border": "#b8a877",
+    "panel_bg": "#f2e9cf",
+    "title_bg": "#c8b990",
+    "title_fg": "#1a1408",
+    "sel_bg": "#8a5a1a",
+    "sel_fg": "#fff6e0",
+    "input_bg": "#ffffff",
+    "input_fg": "#000000"
+  },
+  "map": {
+    "bg": "#f2e9cf",
+    "water": "#a9c0d8",
+    "park": "#c3dcb4",
+    "building": "#d8cfb0",
+    "road": "#3a2c1c",
+    "roads": { "motorway": "#8a3a10", "primary": "#a5542a" },
+    "label": "#4a2a08",
+    "halo": "#f5efe0",
+    "aircraft": "#b43c1e",
+    "aircraft_selected": "#000000"
+  }
+}

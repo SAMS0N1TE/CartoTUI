@@ -1,0 +1,35 @@
+{
+  "name": "ega",
+  "border": "ascii",
+  "ui": {
+    "bg": "#000000",
+    "fg": "#aaaaaa",
+    "dim": "#555555",
+    "accent": "#ffff55",
+    "key": "#ffff55",
+    "section": "#ffff55",
+    "warn": "#ff5555",
+    "ok": "#55ff55",
+    "border": "#555555",
+    "panel_bg": "#000000",
+    "title_bg": "#0000aa",
+    "title_fg": "#ffffff",
+    "sel_bg": "#0000aa",
+    "sel_fg": "#ffffff",
+    "input_bg": "#aaaaaa",
+    "input_fg": "#000000"
+  },
+  "map": {
+    "bg": "#000000",
+    "water": "#0000aa",
+    "park": "#00aa00",
+    "building": "#aaaaaa",
+    "road": "#ffffff",
+    "roads": { "motorway": "#ffff55", "primary": "#ffffff" },
+    "label": "#ffff55",
+    "halo": "#000000",
+    "aircraft": "#ffff55",
+    "aircraft_selected": "#ffffff",
+    "aircraft_emergency": "#ff5555"
+  }
+}

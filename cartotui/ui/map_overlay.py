@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import List, Tuple
 
 from cartotui.geodesy import latlon_to_tile_xy
 from cartotui.ui.aircraft_overlay import (
-    _chars_to_row,
-    _row_to_chars,
     _stamp_label,
 )
 

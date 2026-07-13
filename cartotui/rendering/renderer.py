@@ -41,6 +41,17 @@ def default_palettes() -> Dict[str, str]:
 def _rgb_to_style(r: int, g: int, b: int) -> str:
     return f"fg:#{r:02x}{g:02x}{b:02x}"
 
+
+def _resample(img: Image.Image, tw: int, th: int) -> Image.Image:
+    w, h = img.width, img.height
+    if w == tw and h == th:
+        return img
+    if w >= tw and h >= th:
+        if w % tw == 0 and h % th == 0 and (w // tw > 1 or h // th > 1):
+            return img.reduce((w // tw, h // th))
+        return img.resize((tw, th), Image.BOX)
+    return img.resize((tw, th), Image.LANCZOS)
+
 def _luminance(arr_u8: np.ndarray) -> np.ndarray:
     return (
         0.299 * arr_u8[..., 0]
@@ -73,6 +84,19 @@ def _emit_row(glyphs: List[str], styles: List[str]) -> LineFrag:
     out.append((cur_style, "".join(buf)))
     return out
 
+_FG_CACHE: Dict[int, str] = {}
+_HB_CACHE: Dict[int, str] = {}
+
+
+def _fg_style(v: int) -> str:
+    s = _FG_CACHE.get(v)
+    if s is None:
+        s = f"fg:#{v:06x}"
+        if len(_FG_CACHE) < 65536:
+            _FG_CACHE[v] = s
+    return s
+
+
 def _emit_row_color_fast(
     glyphs: np.ndarray,
     rgb: np.ndarray,
@@ -89,9 +113,7 @@ def _emit_row_color_fast(
     out: LineFrag = []
     glyph_list = glyphs.tolist() if isinstance(glyphs, np.ndarray) else list(glyphs)
     for s, e in zip(starts.tolist(), ends.tolist()):
-        v = int(packed[s])
-        style = f"fg:#{v:06x}"
-        out.append((style, "".join(glyph_list[s:e])))
+        out.append((_fg_style(int(packed[s])), "".join(glyph_list[s:e])))
     return out
 
 class AsciiBackend:
@@ -121,7 +143,7 @@ class AsciiBackend:
         if img.mode != "RGB":
             img = img.convert("RGB")
         if img.width != term_w or img.height != term_h:
-            img = img.resize((term_w, term_h), Image.LANCZOS)
+            img = _resample(img, term_w, term_h)
 
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
@@ -186,7 +208,7 @@ class QuadrantBackend:
         target_w = term_w * 2
         target_h = term_h * 2
         if img.width != target_w or img.height != target_h:
-            img = img.resize((target_w, target_h), Image.LANCZOS)
+            img = _resample(img, target_w, target_h)
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
 
@@ -291,7 +313,7 @@ class BrailleBackend:
         target_w = term_w * 2
         target_h = term_h * 4
         if img.width != target_w or img.height != target_h:
-            img = img.resize((target_w, target_h), Image.LANCZOS)
+            img = _resample(img, target_w, target_h)
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
 
@@ -341,6 +363,67 @@ class BrailleBackend:
                 frame.append([("", "".join(chr(int(c)) for c in glyphs_int[y]))])
         return frame
 
+def _emit_halfblock_row(top: np.ndarray, bot: np.ndarray) -> LineFrag:
+    w = top.shape[0]
+    if w == 0:
+        return [("", "")]
+    tp = (top[:, 0].astype(np.int64) << 16) | (top[:, 1].astype(np.int64) << 8) | top[:, 2]
+    bp = (bot[:, 0].astype(np.int64) << 16) | (bot[:, 1].astype(np.int64) << 8) | bot[:, 2]
+    key = (tp << 24) | bp
+    diff = np.empty(w, dtype=bool)
+    diff[0] = True
+    diff[1:] = key[1:] != key[:-1]
+    starts = np.flatnonzero(diff)
+    ends = np.concatenate([starts[1:], np.array([w], dtype=np.intp)])
+    out: LineFrag = []
+    for s, e in zip(starts.tolist(), ends.tolist()):
+        t = int(tp[s])
+        b = int(bp[s])
+        hk = (t << 24) | b
+        style = _HB_CACHE.get(hk)
+        if style is None:
+            style = f"fg:#{t:06x} bg:#{b:06x}"
+            if len(_HB_CACHE) < 200000:
+                _HB_CACHE[hk] = style
+        out.append((style, "▀" * (e - s)))
+    return out
+
+
+class HalfBlockBackend:
+    name = "half"
+
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    def render(
+        self,
+        img: Image.Image,
+        term_w: int,
+        term_h: int,
+        use_color: bool,
+        palette: str,
+        dither: str = "none",
+    ) -> FrameFrag:
+        if term_w < 1 or term_h < 1:
+            return [[("", "")]]
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        tw, th = term_w, term_h * 2
+        if img.width != tw or img.height != th:
+            img = _resample(img, tw, th)
+        arr = np.asarray(img, dtype=np.uint8)
+        if not use_color:
+            g = (_luminance(arr) * 255.0).astype(np.uint8)
+            arr = np.stack([g, g, g], axis=-1)
+        top = arr[0::2]
+        bot = arr[1::2]
+        n = min(top.shape[0], bot.shape[0])
+        frame: FrameFrag = []
+        for y in range(n):
+            frame.append(_emit_halfblock_row(top[y], bot[y]))
+        return frame
+
+
 @dataclass
 class Renderer:
     palettes: Dict[str, str]
@@ -368,6 +451,7 @@ class Renderer:
                 percentile=self.subpixel_percentile,
                 shaded=self.shaded_blocks,
             ),
+            "half":     HalfBlockBackend(),
         }
 
     def update_options(
@@ -390,6 +474,7 @@ class Renderer:
         self._backends["ascii"] = AsciiBackend(**kwargs)
         self._backends["quadrant"] = QuadrantBackend(**kwargs)
         self._backends["braille"] = BrailleBackend(**kwargs)
+        self._backends["half"] = HalfBlockBackend()
 
     def register(self, mode: str, backend: object) -> None:
         self._backends[mode] = backend
@@ -406,6 +491,8 @@ class Renderer:
             return 2, 2
         if mode == "braille":
             return 2, 4
+        if mode == "half":
+            return 1, 2
         return 1, 2
 
     def _resolve_mode(self, mode: str, source_kind: Optional[str]) -> str:

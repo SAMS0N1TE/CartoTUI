@@ -4,7 +4,6 @@ import cProfile
 import io
 import os
 import pstats
-import signal
 import sys
 import threading
 import time
