@@ -76,6 +76,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vector_overlay": True,
         "vector_engine": "libcarto",
         "vector_scale": 6,
+        "vector_render_mode": "ascii",
+        "road_highlight": False,
+        "raster_tint": "none",
+        "dynamic_quality": True,
+        "pan_scale": 3,
     },
     "prefetch": {
         "enable": True,
@@ -83,11 +88,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_inflight": 4,
     },
     "ui": {
-        "theme": "ega",
+        "theme": "amber",
         "mouse": True,
         "border_style": "heavy",
         "show_latency": True,
         "pan_step_cells": 6,
+        "panels": [],
     },
     "aircraft_trails": {
         "enabled": True,
@@ -116,6 +122,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "theme": {
         "chrome": {},
         "road_colors": {},
+    },
+    "overlays": {
+        "radar": {
+            "enabled": False,
+            "opacity": 0.65,
+            "color": 4,
+            "smooth": 1,
+            "snow": 1,
+            "frame": "latest",
+            "animate": False,
+            "frame_interval": 0.6,
+        },
+    },
+    "snapshot": {
+        "png_long_side": 1600,
+        "open_after": True,
     },
 }
 
@@ -201,6 +223,19 @@ def _coerce_choice(v: Any, choices: Tuple[str, ...], default: str) -> str:
         return v
     return default
 
+def _coerce_theme(v: Any, default: str) -> str:
+    if not isinstance(v, str) or not v.strip():
+        return default
+    name = v.strip().lower()
+    try:
+        from cartotui import theme_loader
+        avail = theme_loader.available_theme_names()
+    except Exception:
+        avail = ()
+    if not avail or name in avail:
+        return name
+    return default
+
 def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     c = _deep_merge(DEFAULT_CONFIG, cfg or {})
 
@@ -210,10 +245,11 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     vp = c["viewport"]
     for key in ("crosshair", "show_compass", "show_statusbar", "show_toolbar",
-                "show_titlebar", "help_panel"):
+                "show_titlebar", "help_panel", "show_sidebar"):
         vp[key] = _coerce_bool(vp.get(key), DEFAULT_CONFIG["viewport"][key])
     cross = vp.get("crosshair_char") or "+"
     vp["crosshair_char"] = str(cross)[:1] or "+"
+    vp["sidebar_width"] = _coerce_int(vp.get("sidebar_width"), 36, (24, 120))
 
     m = c["map"]
     m["center_lat"] = _coerce_num(m.get("center_lat"), DEFAULT_CONFIG["map"]["center_lat"], (-85.05, 85.05))
@@ -225,7 +261,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     m["zoom"]       = _coerce_int(m.get("zoom"), 4, (m["min_zoom"], m["max_zoom"]))
     m["overzoom"]   = _coerce_int(m.get("overzoom"), 2, (0, 8))
     m["max_composite_px"] = _coerce_int(m.get("max_composite_px"), 1400, (256, 8192))
-    m["mode"] = _coerce_choice(m.get("mode"), ("vector", "ascii", "quadrant", "braille"),
+    m["mode"] = _coerce_choice(m.get("mode"), ("vector", "ascii", "quadrant", "braille", "half"),
                                DEFAULT_CONFIG["map"]["mode"])
     m["palette"] = str(m.get("palette") or DEFAULT_CONFIG["map"]["palette"])
 
@@ -274,6 +310,12 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["vector_engine"] = _coerce_choice(r.get("vector_engine"), ("libcarto", "python"),
                                         DEFAULT_CONFIG["render"]["vector_engine"])
     r["vector_scale"] = _coerce_int(r.get("vector_scale"), 6, (2, 8))
+    r["vector_render_mode"] = _coerce_choice(r.get("vector_render_mode"),
+                                             ("ascii", "quadrant", "braille", "half"), "ascii")
+    r["road_highlight"] = _coerce_bool(r.get("road_highlight"), False)
+    r["raster_tint"] = _coerce_choice(r.get("raster_tint"), ("none", "theme"), "none")
+    r["dynamic_quality"] = _coerce_bool(r.get("dynamic_quality"), True)
+    r["pan_scale"] = _coerce_int(r.get("pan_scale"), 3, (2, 5))
 
     pf = c["prefetch"]
     pf["enable"]       = _coerce_bool(pf.get("enable"), DEFAULT_CONFIG["prefetch"]["enable"])
@@ -281,15 +323,51 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     pf["max_inflight"] = _coerce_int(pf.get("max_inflight"), 4, (1, 32))
 
     ui = c["ui"]
-    ui["theme"] = _coerce_choice(ui.get("theme"),
-                                  ("amber", "green", "paper", "retro", "dark", "light",
-                                   "hicon", "ega", "win31", "night"),
-                                  DEFAULT_CONFIG["ui"]["theme"])
+    ui["theme"] = _coerce_theme(ui.get("theme"), DEFAULT_CONFIG["ui"]["theme"])
     ui["mouse"] = _coerce_bool(ui.get("mouse"), True)
     ui["border_style"] = _coerce_choice(ui.get("border_style"), ("ascii", "heavy", "rounded"),
                                          DEFAULT_CONFIG["ui"]["border_style"])
     ui["show_latency"] = _coerce_bool(ui.get("show_latency"), True)
     ui["pan_step_cells"] = _coerce_int(ui.get("pan_step_cells"), 6, (1, 64))
+    if not isinstance(ui.get("panels"), list):
+        ui["panels"] = []
+
+    tr = c["traffic"]
+    tr["enabled"] = _coerce_bool(tr.get("enabled"), DEFAULT_CONFIG["traffic"]["enabled"])
+    tr["source"] = _coerce_choice(tr.get("source"), ("disabled", "lakeshark", "sbs1"),
+                                   DEFAULT_CONFIG["traffic"]["source"])
+    tr["stale_timeout_s"] = _coerce_num(tr.get("stale_timeout_s"), 60.0, (1.0, 3600.0))
+    ls = tr.get("lakeshark")
+    if not isinstance(ls, dict):
+        ls = dict(DEFAULT_CONFIG["traffic"]["lakeshark"])
+        tr["lakeshark"] = ls
+    ls["port"] = str(ls.get("port") or "")
+    ls["baudrate"] = _coerce_int(ls.get("baudrate"), 115200, (1200, 4000000))
+    ls["format"] = str(ls.get("format") or "auto")
+    sb = tr.get("sbs1")
+    if not isinstance(sb, dict):
+        sb = dict(DEFAULT_CONFIG["traffic"]["sbs1"])
+        tr["sbs1"] = sb
+    sb["host"] = str(sb.get("host") or "localhost")
+    sb["port"] = _coerce_int(sb.get("port"), 30003, (1, 65535))
+
+    ov = c["overlays"]
+    rd = ov.get("radar")
+    if not isinstance(rd, dict):
+        rd = dict(DEFAULT_CONFIG["overlays"]["radar"])
+        ov["radar"] = rd
+    rd["enabled"] = _coerce_bool(rd.get("enabled"), False)
+    rd["opacity"] = _coerce_num(rd.get("opacity"), 0.65, (0.1, 1.0))
+    rd["color"] = _coerce_int(rd.get("color"), 4, (0, 8))
+    rd["smooth"] = _coerce_int(rd.get("smooth"), 1, (0, 1))
+    rd["snow"] = _coerce_int(rd.get("snow"), 1, (0, 1))
+    rd["frame"] = _coerce_choice(rd.get("frame"), ("latest", "nowcast"), "latest")
+    rd["animate"] = _coerce_bool(rd.get("animate"), False)
+    rd["frame_interval"] = _coerce_num(rd.get("frame_interval"), 0.6, (0.15, 3.0))
+
+    sn = c["snapshot"]
+    sn["png_long_side"] = _coerce_int(sn.get("png_long_side"), 1600, (512, 6144))
+    sn["open_after"] = _coerce_bool(sn.get("open_after"), True)
 
     lg = c["logging"]
     lg["level"] = _coerce_choice(

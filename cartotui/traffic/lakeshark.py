@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Optional, Tuple
 
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
-from cartotui.traffic.source import LinkStatus, TrafficSource
+from cartotui.traffic.source import TrafficSource
 
 log = logging.getLogger("cartotui.traffic.lakeshark")
 

@@ -58,6 +58,7 @@ def composite_from_tiles(
     sharpen_threshold: int = 3,
     edge_boost: bool = False,
     invert: bool = False,
+    cached_only: bool = False,
 ) -> Image.Image:
     width_px = max(1, int(width_px))
     height_px = max(1, int(height_px))
@@ -70,7 +71,7 @@ def composite_from_tiles(
     base = Image.new("RGB", (tiles_x * TILE_SIZE, tiles_y * TILE_SIZE), (24, 26, 32))
 
     for z_t, x_t, y_t in tiles:
-        img = cache.get_tile_with_overzoom(z_t, x_t, y_t, overzoom_levels)
+        img = cache.get_tile_with_overzoom(z_t, x_t, y_t, overzoom_levels, cached_only=cached_only)
         if img is None:
             continue
         dy = y_t - start_y

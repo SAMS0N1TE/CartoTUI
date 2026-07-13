@@ -1,0 +1,30 @@
+{
+  "name": "retro",
+  "border": "ascii",
+  "ui": {
+    "bg": "#0a0700",
+    "fg": "#d99a3c",
+    "dim": "#6a4d17",
+    "accent": "#ffc234",
+    "key": "#ffc234",
+    "section": "#ffc234",
+    "border": "#4d380f",
+    "panel_bg": "#120c02",
+    "title_bg": "#241800",
+    "title_fg": "#ffc234",
+    "sel_bg": "#3a2600",
+    "sel_fg": "#ffe08a"
+  },
+  "map": {
+    "bg": "#0a0700",
+    "water": "#2a2a12",
+    "park": "#22330f",
+    "building": "#2a2010",
+    "road": "#ffc234",
+    "roads": { "motorway": "#ffe08a", "primary": "#f0b03c" },
+    "label": "#ffc234",
+    "halo": "#0a0700",
+    "aircraft": "#ffc234",
+    "aircraft_selected": "#ffffff"
+  }
+}

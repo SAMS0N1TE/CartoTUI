@@ -9,6 +9,7 @@ from cartotui import __version__
 from cartotui.config import Config, default_config_path
 from cartotui.logging_conf import setup_logging
 
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cartotui",
@@ -25,7 +26,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--zoom", "-z", type=int, help="Override starting zoom (0..19).")
     p.add_argument(
         "--mode",
-        choices=("vector", "ascii", "quadrant", "braille"),
+        choices=("vector", "ascii", "quadrant", "braille", "half"),
         help="Override render mode (vector = vector tiles; rest = raster).",
     )
     p.add_argument(
@@ -39,8 +40,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--theme",
-        choices=("amber", "green", "paper", "retro", "dark", "light"),
-        help="Override UI theme.",
+        metavar="NAME",
+        help="Override UI theme (built-in or a custom theme from the themes folder).",
     )
     p.add_argument(
         "--protomaps-key",

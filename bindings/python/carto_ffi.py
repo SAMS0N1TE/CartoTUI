@@ -3,13 +3,47 @@ import math
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from ctypes import (c_int, c_int32, c_uint8, c_ubyte, c_double, c_size_t,
-                    c_void_p, c_char, POINTER, byref, cast, Structure)
+from ctypes import (
+    POINTER,
+    Structure,
+    byref,
+    c_bool,
+    c_char,
+    c_double,
+    c_int,
+    c_int32,
+    c_size_t,
+    c_ubyte,
+    c_uint8,
+    c_void_p,
+    cast,
+)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_DLL = os.path.normpath(os.path.join(_HERE, "..", "..", "libcarto", "build", "carto.dll"))
 
 CARTO_FMT_RGB565 = 2
+_ROAD_PRIO_MAX = 10
+
+
+class CartoRGB(Structure):
+    _pack_ = 1
+    _fields_ = [("r", c_uint8), ("g", c_uint8), ("b", c_uint8)]
+
+
+class CartoStyle(Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("bg", CartoRGB), ("water", CartoRGB), ("park", CartoRGB), ("building", CartoRGB),
+        ("road_color", CartoRGB),
+        ("road_width", c_uint8 * (_ROAD_PRIO_MAX + 1)),
+        ("road_color_by_prio", CartoRGB * (_ROAD_PRIO_MAX + 1)),
+        ("label_color", CartoRGB), ("halo_color", CartoRGB),
+        ("aircraft_color", CartoRGB), ("aircraft_selected_color", CartoRGB),
+        ("aircraft_emergency_color", CartoRGB), ("aircraft_label_color", CartoRGB),
+        ("aircraft_halo_color", CartoRGB),
+        ("draw_labels", c_bool),
+    ]
 
 
 class CartoArena(Structure):
@@ -39,9 +73,10 @@ class Renderer:
         L = self.lib
         L.carto_fb_init.argtypes = [POINTER(CartoFB), c_int, c_int, c_int, c_void_p]
         L.carto_fb_init.restype = c_int
-        L.carto_style_default.argtypes = [c_void_p]
+        L.carto_style_default.argtypes = [POINTER(CartoStyle)]
         L.carto_style_default.restype = None
-        L.carto_begin.argtypes = [POINTER(CartoArena), POINTER(CartoFB), POINTER(CartoViewport), c_void_p]
+        L.carto_begin.argtypes = [POINTER(CartoArena), POINTER(CartoFB), POINTER(CartoViewport),
+                                  POINTER(CartoStyle)]
         L.carto_begin.restype = c_void_p
         L.carto_render_tile.argtypes = [c_void_p, POINTER(c_ubyte), c_size_t, c_int, c_int, c_int]
         L.carto_render_tile.restype = c_int
@@ -49,13 +84,52 @@ class Renderer:
         L.carto_end.restype = None
 
         self._arena_buf = (c_char * (8 * 1024 * 1024))()
-        self._style = (c_char * 256)()
-        L.carto_style_default(cast(self._style, c_void_p))
+        self._style = CartoStyle()
+        self._style_lock = threading.Lock()
+        L.carto_style_default(byref(self._style))
 
         self._tile_cache = {}
         self._tile_lru = []
         self._tile_cache_max = 512
         self._cache_lock = threading.Lock()
+
+    def set_vector_style(self, vs) -> None:
+        if vs is None:
+            return
+        with self._style_lock:
+            s = self._style
+
+            def put(field, rgb):
+                c = getattr(s, field)
+                c.r = int(rgb[0]) & 0xFF
+                c.g = int(rgb[1]) & 0xFF
+                c.b = int(rgb[2]) & 0xFF
+
+            try:
+                put("bg", vs.bg)
+                put("water", vs.water)
+                put("park", vs.park)
+                put("building", vs.building)
+                put("road_color", vs.road_color)
+                put("label_color", vs.label_color)
+                put("halo_color", vs.halo_color)
+                put("aircraft_color", vs.aircraft_color)
+                put("aircraft_selected_color", vs.aircraft_selected_color)
+                put("aircraft_emergency_color", vs.aircraft_emergency_color)
+                put("aircraft_label_color", vs.aircraft_label_color)
+                put("aircraft_halo_color", vs.aircraft_halo_color)
+                road_colors = getattr(vs, "road_colors", {}) or {}
+                road_widths = getattr(vs, "road_widths", {}) or {}
+                for p in range(1, _ROAD_PRIO_MAX + 1):
+                    rgb = road_colors.get(p, vs.road_color)
+                    cc = s.road_color_by_prio[p]
+                    cc.r = int(rgb[0]) & 0xFF
+                    cc.g = int(rgb[1]) & 0xFF
+                    cc.b = int(rgb[2]) & 0xFF
+                    s.road_width[p] = max(1, min(255, int(road_widths.get(p, 3))))
+                s.draw_labels = False
+            except Exception:
+                pass
 
     def _store_tile(self, k, raw):
         buf = None
@@ -104,7 +178,7 @@ class Renderer:
 
         lat, lon = tile_center(x, y, z)
         vp = CartoViewport(lat, lon, z, w, h, w, 0, 0, 0)
-        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), cast(self._style, c_void_p))
+        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
         if not ctx:
             raise RuntimeError("carto_begin failed (arena too small?)")
         mvt = (c_ubyte * len(tile)).from_buffer_copy(tile)
@@ -119,7 +193,7 @@ class Renderer:
         fb = CartoFB()
         L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
         vp = CartoViewport(lat, lon, z, w, h, tile_px, 0, 0, 0)
-        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), cast(self._style, c_void_p))
+        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
         if not ctx:
             raise RuntimeError("carto_begin failed (arena too small?)")
 

@@ -49,20 +49,37 @@ def available() -> bool:
         return False
 
 
+_RGB565_LUT = None
+
+
+def _rgb565_lut():
+    global _RGB565_LUT
+    if _RGB565_LUT is None:
+        import numpy as np
+        v = np.arange(65536, dtype=np.uint32)
+        r = (((v >> 11) & 0x1F) * 255 // 31).astype(np.uint8)
+        g = (((v >> 5) & 0x3F) * 255 // 63).astype(np.uint8)
+        b = ((v & 0x1F) * 255 // 31).astype(np.uint8)
+        _RGB565_LUT = np.stack([r, g, b], axis=1)
+    return _RGB565_LUT
+
+
 def _rgb565_to_image(rgb565: bytes, w: int, h: int):
     import numpy as np
     from PIL import Image
-    v = np.frombuffer(rgb565, dtype="<u2").reshape(h, w).astype(np.uint32)
-    r = ((v >> 11) & 0x1F) * 255 // 31
-    g = ((v >> 5) & 0x3F) * 255 // 63
-    b = (v & 0x1F) * 255 // 31
-    rgb = np.dstack([r, g, b]).astype(np.uint8)
+    v = np.frombuffer(rgb565, dtype="<u2").reshape(h, w)
+    rgb = _rgb565_lut()[v]
     return Image.fromarray(rgb, "RGB")
 
 
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None, preload=False):
     global _load_pending
     renderer = _get_renderer()
+    if style is not None:
+        try:
+            renderer.set_vector_style(style)
+        except Exception:
+            pass
 
     def base_fetch(zz, xx, yy):
         raw = vector_source._fetch_raw(zz, xx, yy)

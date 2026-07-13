@@ -9,6 +9,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, HSplit
 from prompt_toolkit.widgets import Frame, TextArea
 
+
 def _parse(s: str) -> Optional[Tuple[float, float, Optional[int]]]:
     parts = [p.strip() for p in s.replace(";", ",").split(",")]
     if len(parts) < 2:

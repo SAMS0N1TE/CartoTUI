@@ -30,19 +30,19 @@ import logging
 from typing import TYPE_CHECKING
 
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
-from cartotui.traffic.source import LinkStatus, TrafficSource, NullTrafficSource
 from cartotui.traffic.lakeshark import (
     DEFAULT_TX_PIN,
-    LakeSharkSerialSource,
     LakeSharkReplaySource,
+    LakeSharkSerialSource,
+    event_to_aircraft,
+    event_to_status_update,
     looks_like_jsonl,
     parse_frame,
     split_frames,
-    event_to_aircraft,
-    event_to_status_update,
 )
 from cartotui.traffic.lakeshark_tui import LakeSharkTUISource
 from cartotui.traffic.sbs1 import SBS1TCPSource
+from cartotui.traffic.source import LinkStatus, NullTrafficSource, TrafficSource
 
 log = logging.getLogger("cartotui.traffic")
 

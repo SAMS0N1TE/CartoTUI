@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Callable, List, Optional, Tuple
 
 from prompt_toolkit.filters import Condition
@@ -15,13 +14,11 @@ from cartotui.config import Config
 from cartotui.themes import (
     border_chars,
     group_box_bottom,
-    group_box_top,
-    kv_row,
     tab_strip_rows,
     tab_strip_slot_ranges,
 )
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
-from cartotui.traffic.source import LinkStatus, TrafficSource
+from cartotui.traffic.source import TrafficSource
 from cartotui.ui.state import MapState
 
 SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration", "Performance")
@@ -63,6 +60,8 @@ class SidebarControl(UIControl):
         self.search_text: str = ""
         self.search_focused: bool = False
         self.aircraft_scroll: int = 0
+        self.collapsed: bool = False
+        self.on_hide: Optional[Callable[[], None]] = None
 
     def is_focusable(self) -> bool:
         return True
@@ -70,7 +69,22 @@ class SidebarControl(UIControl):
     def preferred_width(self, max_available_width: int) -> int:
         return min(self.width_chars, max_available_width)
 
+    def _toggle_collapse(self) -> None:
+        self.collapsed = not self.collapsed
+        from prompt_toolkit.application.current import get_app_or_none
+        app = get_app_or_none()
+        if app:
+            app.invalidate()
+
+    def _hide(self) -> None:
+        if self.on_hide is not None:
+            self.on_hide()
+        else:
+            self.state.sidebar_visible = False
+
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
+        if self.collapsed:
+            return min(1, max_available_height)
         bc = _get_bc(self.cfg)
         saved = self._hits
         self._hits = []
@@ -244,7 +258,7 @@ class SidebarControl(UIControl):
         lines.append([("class:sidebar.label", v + " Goto:"),
                       ("class:sidebar",       " " * max(0, w - len(v + " Goto:") - 1) + v)])
         focus_cls = "class:sidebar.input.focus" if self.search_focused else "class:sidebar.input"
-        field_w = max(4, w - 4)  
+        field_w = max(4, w - 4)
         text = (self.search_text or " ")
         field_text = (text + " " * field_w)[:field_w]
         lines.append([
@@ -311,6 +325,7 @@ class SidebarControl(UIControl):
         lines.append(self._section("App", w, bc))
         for key, desc in (
             ("Tab",  "toggle sidebar"),
+            ("w",    "widgets"),
             ("1-4",  "switch tab"),
             ("h / ?","help"),
             ("q",    "quit"),
@@ -457,7 +472,26 @@ class SidebarControl(UIControl):
         bc = _get_bc(self.cfg)
 
         title_text = " Terminalbay.com"
-        rows.append([("class:sidebar.title", title_text.ljust(width))])
+        collapse = "[+]" if self.collapsed else "[-]"
+        close = "[x]"
+        btns = collapse + close
+        avail = max(1, width - len(btns))
+        rows.append([("class:sidebar.title", title_text.ljust(avail)[:avail]),
+                     ("class:sidebar.hotkey", btns)])
+        self._hits.append((0, avail, avail + len(collapse), self._toggle_collapse))
+        self._hits.append((0, avail + len(collapse), avail + len(btns), self._hide))
+
+        if self.collapsed:
+            out_rows = rows[:]
+            while len(out_rows) < height:
+                out_rows.append([("class:sidebar", " " * width)])
+            out_rows = out_rows[:height]
+            formatted = [to_formatted_text(r) for r in out_rows]
+            return UIContent(
+                get_line=lambda i: formatted[i] if 0 <= i < len(formatted)
+                                    else to_formatted_text([("class:sidebar", " " * width)]),
+                line_count=len(formatted),
+            )
 
         top_str, label_str = tab_strip_rows(_TAB_ABBREV, self.state.sidebar_tab, width, bc)
         rows.append([("class:sidebar.tab", top_str)])
@@ -465,8 +499,6 @@ class SidebarControl(UIControl):
         slot_ranges = tab_strip_slot_ranges(_TAB_ABBREV, width)
         label_runs = []
         for i, (s0, s1) in enumerate(slot_ranges):
-            sep_pos = s0 - 1
-            sep_char = label_str[sep_pos] if sep_pos >= 0 else ""
             if i == 0:
                 label_runs.append(("class:sidebar.tab", label_str[0:s0]))
             tab_cls = ("class:sidebar.tab.active"

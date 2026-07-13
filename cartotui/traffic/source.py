@@ -4,10 +4,11 @@ from __future__ import annotations
 import abc
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from cartotui.traffic.aircraft import AircraftRegistry
+
 
 @dataclass
 class LinkStatus:

@@ -1,0 +1,33 @@
+{
+  "name": "night",
+  "border": "ascii",
+  "ui": {
+    "bg": "#000000",
+    "fg": "#c83232",
+    "dim": "#5a1010",
+    "accent": "#ff5050",
+    "key": "#ff5050",
+    "section": "#ff5050",
+    "warn": "#ffffff",
+    "ok": "#ff5050",
+    "border": "#5a1010",
+    "panel_bg": "#0a0000",
+    "title_bg": "#1a0404",
+    "title_fg": "#ff5050",
+    "sel_bg": "#3a0808",
+    "sel_fg": "#ffdada"
+  },
+  "map": {
+    "bg": "#000000",
+    "water": "#3a0808",
+    "park": "#4a0000",
+    "building": "#5a0000",
+    "road": "#e01e1e",
+    "roads": { "motorway": "#ff5050", "primary": "#e01e1e" },
+    "label": "#ff5050",
+    "halo": "#000000",
+    "aircraft": "#ff5050",
+    "aircraft_selected": "#ffdada",
+    "aircraft_emergency": "#ffffff"
+  }
+}
