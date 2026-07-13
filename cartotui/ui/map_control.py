@@ -443,11 +443,23 @@ class MapControl(UIControl):
                         pf_enable = bool(self.cfg["prefetch"].get("enable", True))
                         img = rasterise_view_libcarto(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
-                            preload=pf_enable,
+                            preload=pf_enable and not panning,
+                            cached_only=panning,
                         )
+                        if panning:
+                            try:
+                                self.vector_source.prefetch_viewport(lat, lon, z, px_w, px_h)
+                            except Exception:
+                                pass
                     except Exception as e:
                         log.warning("libcarto rasterise failed (%s); using python path", e)
                         img = None
+                    if img is None and panning:
+                        try:
+                            bg = (style.bg.r, style.bg.g, style.bg.b)
+                        except Exception:
+                            bg = (24, 26, 32)
+                        img = Image.new("RGB", (px_w, px_h), bg)
                 if img is None:
                     try:
                         img = rasterise_view(

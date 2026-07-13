@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import math
 import threading
 import zlib
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ class VectorTileSource:
         self._lock = threading.Lock()
         self._decoded: Dict[Tuple[int, int, int], VectorTile] = {}
         self._max_cached = 256
+        self._prefetch_inflight: set = set()
+        self._prefetch_lock = threading.Lock()
 
         self._session = requests.Session()
         self._session.headers["User-Agent"] = user_agent
@@ -92,6 +95,63 @@ class VectorTileSource:
                 self._decoded.pop(drop, None)
             self._decoded[key] = tile
         return tile
+
+    def get_raw(self, z: int, x: int, y: int, cached_only: bool = False) -> Optional[bytes]:
+        raw = self._load_raw_from_disk(z, x, y)
+        if raw is not None:
+            return raw
+        if cached_only:
+            return None
+        raw = self._fetch_raw(z, x, y)
+        if raw is not None:
+            self._save_raw_to_disk(z, x, y, raw)
+        return raw
+
+    def _covering_tiles(self, lat, lon, z, px_w, px_h, tile_px=256):
+        from cartotui.geodesy import latlon_to_tile_xy
+        n = 1 << z
+        xt, yt = latlon_to_tile_xy(lat, lon, z)
+        cx = xt * tile_px
+        cy = yt * tile_px
+        tx0 = int(math.floor((cx - px_w / 2.0) / tile_px))
+        tx1 = int(math.floor((cx + px_w / 2.0) / tile_px))
+        ty0 = int(math.floor((cy - px_h / 2.0) / tile_px))
+        ty1 = int(math.floor((cy + px_h / 2.0) / tile_px))
+        out = []
+        for ty in range(ty0, ty1 + 1):
+            for tx in range(tx0, tx1 + 1):
+                if 0 <= tx < n and 0 <= ty < n:
+                    out.append((z, tx, ty))
+        return out
+
+    def prefetch_viewport(self, lat, lon, z, px_w, px_h) -> None:
+        try:
+            tiles = self._covering_tiles(lat, lon, z, px_w, px_h)
+        except Exception:
+            return
+        with self._prefetch_lock:
+            missing = [
+                t for t in tiles
+                if t not in self._prefetch_inflight and not self._disk_path(*t).exists()
+            ]
+            if not missing:
+                return
+            for t in missing:
+                self._prefetch_inflight.add(t)
+
+        def work():
+            from concurrent.futures import ThreadPoolExecutor
+            try:
+                with ThreadPoolExecutor(max_workers=min(6, len(missing))) as ex:
+                    list(ex.map(lambda t: self.get_raw(*t), missing))
+            except Exception:
+                pass
+            finally:
+                with self._prefetch_lock:
+                    for t in missing:
+                        self._prefetch_inflight.discard(t)
+
+        threading.Thread(target=work, daemon=True, name="mvt-prefetch").start()
 
     def close(self) -> None:
         if self._closed:

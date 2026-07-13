@@ -72,7 +72,8 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int):
     return Image.fromarray(rgb, "RGB")
 
 
-def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None, preload=False):
+def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
+                            preload=False, cached_only=False):
     global _load_pending
     renderer = _get_renderer()
     if style is not None:
@@ -82,7 +83,7 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None, 
             pass
 
     def base_fetch(zz, xx, yy):
-        raw = vector_source._fetch_raw(zz, xx, yy)
+        raw = vector_source.get_raw(zz, xx, yy, cached_only=cached_only)
         if raw and raw[:2] == b"\x1f\x8b":
             try:
                 raw = gzip.decompress(raw)
