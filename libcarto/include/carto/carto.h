@@ -23,6 +23,7 @@ typedef struct {
     int       zoom;
     int       fb_w;
     int       fb_h;
+    int       tile_px;
     carto_fix scale;
     carto_fix origin_x;
     carto_fix origin_y;

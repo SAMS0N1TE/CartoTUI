@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 
     carto_viewport vp;
     memset(&vp, 0, sizeof(vp));
-    vp.lat = lat; vp.lon = lon; vp.zoom = z; vp.fb_w = W; vp.fb_h = H;
+    vp.lat = lat; vp.lon = lon; vp.zoom = z; vp.fb_w = W; vp.fb_h = H; vp.tile_px = W;
 
     carto_ctx *ctx = carto_begin(&arena, &fb, &vp, &style);
     if (!ctx) { fprintf(stderr, "carto_begin failed\n"); return 1; }

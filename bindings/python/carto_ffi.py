@@ -21,7 +21,7 @@ class CartoFB(Structure):
 
 class CartoViewport(Structure):
     _fields_ = [("lat", c_double), ("lon", c_double), ("zoom", c_int), ("fb_w", c_int), ("fb_h", c_int),
-                ("scale", c_int32), ("origin_x", c_int32), ("origin_y", c_int32)]
+                ("tile_px", c_int), ("scale", c_int32), ("origin_x", c_int32), ("origin_y", c_int32)]
 
 
 def tile_center(x, y, z):
@@ -58,7 +58,7 @@ class Renderer:
         L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
 
         lat, lon = tile_center(x, y, z)
-        vp = CartoViewport(lat, lon, z, w, h, 0, 0, 0)
+        vp = CartoViewport(lat, lon, z, w, h, w, 0, 0, 0)
         ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), cast(self._style, c_void_p))
         if not ctx:
             raise RuntimeError("carto_begin failed (arena too small?)")
@@ -66,3 +66,36 @@ class Renderer:
         L.carto_render_tile(ctx, mvt, len(tile), x, y, z)
         L.carto_end(ctx)
         return bytes(pixels)
+
+    def render_viewport(self, lat, lon, z, w, h, fetch, tile_px=256):
+        L = self.lib
+        arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
+        pixels = (c_uint8 * (w * h * 2))()
+        fb = CartoFB()
+        L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
+        vp = CartoViewport(lat, lon, z, w, h, tile_px, 0, 0, 0)
+        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), cast(self._style, c_void_p))
+        if not ctx:
+            raise RuntimeError("carto_begin failed (arena too small?)")
+
+        n = 2 ** z
+        cx = ((lon + 180.0) / 360.0) * n * tile_px
+        yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0
+        cy = yn * n * tile_px
+        tx0 = int(math.floor((cx - w / 2.0) / tile_px))
+        tx1 = int(math.floor((cx + w / 2.0) / tile_px))
+        ty0 = int(math.floor((cy - h / 2.0) / tile_px))
+        ty1 = int(math.floor((cy + h / 2.0) / tile_px))
+
+        drawn = 0
+        for ty in range(ty0, ty1 + 1):
+            for tx in range(tx0, tx1 + 1):
+                if tx < 0 or ty < 0 or tx >= n or ty >= n:
+                    continue
+                tile = fetch(z, tx, ty)
+                if tile:
+                    mvt = (c_ubyte * len(tile)).from_buffer_copy(tile)
+                    L.carto_render_tile(ctx, mvt, len(tile), tx, ty, z)
+                    drawn += 1
+        L.carto_end(ctx)
+        return bytes(pixels), drawn

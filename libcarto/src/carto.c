@@ -26,7 +26,7 @@ carto_ctx *carto_begin(carto_arena *arena, carto_framebuffer *fb,
     c->fb = fb;
     c->style = style;
     c->zoom = vp->zoom;
-    c->tile_px = (double)fb->width;
+    c->tile_px = (vp->tile_px > 0) ? (double)vp->tile_px : 256.0;
 
     double n = ldexp(1.0, vp->zoom);
     double world = n * c->tile_px;
