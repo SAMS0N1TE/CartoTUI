@@ -24,13 +24,14 @@ from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.source import LinkStatus, TrafficSource
 from cartotui.ui.state import MapState
 
-SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration")
-_TAB_ABBREV: Tuple[str, ...] = ("Set", "Sch", "Ctl", "Int")
+SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration", "Performance")
+_TAB_ABBREV: Tuple[str, ...] = ("Set", "Sch", "Ctl", "Int", "Prf")
 
 TAB_SETTINGS    = 0
 TAB_SEARCH      = 1
 TAB_CONTROLS    = 2
 TAB_INTEGRATION = 3
+TAB_PERFORMANCE = 4
 
 def _get_bc(cfg: Config) -> dict:
     theme = cfg["ui"].get("theme", "amber")
@@ -48,6 +49,7 @@ class SidebarControl(UIControl):
         on_select_aircraft: Callable[[Optional[str]], None],
         on_search_submit: Callable[[str], None],
         width_chars: int,
+        on_perf_changed: Optional[Callable[[], None]] = None,
     ) -> None:
         self.state = state
         self.cfg = cfg
@@ -55,6 +57,7 @@ class SidebarControl(UIControl):
         self.get_registry = get_registry
         self.on_select_aircraft = on_select_aircraft
         self.on_search_submit = on_search_submit
+        self.on_perf_changed = on_perf_changed
         self.width_chars = max(28, int(width_chars))
         self._hits: List[Tuple[int, int, int, Callable[[], None]]] = []
         self.search_text: str = ""
@@ -104,6 +107,116 @@ class SidebarControl(UIControl):
         lines.append(self._kv("Heading", f"{s.heading_deg:5.1f}°",w, bc))
         lines.append(self._section_end(w, bc))
         return lines
+
+    def _perf_row(self, lines: List, label: str, value: str, w: int, bc: dict,
+                  action: Optional[Callable[[], None]] = None) -> None:
+        v = bc["v"]
+        vlen = len(v)
+        hint = " ▸" if action is not None else "  "
+        ls = " " + label
+        value = str(value)
+        content = w - 2 * vlen
+        gap = content - len(ls) - len(value) - len(hint)
+        if gap < 1:
+            maxval = content - len(ls) - len(hint) - 1
+            value = value[:max(0, maxval)]
+            gap = max(0, content - len(ls) - len(value) - len(hint))
+        y = len(lines)
+        if action is not None:
+            self._hits.append((y, 0, w, action))
+        lines.append([
+            ("class:sidebar.dim", v),
+            ("class:sidebar.label", ls),
+            ("class:sidebar", " " * gap),
+            ("class:sidebar.value", value),
+            ("class:sidebar.hotkey" if action is not None else "class:sidebar.dim", hint),
+            ("class:sidebar.dim", v),
+        ])
+
+    def _perf_apply(self, patch: dict, rerender: bool = True) -> None:
+        self.cfg.update(patch)
+        try:
+            self.cfg.save()
+        except Exception:
+            pass
+        if rerender and self.on_perf_changed is not None:
+            self.on_perf_changed()
+        else:
+            from prompt_toolkit.application.current import get_app_or_none
+            app = get_app_or_none()
+            if app:
+                app.invalidate()
+
+    def _build_performance_lines(self, w: int, bc: dict) -> List:
+        r = self.cfg["render"]
+        m = self.cfg["map"]
+        pf = self.cfg["prefetch"]
+        at = self.cfg["aircraft_trails"]
+        ui = self.cfg["ui"]
+        ca = self.cfg["cache"]
+        lines: List = []
+
+        lines.append(self._section("Renderer", w, bc))
+        self._perf_row(lines, "Engine", r.get("vector_engine", "libcarto"),
+                       w, bc, self._perf_toggle_engine)
+        scale = int(r.get("vector_scale", 6))
+        qual = {2: "fastest", 3: "fast", 4: "balanced",
+                6: "sharp", 8: "max"}.get(scale, str(scale))
+        self._perf_row(lines, "Quality", qual, w, bc, self._perf_cycle_quality)
+        self._perf_row(lines, "Overzoom", str(int(m.get("overzoom", 2))),
+                       w, bc, self._perf_cycle_overzoom)
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Tiles", w, bc))
+        self._perf_row(lines, "Prefetch", "on" if pf.get("enable", True) else "off",
+                       w, bc, self._perf_toggle_prefetch)
+        cache_mb = int(int(ca.get("max_bytes", 268435456)) // (1024 * 1024))
+        self._perf_row(lines, "Cache", f"{cache_mb} MB", w, bc, self._perf_cycle_cache)
+        lines.append(self._section_end(w, bc))
+
+        lines.append(self._section("Display", w, bc))
+        self._perf_row(lines, "Trails", "on" if at.get("enabled", True) else "off",
+                       w, bc, self._perf_toggle_trails)
+        self._perf_row(lines, "Latency", "on" if ui.get("show_latency", True) else "off",
+                       w, bc, self._perf_toggle_latency)
+        self._perf_row(lines, "Render", f"{self.state.last_render_ms:.0f} ms", w, bc)
+        lines.append(self._section_end(w, bc))
+        return lines
+
+    def _perf_toggle_engine(self) -> None:
+        cur = self.cfg["render"].get("vector_engine", "libcarto")
+        self._perf_apply({"render": {"vector_engine":
+                          "python" if cur == "libcarto" else "libcarto"}})
+
+    def _perf_cycle_quality(self) -> None:
+        order = [3, 4, 6, 8]
+        cur = int(self.cfg["render"].get("vector_scale", 6))
+        idx = order.index(cur) if cur in order else 2
+        self._perf_apply({"render": {"vector_scale": order[(idx + 1) % len(order)]}})
+
+    def _perf_cycle_overzoom(self) -> None:
+        cur = int(self.cfg["map"].get("overzoom", 2))
+        self._perf_apply({"map": {"overzoom": (cur + 1) % 5}})
+
+    def _perf_toggle_prefetch(self) -> None:
+        cur = bool(self.cfg["prefetch"].get("enable", True))
+        self._perf_apply({"prefetch": {"enable": not cur}}, rerender=False)
+
+    def _perf_cycle_cache(self) -> None:
+        order = [128, 256, 512, 1024]
+        cur = int(int(self.cfg["cache"].get("max_bytes", 268435456)) // (1024 * 1024))
+        idx = order.index(cur) if cur in order else 1
+        self._perf_apply(
+            {"cache": {"max_bytes": order[(idx + 1) % len(order)] * 1024 * 1024}},
+            rerender=False)
+
+    def _perf_toggle_trails(self) -> None:
+        cur = bool(self.cfg["aircraft_trails"].get("enabled", True))
+        self._perf_apply({"aircraft_trails": {"enabled": not cur}})
+
+    def _perf_toggle_latency(self) -> None:
+        cur = bool(self.cfg["ui"].get("show_latency", True))
+        self._perf_apply({"ui": {"show_latency": not cur}}, rerender=False)
 
     def _build_search_lines(self, w: int, bc: dict) -> List:
         v = bc["v"]
@@ -358,8 +471,10 @@ class SidebarControl(UIControl):
             body = self._build_search_lines(width, bc)
         elif tab == TAB_CONTROLS:
             body = self._build_controls_lines(width, bc)
-        else:
+        elif tab == TAB_INTEGRATION:
             body = self._build_integration_lines(width, bc)
+        else:
+            body = self._build_performance_lines(width, bc)
 
         offset = len(rows)
         self._hits = [(y + offset if y >= 2 else y + offset, x0, x1, fn)

@@ -195,7 +195,7 @@ class MapState:
 
     def set_sidebar_tab(self, idx: int) -> None:
         with self._lock:
-            self.sidebar_tab = max(0, min(3, int(idx)))
+            self.sidebar_tab = max(0, min(4, int(idx)))
 
     def select_aircraft(self, icao: Optional[str]) -> None:
         with self._lock:

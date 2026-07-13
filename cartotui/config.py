@@ -74,6 +74,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "subpixel_percentile": 55,
         "shaded_blocks": False,
         "vector_overlay": True,
+        "vector_engine": "libcarto",
+        "vector_scale": 6,
     },
     "prefetch": {
         "enable": True,
@@ -268,6 +270,10 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
         DEFAULT_CONFIG["render"]["subpixel_threshold"])
     r["subpixel_percentile"] = _coerce_int(r.get("subpixel_percentile"), 55, (5, 95))
     r["shaded_blocks"] = _coerce_bool(r.get("shaded_blocks"), DEFAULT_CONFIG["render"]["shaded_blocks"])
+    r["vector_overlay"] = _coerce_bool(r.get("vector_overlay"), DEFAULT_CONFIG["render"]["vector_overlay"])
+    r["vector_engine"] = _coerce_choice(r.get("vector_engine"), ("libcarto", "python"),
+                                        DEFAULT_CONFIG["render"]["vector_engine"])
+    r["vector_scale"] = _coerce_int(r.get("vector_scale"), 6, (2, 8))
 
     pf = c["prefetch"]
     pf["enable"]       = _coerce_bool(pf.get("enable"), DEFAULT_CONFIG["prefetch"]["enable"])

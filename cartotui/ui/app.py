@@ -92,6 +92,8 @@ class CartoTUIApp:
             on_search_submit=self._on_search_submit,
             width_chars=int(sidebar_cfg.get("sidebar_width", 36)),
         )
+        self.sidebar.control.on_perf_changed = (
+            lambda: self.map_control.request_render(force=True))
 
         palettes = list(default_palettes().keys())
         self.toolbar = Toolbar(
@@ -300,7 +302,7 @@ class CartoTUIApp:
             self.sidebar.control.cycle_tab(-1)
             event.app.invalidate()
 
-        for i in range(4):
+        for i in range(5):
             @kb.add(f"f{5 + i}", filter=sidebar_visible_filter)
             def _(event, idx=i):
                 self.sidebar.control.set_tab(idx)

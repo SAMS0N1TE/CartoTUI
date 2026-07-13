@@ -309,9 +309,16 @@ class MapControl(UIControl):
         self.state.set_info(f"Goto {lat:.4f}, {lon:.4f}")
         self.request_render()
 
-    def request_render(self) -> None:
+    def request_render(self, force: bool = False) -> None:
         snap = self.state.snapshot()
-        self._enqueue(self._last_w, self._last_h, snap)
+        snap_key = None
+        if force:
+            self._force_nonce = getattr(self, "_force_nonce", 0) + 1
+            ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
+            ac_sel = self.state.selected_aircraft_icao or ""
+            snap_key = (self._last_w, self._last_h, ac_gen, ac_sel,
+                        self._force_nonce) + snap
+        self._enqueue(self._last_w, self._last_h, snap, snap_key)
         app = get_app_or_none()
         if app:
             app.invalidate()
@@ -366,7 +373,7 @@ class MapControl(UIControl):
 
             cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
-            scale = 6 if source == "vector" else 4
+            scale = int(self.cfg["render"].get("vector_scale", 6)) if source == "vector" else 4
             px_w = max(64, min(max_px, w * cell_w_px * scale))
             px_h = max(64, min(max_px, h * cell_h_px * scale))
 
