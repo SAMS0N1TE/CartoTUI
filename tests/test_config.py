@@ -36,8 +36,6 @@ def test_choices():
 def test_dynamic_quality_defaults():
     c = _validate({})
     assert c["render"]["dynamic_quality"] is True
-    assert c["render"]["pan_scale"] == 3
-    assert _validate({"render": {"pan_scale": 99}})["render"]["pan_scale"] == 5
     assert _validate({"render": {"dynamic_quality": False}})["render"]["dynamic_quality"] is False
 
 

@@ -54,12 +54,11 @@ widget, or:
 Raster (real map imagery) can be recoloured to match the active theme with the
 raster tint (Render widget → Raster, or `set render.raster_tint theme`).
 
-**Dynamic panning quality** (Render widget → Pan quality, on by default) drops
-render quality while you pan so it stays responsive, then snaps back to full
-quality when you stop — like a web map. Vector renders at a lower supersample;
-raster uses only already-cached tiles (blurry-but-visible) and skips the sharpen
-pass, prefetching the real tiles in the background. Turn it off with
-`set render.dynamic_quality false`.
+**Dynamic panning quality** (Render widget → Pan quality, on by default) keeps
+raster panning responsive: while you pan it uses only already-cached tiles
+(blurry-but-visible, never blank), skips the sharpen pass, and prefetches the
+real tiles in the background, then reloads full quality when you stop — like a
+web map. Turn it off with `set render.dynamic_quality false`.
 
 ## Snapshots
 

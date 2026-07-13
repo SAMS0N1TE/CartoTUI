@@ -80,7 +80,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "road_highlight": False,
         "raster_tint": "none",
         "dynamic_quality": True,
-        "pan_scale": 3,
     },
     "prefetch": {
         "enable": True,
@@ -315,7 +314,6 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["road_highlight"] = _coerce_bool(r.get("road_highlight"), False)
     r["raster_tint"] = _coerce_choice(r.get("raster_tint"), ("none", "theme"), "none")
     r["dynamic_quality"] = _coerce_bool(r.get("dynamic_quality"), True)
-    r["pan_scale"] = _coerce_int(r.get("pan_scale"), 3, (2, 5))
 
     pf = c["prefetch"]
     pf["enable"]       = _coerce_bool(pf.get("enable"), DEFAULT_CONFIG["prefetch"]["enable"])

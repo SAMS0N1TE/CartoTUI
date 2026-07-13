@@ -404,9 +404,6 @@ class MapControl(UIControl):
             panning = self._panning()
             self._last_render_panning = panning
             scale = int(self.cfg["render"].get("vector_scale", 6)) if source == "vector" else 4
-            if panning:
-                scale = min(scale, int(self.cfg["render"].get("pan_scale", 3)))
-                max_px = min(max_px, 960)
             px_w = max(64, min(max_px, w * cell_w_px * scale))
             px_h = max(64, min(max_px, h * cell_h_px * scale))
 
