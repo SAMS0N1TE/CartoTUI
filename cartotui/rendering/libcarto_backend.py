@@ -4,8 +4,17 @@ import gzip
 import logging
 import os
 import sys
+import threading
 
 log = logging.getLogger("cartotui.libcarto")
+
+_load_lock = threading.Lock()
+_load_pending = 0
+
+
+def get_loading() -> int:
+    with _load_lock:
+        return _load_pending
 
 _BINDINGS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "bindings", "python")
@@ -51,10 +60,11 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int):
     return Image.fromarray(rgb, "RGB")
 
 
-def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None):
+def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None, preload=False):
+    global _load_pending
     renderer = _get_renderer()
 
-    def fetch(zz, xx, yy):
+    def base_fetch(zz, xx, yy):
         raw = vector_source._fetch_raw(zz, xx, yy)
         if raw and raw[:2] == b"\x1f\x8b":
             try:
@@ -63,7 +73,19 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None):
                 pass
         return raw
 
-    rgb565, drawn = renderer.render_viewport(lat, lon, z, px_w, px_h, fetch)
+    def counted_fetch(zz, xx, yy):
+        global _load_pending
+        with _load_lock:
+            _load_pending += 1
+        try:
+            return base_fetch(zz, xx, yy)
+        finally:
+            with _load_lock:
+                _load_pending -= 1
+
+    rgb565, drawn = renderer.render_viewport(lat, lon, z, px_w, px_h, counted_fetch)
+    if preload:
+        renderer.prefetch_ring(lat, lon, z, px_w, px_h, base_fetch, ring=1)
     if drawn == 0:
         return None
     return _rgb565_to_image(rgb565, px_w, px_h)

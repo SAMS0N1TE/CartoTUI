@@ -1,6 +1,8 @@
 import ctypes
 import math
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from ctypes import (c_int, c_int32, c_uint8, c_ubyte, c_double, c_size_t,
                     c_void_p, c_char, POINTER, byref, cast, Structure)
 
@@ -53,18 +55,45 @@ class Renderer:
         self._tile_cache = {}
         self._tile_lru = []
         self._tile_cache_max = 512
+        self._cache_lock = threading.Lock()
 
     def _store_tile(self, k, raw):
         buf = None
         if raw:
             arr = (c_ubyte * len(raw)).from_buffer_copy(raw)
             buf = (arr, len(raw))
-        self._tile_cache[k] = buf
-        self._tile_lru.append(k)
-        if len(self._tile_lru) > self._tile_cache_max:
-            old = self._tile_lru.pop(0)
-            self._tile_cache.pop(old, None)
+        with self._cache_lock:
+            self._tile_cache[k] = buf
+            self._tile_lru.append(k)
+            if len(self._tile_lru) > self._tile_cache_max:
+                old = self._tile_lru.pop(0)
+                self._tile_cache.pop(old, None)
         return buf
+
+    def prefetch_ring(self, lat, lon, z, w, h, fetch, ring=1, workers=4):
+        def work():
+            try:
+                n = 2 ** z
+                cx = ((lon + 180.0) / 360.0) * n * 256
+                yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0
+                cy = yn * n * 256
+                tx0 = int(math.floor((cx - w / 2.0) / 256)) - ring
+                tx1 = int(math.floor((cx + w / 2.0) / 256)) + ring
+                ty0 = int(math.floor((cy - h / 2.0) / 256)) - ring
+                ty1 = int(math.floor((cy + h / 2.0) / 256)) + ring
+                missing = []
+                for ty in range(ty0, ty1 + 1):
+                    for tx in range(tx0, tx1 + 1):
+                        if 0 <= tx < n and 0 <= ty < n and (z, tx, ty) not in self._tile_cache:
+                            missing.append((z, tx, ty))
+                if not missing:
+                    return
+                with ThreadPoolExecutor(max_workers=min(workers, len(missing))) as ex:
+                    for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
+                        self._store_tile(k, raw)
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
 
     def render_tile(self, tile: bytes, z: int, x: int, y: int, w: int, h: int) -> bytes:
         L = self.lib

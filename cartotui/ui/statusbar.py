@@ -1,11 +1,21 @@
 
 from __future__ import annotations
 
+import time
+
 from prompt_toolkit.formatted_text import to_formatted_text
 from prompt_toolkit.layout.controls import UIContent, UIControl
 
 from cartotui.config import Config
 from cartotui.ui.state import MapState
+
+_SPIN = "⣾⣽⣻⢿⡿⣟⣯⣷"
+
+try:
+    from cartotui.rendering.libcarto_backend import get_loading as _get_loading
+except Exception:
+    def _get_loading() -> int:
+        return 0
 
 class StatusBar(UIControl):
     def __init__(self, state: MapState, cfg: Config) -> None:
@@ -28,12 +38,17 @@ class StatusBar(UIControl):
             f"{color.upper()} "
         )
         right_parts = []
+        try:
+            loading = _get_loading()
+        except Exception:
+            loading = 0
+        if loading > 0:
+            spin = _SPIN[int(time.monotonic() * 8) % len(_SPIN)]
+            right_parts.append(("class:statusbar.warn", f" {spin} loading {loading} "))
         if show_latency:
             warn = latency > 250
             right_parts.append(("class:statusbar.warn" if warn else "class:statusbar",
                                 f"  {latency:5.1f} ms render "))
-        else:
-            right_parts.append(("class:statusbar", ""))
 
         info = self.state.current_info()
         info_seg = f"⟨ {info} ⟩ " if info else ""

@@ -395,8 +395,10 @@ class MapControl(UIControl):
                 if engine == "libcarto":
                     try:
                         from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
+                        pf_enable = bool(self.cfg["prefetch"].get("enable", True))
                         img = rasterise_view_libcarto(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
+                            preload=pf_enable,
                         )
                     except Exception as e:
                         log.warning("libcarto rasterise failed (%s); using python path", e)
