@@ -72,6 +72,12 @@ especially on slower terminals:
 - **Max FPS** (`set ui.max_fps 30`) — caps and coalesces redraws so input stays
   responsive during fast panning; lower it on slow terminals.
 
+Over **SSH** the output volume is bandwidth, so it matters more: use
+`set render.color_depth 256` (or `16`), a lower `max_fps`, and connect with
+compression (`ssh -C`) — the colour escapes compress very well. CartoTUI is
+plain text, so it works on any terminal over SSH; it does not use image
+protocols (Sixel/kitty) that would tie it to specific terminals.
+
 ## Snapshots
 
 Click `[PNG]` or `[HTML]` in the top-right of the title bar, press `x` for a PNG,

@@ -177,11 +177,17 @@ class MapControl(UIControl):
 
         rows = self._normalise_rows(self._last_frame, width, height)
         chx, chy = width // 2, height // 2
+        cross_row = None
         if self.state.crosshair and 0 <= chy < height and 0 <= chx < width:
-            rows[chy] = self._overlay_crosshair(rows[chy], chx, self.state.crosshair)
+            cross_row = self._overlay_crosshair(rows[chy], chx, self.state.crosshair)
+
+        def get_line(i: int):
+            if i == chy and cross_row is not None:
+                return cross_row
+            return rows[i] if 0 <= i < height else [("", " " * width)]
 
         return UIContent(
-            get_line=lambda i: rows[i] if 0 <= i < height else [("", " " * width)],
+            get_line=get_line,
             line_count=height,
             cursor_position=Point(x=chx, y=chy),
         )
@@ -699,8 +705,10 @@ class MapControl(UIControl):
 
     @staticmethod
     def _normalise_rows(frame: _Frame, width: int, height: int):
-        out = []
         src = frame.rows
+        if frame.width == width and frame.height == height and len(src) == height:
+            return src
+        out = []
         for y in range(height):
             if y < len(src) and src[y]:
                 runs = []
