@@ -120,7 +120,7 @@ class CartoTUIApp:
 
         floats = [Float(
             content=self.sidebar.container,
-            top=1, bottom=1, right=1, width=self.sidebar.width_chars,
+            top=1, right=1, width=self.sidebar.width_chars,
         )]
         map_area = FloatContainer(content=self.map_window, floats=floats)
 

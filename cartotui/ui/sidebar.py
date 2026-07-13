@@ -71,7 +71,26 @@ class SidebarControl(UIControl):
         return min(self.width_chars, max_available_width)
 
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
-        return max_available_height
+        bc = _get_bc(self.cfg)
+        saved = self._hits
+        self._hits = []
+        try:
+            body = self._body_for_tab(max(10, int(width)), bc)
+        finally:
+            self._hits = saved
+        return min(3 + len(body), max_available_height)
+
+    def _body_for_tab(self, width: int, bc: dict) -> List:
+        tab = self.state.sidebar_tab
+        if tab == TAB_SETTINGS:
+            return self._build_settings_lines(width, bc)
+        if tab == TAB_SEARCH:
+            return self._build_search_lines(width, bc)
+        if tab == TAB_CONTROLS:
+            return self._build_controls_lines(width, bc)
+        if tab == TAB_INTEGRATION:
+            return self._build_integration_lines(width, bc)
+        return self._build_performance_lines(width, bc)
 
     def set_tab(self, idx: int) -> None:
         idx = max(0, min(len(SIDEBAR_TABS) - 1, int(idx)))
@@ -465,17 +484,7 @@ class SidebarControl(UIControl):
         rows.append(label_runs)
 
         pre_body = len(self._hits)
-        tab = self.state.sidebar_tab
-        if tab == TAB_SETTINGS:
-            body = self._build_settings_lines(width, bc)
-        elif tab == TAB_SEARCH:
-            body = self._build_search_lines(width, bc)
-        elif tab == TAB_CONTROLS:
-            body = self._build_controls_lines(width, bc)
-        elif tab == TAB_INTEGRATION:
-            body = self._build_integration_lines(width, bc)
-        else:
-            body = self._build_performance_lines(width, bc)
+        body = self._body_for_tab(width, bc)
 
         offset = len(rows)
         self._hits = [
