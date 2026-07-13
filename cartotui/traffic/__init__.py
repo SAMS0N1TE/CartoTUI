@@ -80,8 +80,6 @@ def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
     enabled = bool(cfg.get("enabled", False))
     source = str(cfg.get("source", "disabled")).lower().strip()
 
-    # Auto-promote: enabled + port set + source is "disabled" → lakeshark.
-    # We don't promote on unknown values so typos stay visible.
     if enabled and source == "disabled":
         ls_cfg = cfg.get("lakeshark", {})
         if ls_cfg.get("port"):
@@ -120,8 +118,6 @@ def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
     if source == "disabled":
         return NullTrafficSource(registry)
 
-    # Unrecognised value (e.g. "enabled", "true", typos). Surface the
-    # bad value in the sidebar detail so the user can spot the typo.
     log.warning(
         "Unrecognised traffic.source = %r; expected one of "
         "'lakeshark', 'lakeshark_tui', 'sbs1', 'disabled'.", source,
