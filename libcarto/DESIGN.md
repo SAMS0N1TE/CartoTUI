@@ -29,49 +29,9 @@ and (3) becomes the shared map layer for the LakeShark ADS-B handheld.
 
 ---
 
-## Locked decisions (2026-06-30)
-
-**D1 — Imagery path: Python-only.** `libcarto` is **vector-only** and
-freestanding (no JPEG/PNG decoders, no libc surprises). The image→glyph
-path is retained but scoped strictly to genuine raster imagery (satellite,
-hillshade, OpenTopoMap) and lives in `cartotui/rendering/imagery.py`,
-desktop-only. CartoTUI is therefore **dual-pipeline**: true-vector via the
-C core for vector sources, image→glyph in Python for imagery. The device
-never needs an image decoder.
-
-**D2 — Tiles: validate on MVT, ship on baked `.carto`.** Desktop Phase 1
-parses real PMTiles/MVT directly (one decoder to validate the rasterizer
-against). The device path is the **pre-baked compact `.carto` format**
-(int16 quantized coords, per-zoom simplified, layer-tagged, no protobuf
-parser on the MCU) loaded from the **SD card**. `tools/tilebake.c` is a
-committed deliverable, not optional. Rationale: on a constrained MCU the
-baked format is decisively faster and smaller; on desktop, MVT avoids a
-baking step during development.
-
-**D3 — Display: color-first, mono as a first-class mode.** RGB565 color
-LCD is the primary device target. `CARTO_FMT_MONO1` is a first-class
-framebuffer mode for the Sharp LS027B7DH01 / e-ink. Consequence: the
-palette / dither / truecolor aesthetic **carries onto the color device**,
-not just the desktop terminal — strengthening the "real subpixel-aesthetic
-engine on an MCU" differentiator.
-
----
 
 ## Architecture
 
-```
-            ┌──────────────────────── libcarto (C99) ───────────────────────┐
-            │ arena · fixedpt · mvt_stream · geom · raster · labels · style  │
-            │                      → framebuffer                             │
-            └───────────────▲───────────────────────────────▲───────────────┘
-                            │ cffi (API mode)                │ ESP-IDF component
-            ┌───────────────┴──────────────┐   ┌─────────────┴───────────────┐
-            │ Desktop: cartotui (Python)   │   │ Firmware: esp32p4           │
-            │ prompt_toolkit shell, packer │   │ esp_lcd backend, SD tiles,  │
-            │ palette/dither, imagery path,│   │ buttons, ADS-B layer from   │
-            │ traffic/ADS-B, fetch/cache   │   │ LakeShark RTL-SDR pipeline  │
-            └──────────────────────────────┘   └─────────────────────────────┘
-```
 
 The C core renders into a `carto_framebuffer`. It does not own the screen,
 the network, the filesystem, or a terminal. Fetch/cache stays in Python on
@@ -157,73 +117,3 @@ See `framebuffer.h` for the full table. Key points:
   not per-subpixel. That's the deliberate trade for geometric sharpness —
   the whole point of going vector.
 
----
-
-## Phased roadmap (reflecting locked decisions)
-
-- **Phase 0 — API as headers + this contract.** `fixedpt.h`,
-  `framebuffer.h` done; `arena.h`, `style.h`, `carto.h` next (style.h
-  waits on the existing-definitions extract). *(in progress)*
-- **Phase 1 — Build `libcarto` on Linux, standalone.** Modules: arena,
-  fixedpt, mvt_stream, geom, raster, labels, style, framebuffer. Harness
-  `tests/render_to_png.c` feeds a PMTiles tile + viewport and dumps PNG.
-  **Golden-image diffs checked in from day one** so polyline joins /
-  nonzero-fill can't silently regress. De-risks the rasterizer before any
-  embedded pain.
-- **Phase 2 — Bind into Python via cffi (API mode).** Rip out
-  `raster_vector.rasterise_view` for vector sources; C core renders into a
-  subpixel/indexed buffer, a thin `rendering/packer.py` makes
-  prompt_toolkit fragments with the palette/dither/truecolor layer. The
-  whole TUI shell stays (sidebar, compass, goto, themes, statusbar). The
-  **recovered `_OLD` features land here**: airplane `marker_size`,
-  favorites, profiles, name_prompt, pmtiles_download. Needs a C toolchain
-  on the Windows dev box (MSVC/clang).
-- **Phase 3 — ESP-IDF component.** `libcarto` compiles as-is. Add `esp_lcd`
-  RGB565 backend (+ MONO1 path for Sharp), SD-card `.carto` tile loading,
-  the `tilebake.c` desktop baker, button input.
-- **Phase 4 — ADS-B overlay on device.** LakeShark aircraft lat/lon feed
-  `libcarto` as a dynamic point/line layer drawn after the basemap. The
-  demo that sells the project.
-
----
-
-## Directory structure (target)
-
-```
-cartotui/
-├── libcarto/                 # portable C99 core (THIS)
-│   ├── include/carto/        # carto.h framebuffer.h style.h fixedpt.h arena.h
-│   ├── src/                  # arena mvt_stream geom raster labels style framebuffer
-│   ├── tools/tilebake.c      # desktop: PMTiles/MVT -> compact .carto
-│   ├── tests/render_to_png.c # phase-1 visual + golden harness
-│   └── CMakeLists.txt
-├── bindings/python/          # _carto_build.py (cffi), carto_ffi.py
-├── cartotui/                 # existing Python app, slimmed
-│   ├── ui/                   # prompt_toolkit shell (kept)
-│   ├── rendering/packer.py   # framebuffer -> braille/quadrant + palette/dither
-│   ├── rendering/imagery.py  # kept image->glyph path, imagery-only
-│   ├── vector_source.py      # kept for fetch/cache; decode moves to C
-│   └── traffic/              # ADS-B (kept)
-├── firmware/esp32p4/         # ESP-IDF: app_main, lcd (rgb565+sharp), tiles_sd
-│   └── components/libcarto/  # -> ../../libcarto
-└── tiles/                    # baked .carto tiles for the device
-```
-
-Phase 0 only **adds** `libcarto/`; it touches no existing file. The
-`cartotui/` reshuffle happens in Phase 2.
-
----
-
-## Open questions / risks (to resolve in Phase 1)
-
-1. **`cell_color` coupling (framebuffer.h)** — carry per-cell color as a
-   plane, or have the packer derive it by sampling the full-res buffer?
-   Provisional: plane. Decide once the packer is real.
-2. **Labels module** — grid-occupancy v1; defer the R-tree until it's a
-   measured bottleneck. Highest-risk net-new module.
-3. **Polygon fill rule** — nonzero vs even-odd per layer (buildings vs
-   multipolygon water with holes). Golden tests must cover holes.
-4. **Stroke joins/caps** — brush-stamp Bresenham is simplest; revisit if
-   thick roads show gaps at sharp turns (stroke-to-polygon fallback).
-5. **`.carto` format spec** — finalized in Phase 3 against measured P4
-   memory/perf, not guessed now.
