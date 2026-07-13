@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Callable, List, Optional, Tuple
@@ -28,7 +27,8 @@ _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
     ("R",   "Reset"),
 ]
 
-_SEP = "  "
+_MOVE = getattr(MouseEventType, "MOUSE_MOVE", None)
+
 
 def _is_disabled(state, key: str) -> bool:
     rm = state.render_mode
@@ -37,6 +37,23 @@ def _is_disabled(state, key: str) -> bool:
     if key == "S":
         return rm == "ascii"
     return False
+
+
+def _clip_runs(runs, width):
+    out = []
+    used = 0
+    for style, text in runs:
+        if used >= width:
+            break
+        if used + len(text) > width:
+            text = text[: width - used]
+        if text:
+            out.append((style, text))
+            used += len(text)
+    if used < width:
+        out.append(("class:toolbar", " " * (width - used)))
+    return out
+
 
 class Toolbar(UIControl):
     def __init__(
@@ -60,6 +77,8 @@ class Toolbar(UIControl):
         self.on_cycle_source = on_cycle_source
 
         self._hit_zones: List[Tuple[int, int, str]] = []
+        self._hover_key: Optional[str] = None
+        self._press_key: Optional[str] = None
 
     def is_focusable(self) -> bool:
         return False
@@ -69,46 +88,75 @@ class Toolbar(UIControl):
         zones: List[Tuple[int, int, str]] = []
         col = 0
 
-        runs.append(("class:toolbar", "  "))
-        col += 2
+        runs.append(("class:toolbar", " "))
+        col += 1
 
-        for idx, (key, label) in enumerate(_TOOLBAR_ITEMS):
+        for key, label in _TOOLBAR_ITEMS:
             disabled = _is_disabled(self.state, key)
-            key_cls  = "class:toolbar.dim" if disabled else "class:toolbar.key"
-            text_cls = "class:toolbar.dim" if disabled else "class:toolbar"
+            pressed = (not disabled) and self._press_key == key
+            hover = (not disabled) and not pressed and self._hover_key == key
+
+            if disabled:
+                box = key_cls = lbl_cls = "class:toolbar.dim"
+            elif pressed:
+                box = key_cls = lbl_cls = "class:toolbar.key reverse bold"
+            elif hover:
+                box = key_cls = lbl_cls = "class:toolbar reverse"
+            else:
+                box = "class:toolbar.dim"
+                key_cls = "class:toolbar.key"
+                lbl_cls = "class:toolbar"
 
             zone_start = col
+            runs.append((box, "["))
             runs.append((key_cls, key))
-            col += len(key)
-            runs.append((text_cls, " " + label))
-            col += len(label) + 1
+            runs.append((lbl_cls, " " + label))
+            runs.append((box, "]"))
+            col += 1 + len(key) + 1 + len(label) + 1
             zones.append((zone_start, col, key))
 
-            if idx < len(_TOOLBAR_ITEMS) - 1:
-                runs.append(("class:toolbar.dim", _SEP))
-                col += len(_SEP)
-
-        if col < width:
-            runs.append(("class:toolbar", " " * (width - col)))
-        elif col > width:
-            rendered = "".join(t for _s, t in runs)
-            runs = [("class:toolbar", rendered[:width])]
+            runs.append(("class:toolbar", " "))
+            col += 1
 
         self._hit_zones = zones
-        formatted = to_formatted_text(runs)
+        formatted = to_formatted_text(_clip_runs(runs, width))
         return UIContent(
             get_line=lambda i: formatted if i == 0 else [("class:toolbar", " " * width)],
             line_count=1,
         )
 
-    def mouse_handler(self, mouse_event: MouseEvent):
-        if mouse_event.event_type != MouseEventType.MOUSE_UP:
-            return None
-        x = mouse_event.position.x
+    def _key_at(self, x: int) -> Optional[str]:
         for start, end, key in self._hit_zones:
             if start <= x < end:
+                return key
+        return None
+
+    def mouse_handler(self, mouse_event: MouseEvent):
+        et = mouse_event.event_type
+        key = self._key_at(mouse_event.position.x)
+        changed = False
+
+        if et == MouseEventType.MOUSE_DOWN:
+            if self._press_key != key:
+                self._press_key = key
+                changed = True
+        elif et == MouseEventType.MOUSE_UP:
+            target = self._press_key
+            self._press_key = None
+            if target is not None:
+                changed = True
+            if target is not None and target == key:
                 self._dispatch(key)
                 return None
+        elif _MOVE is not None and et == _MOVE:
+            if self._hover_key != key:
+                self._hover_key = key
+                changed = True
+
+        if changed:
+            app = get_app_or_none()
+            if app:
+                app.invalidate()
         return None
 
     def _dispatch(self, key: str) -> None:
