@@ -9,7 +9,7 @@ from typing import Optional
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, VSplit, Window
 from prompt_toolkit.styles import DynamicStyle
 
 from cartotui.cache import TileCache
@@ -117,18 +117,24 @@ class CartoTUIApp:
         self.map_control.bind_window(self.map_window)
 
         vp = self.cfg["viewport"]
+
+        floats = []
+        if vp.get("show_toolbar", True):
+            self.toolbar_window = Window(
+                content=self.toolbar, height=4, style="class:toolbar")
+            floats.append(Float(content=self.toolbar_window, bottom=1, left=2, right=2))
+        map_area = FloatContainer(content=self.map_window, floats=floats)
+
         rows = []
         if vp.get("show_titlebar", True):
             rows.append(Window(content=self.titlebar, height=1, style="class:titlebar"))
 
         body = VSplit([
-            self.map_window,
+            map_area,
             self.sidebar,
         ])
         rows.append(body)
 
-        if vp.get("show_toolbar", True):
-            rows.append(Window(content=self.toolbar, height=1, style="class:toolbar"))
         if vp.get("show_statusbar", True):
             rows.append(Window(content=self.statusbar, height=1, style="class:statusbar"))
 

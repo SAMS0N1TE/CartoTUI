@@ -7,6 +7,7 @@ from prompt_toolkit.formatted_text import to_formatted_text
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
+from cartotui.themes import border_chars
 from cartotui.ui.map_control import MapControl
 from cartotui.ui.state import MapState
 
@@ -27,6 +28,7 @@ _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
     ("R",   "Reset"),
 ]
 
+_ROWS = [_TOOLBAR_ITEMS[0:7], _TOOLBAR_ITEMS[7:14]]
 _MOVE = getattr(MouseEventType, "MOUSE_MOVE", None)
 
 
@@ -39,7 +41,7 @@ def _is_disabled(state, key: str) -> bool:
     return False
 
 
-def _clip_runs(runs, width):
+def _clip_runs(runs, width, fill="class:toolbar"):
     out = []
     used = 0
     for style, text in runs:
@@ -51,7 +53,7 @@ def _clip_runs(runs, width):
             out.append((style, text))
             used += len(text)
     if used < width:
-        out.append(("class:toolbar", " " * (width - used)))
+        out.append((fill, " " * (width - used)))
     return out
 
 
@@ -76,64 +78,83 @@ class Toolbar(UIControl):
         self.on_theme_changed = on_theme_changed
         self.on_cycle_source = on_cycle_source
 
-        self._hit_zones: List[Tuple[int, int, str]] = []
+        self._hit_zones: List[Tuple[int, int, int, str]] = []
         self._hover_key: Optional[str] = None
         self._press_key: Optional[str] = None
 
     def is_focusable(self) -> bool:
         return False
 
-    def create_content(self, width: int, height: int) -> UIContent:
-        runs = []
-        zones: List[Tuple[int, int, str]] = []
-        col = 0
+    def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
+        return 4
 
-        runs.append(("class:toolbar", " "))
-        col += 1
+    def _bc(self) -> dict:
+        ui = self.state.cfg["ui"]
+        return border_chars(ui.get("border_style", "heavy"), ui.get("theme", "amber"))
 
-        for key, label in _TOOLBAR_ITEMS:
+    def _button_row(self, items, inner_w, panel_line, xoff, zones):
+        segs = []
+        for key, label in items:
             disabled = _is_disabled(self.state, key)
             pressed = (not disabled) and self._press_key == key
             hover = (not disabled) and not pressed and self._hover_key == key
-
             if disabled:
-                box = key_cls = lbl_cls = "class:toolbar.dim"
+                box = kc = lc = "class:toolbar.dim"
             elif pressed:
-                box = key_cls = lbl_cls = "class:toolbar.key reverse bold"
+                box = kc = lc = "class:toolbar.key reverse bold"
             elif hover:
-                box = key_cls = lbl_cls = "class:toolbar reverse"
+                box = kc = lc = "class:toolbar reverse"
             else:
-                box = "class:toolbar.dim"
-                key_cls = "class:toolbar.key"
-                lbl_cls = "class:toolbar"
+                box, kc, lc = "class:toolbar.dim", "class:toolbar.key", "class:toolbar"
+            seg = [(box, "["), (kc, key), (lc, " " + label), (box, "]")]
+            segs.append((seg, len(key) + len(label) + 3, key))
 
-            zone_start = col
-            runs.append((box, "["))
-            runs.append((key_cls, key))
-            runs.append((lbl_cls, " " + label))
-            runs.append((box, "]"))
-            col += 1 + len(key) + 1 + len(label) + 1
-            zones.append((zone_start, col, key))
+        total = sum(sw for _, sw, _ in segs) + max(0, len(segs) - 1)
+        lead = max(0, (inner_w - total) // 2)
+        runs = [("class:toolbar", " " * lead)]
+        x = lead
+        for i, (seg, sw, key) in enumerate(segs):
+            zones.append((panel_line, x + xoff, x + sw + xoff, key))
+            runs.extend(seg)
+            x += sw
+            if i < len(segs) - 1:
+                runs.append(("class:toolbar", " "))
+                x += 1
+        return _clip_runs(runs, inner_w)
 
-            runs.append(("class:toolbar", " "))
-            col += 1
+    def create_content(self, width: int, height: int) -> UIContent:
+        w = max(6, width)
+        inner = w - 2
+        bc = self._bc()
+        h, v = bc["h"], bc["v"]
+        tl, tr, bl, br = bc["tl"], bc["tr"], bc["bl"], bc["br"]
 
+        zones: List[Tuple[int, int, int, str]] = []
+        r1 = self._button_row(_ROWS[0], inner, 1, 1, zones)
+        r2 = self._button_row(_ROWS[1], inner, 2, 1, zones)
         self._hit_zones = zones
-        formatted = to_formatted_text(_clip_runs(runs, width))
+
+        top = [("class:toolbar", tl + h * inner + tr)]
+        mid1 = [("class:toolbar", v)] + r1 + [("class:toolbar", v)]
+        mid2 = [("class:toolbar", v)] + r2 + [("class:toolbar", v)]
+        bottom = [("class:toolbar", bl + h * inner + br)]
+        lines = [to_formatted_text(x) for x in (top, mid1, mid2, bottom)]
+
         return UIContent(
-            get_line=lambda i: formatted if i == 0 else [("class:toolbar", " " * width)],
-            line_count=1,
+            get_line=lambda i: lines[i] if 0 <= i < len(lines)
+                                else [("class:toolbar", " " * w)],
+            line_count=len(lines),
         )
 
-    def _key_at(self, x: int) -> Optional[str]:
-        for start, end, key in self._hit_zones:
-            if start <= x < end:
+    def _key_at(self, x: int, y: int) -> Optional[str]:
+        for (py, x0, x1, key) in self._hit_zones:
+            if py == y and x0 <= x < x1:
                 return key
         return None
 
     def mouse_handler(self, mouse_event: MouseEvent):
         et = mouse_event.event_type
-        key = self._key_at(mouse_event.position.x)
+        key = self._key_at(mouse_event.position.x, mouse_event.position.y)
         changed = False
 
         if et == MouseEventType.MOUSE_DOWN:
@@ -141,11 +162,9 @@ class Toolbar(UIControl):
                 self._press_key = key
                 changed = True
         elif et == MouseEventType.MOUSE_UP:
-            target = self._press_key
             self._press_key = None
-            if target is not None:
-                changed = True
-            if target is not None and target == key:
+            changed = True
+            if key is not None:
                 self._dispatch(key)
                 return None
         elif _MOVE is not None and et == _MOVE:
@@ -161,8 +180,7 @@ class Toolbar(UIControl):
 
     def _dispatch(self, key: str) -> None:
         if _is_disabled(self.state, key):
-            reason = self._disabled_reason(key)
-            self.state.set_info(reason)
+            self.state.set_info(self._disabled_reason(key))
             app = get_app_or_none()
             if app:
                 app.invalidate()

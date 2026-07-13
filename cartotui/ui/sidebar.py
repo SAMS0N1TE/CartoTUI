@@ -464,6 +464,7 @@ class SidebarControl(UIControl):
 
         rows.append(label_runs)
 
+        pre_body = len(self._hits)
         tab = self.state.sidebar_tab
         if tab == TAB_SETTINGS:
             body = self._build_settings_lines(width, bc)
@@ -477,8 +478,10 @@ class SidebarControl(UIControl):
             body = self._build_performance_lines(width, bc)
 
         offset = len(rows)
-        self._hits = [(y + offset if y >= 2 else y + offset, x0, x1, fn)
-                      for (y, x0, x1, fn) in self._hits]
+        self._hits = [
+            h if i < pre_body else (h[0] + offset, h[1], h[2], h[3])
+            for i, h in enumerate(self._hits)
+        ]
 
         rows.extend(body)
 
