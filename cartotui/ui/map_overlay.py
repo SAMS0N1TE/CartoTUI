@@ -16,7 +16,7 @@ StyleRun = Tuple[str, str]
 LineFrag = List[StyleRun]
 FrameFrag = List[LineFrag]
 
-_PLACE_LAYERS = {"places"}
+_PLACE_LAYERS = {"places", "place_labels", "place"}
 
 def _project_lat_lon_to_cell(
     lat: float,
