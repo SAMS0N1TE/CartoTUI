@@ -93,10 +93,10 @@ def test_maritime_boundaries_are_skipped():
 
 
 def test_state_boundary_hidden_below_min_zoom():
-    n_low, _ = _draw(_boundary_layers(admin_level=4), z=3)
-    n_ok, _ = _draw(_boundary_layers(admin_level=4), z=6)
-    assert n_low == 0
-    assert n_ok > 0
+    # State lines appear from z5; hidden at z4 and below.
+    assert _draw(_boundary_layers(admin_level=4), z=4)[0] == 0
+    assert _draw(_boundary_layers(admin_level=4), z=3)[0] == 0
+    assert _draw(_boundary_layers(admin_level=4), z=5)[0] > 0
 
 
 def test_none_source_is_safe():
