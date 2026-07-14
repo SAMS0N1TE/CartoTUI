@@ -22,11 +22,17 @@
   },
   "map": {
     "bg": "#000030",
-    "water": "#1818cc",
-    "park": "#0a6a0a",
-    "building": "#26263a",
+    "water": "#3838e8",
+    "park": "#128a12",
+    "building": "#52526a",
     "road": "#565a70",
-    "roads": { "motorway": "#ffe000", "trunk": "#d4d4e0", "primary": "#b4b8c8", "secondary": "#9498ac", "tertiary": "#787c92" },
+    "roads": {
+      "motorway": "#ffe000",
+      "trunk": "#d4d4e0",
+      "primary": "#b4b8c8",
+      "secondary": "#9498ac",
+      "tertiary": "#787c92"
+    },
     "label": "#ffff00",
     "halo": "#000030",
     "aircraft": "#ffff00",
