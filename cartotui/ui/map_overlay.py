@@ -25,8 +25,8 @@ _ADMIN_LABEL_LAYERS = {"boundary_labels", "admin_labels", "place_labels_admin"}
 _BOUNDARY_LAYERS = {"boundaries", "boundary", "admin", "admin_boundaries"}
 _BOUNDARY_LEVELS = {
     2: ("═", 2),
-    3: ("─", 4),
-    4: ("╌", 4),
+    3: ("─", 5),
+    4: ("╌", 5),
 }
 _CLASS_TO_ADMIN_LEVEL = {
     "country": 2, "nation": 2,
