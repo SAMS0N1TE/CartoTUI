@@ -3,6 +3,13 @@ from __future__ import annotations
 from cartotui.ui.widgets.base import Widget
 from cartotui.ui.widgets.registry import register_widget
 
+_INTERVALS = [30, 60, 120, 300, 600]
+
+
+def _fmt_interval(s) -> str:
+    s = int(round(float(s)))
+    return f"{s}s" if s < 60 else f"{s // 60}m"
+
 
 @register_widget
 class RadarWidget(Widget):
@@ -25,6 +32,8 @@ class RadarWidget(Widget):
         self.add_kv("Animate", "on" if animate else "off", width, action=self._toggle_animate)
         if not animate:
             self.add_kv("Frame", rd.get("frame", "latest"), width, action=self._toggle_frame)
+        self.add_kv("Update every", _fmt_interval(rd.get("refresh_interval_s", 120)),
+                    width, action=self._cycle_interval)
         self._num_row("Opacity", width)
         if on and rs is not None:
             if animate and rs.frame_count():
@@ -89,6 +98,11 @@ class RadarWidget(Widget):
     def _toggle_frame(self) -> None:
         cur = self._rd().get("frame", "latest")
         self._apply({"frame": "nowcast" if cur == "latest" else "latest"})
+
+    def _cycle_interval(self) -> None:
+        cur = int(round(float(self._rd().get("refresh_interval_s", 120))))
+        i = (_INTERVALS.index(cur) + 1) % len(_INTERVALS) if cur in _INTERVALS else 0
+        self._apply({"refresh_interval_s": float(_INTERVALS[i])})
 
     def _adj_opacity(self, d: float) -> None:
         cur = float(self._rd().get("opacity", 0.65))

@@ -125,3 +125,31 @@ def test_latest_changed():
     assert rs.latest_changed() is False
     rs._past = [{"time": 200, "path": "/b"}]
     assert rs.latest_changed() is True
+
+
+def test_refresh_interval_config_validated():
+    from cartotui.config import _validate
+    c = _validate({"overlays": {"radar": {"refresh_interval_s": 5}}})
+    assert c["overlays"]["radar"]["refresh_interval_s"] == 15.0
+    c = _validate({"overlays": {"radar": {"refresh_interval_s": 99999}}})
+    assert c["overlays"]["radar"]["refresh_interval_s"] == 3600.0
+    c = _validate({"overlays": {"radar": {}}})
+    assert c["overlays"]["radar"]["refresh_interval_s"] == 120.0
+
+
+def test_refresh_frames_respects_meta_ttl():
+    import time
+    rs = RadarSource()
+    rs.meta_ttl_s = 1000.0
+    rs._frame_path = "/p"
+    rs._last_meta = time.monotonic()
+    # Within TTL and not forced: returns early without any network attempt.
+    rs.refresh_frames()
+    assert rs._host is None
+
+
+def test_fmt_interval():
+    from cartotui.ui.widgets.radar_widget import _fmt_interval
+    assert _fmt_interval(30) == "30s"
+    assert _fmt_interval(60) == "1m"
+    assert _fmt_interval(300) == "5m"

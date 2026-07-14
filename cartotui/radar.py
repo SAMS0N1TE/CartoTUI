@@ -57,6 +57,7 @@ class RadarSource:
         self._lock = threading.Lock()
         self._inflight = 0
         self.max_px = RADAR_MAX_PX
+        self.meta_ttl_s = _META_TTL_S
         self.on_tiles_ready: Optional[callable] = None
 
     def loading(self) -> int:
@@ -89,7 +90,7 @@ class RadarSource:
 
     def refresh_frames(self, force: bool = False) -> None:
         now = time.monotonic()
-        if not force and self._frame_path and (now - self._last_meta) < _META_TTL_S:
+        if not force and self._frame_path and (now - self._last_meta) < self.meta_ttl_s:
             return
         self._last_meta = now
         try:

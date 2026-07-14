@@ -136,6 +136,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "frame": "latest",
             "animate": False,
             "frame_interval": 0.6,
+            "refresh_interval_s": 120.0,
         },
     },
     "snapshot": {
@@ -371,6 +372,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     rd["frame"] = _coerce_choice(rd.get("frame"), ("latest", "nowcast"), "latest")
     rd["animate"] = _coerce_bool(rd.get("animate"), False)
     rd["frame_interval"] = _coerce_num(rd.get("frame_interval"), 0.6, (0.15, 3.0))
+    rd["refresh_interval_s"] = _coerce_num(rd.get("refresh_interval_s"), 120.0, (15.0, 3600.0))
 
     sn = c["snapshot"]
     sn["png_long_side"] = _coerce_int(sn.get("png_long_side"), 1600, (512, 6144))

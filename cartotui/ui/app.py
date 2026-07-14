@@ -212,6 +212,8 @@ class CartoTUIApp:
                 rs.animate = False
                 self._radar_stop.wait(1.0)
                 continue
+            interval = max(15.0, float(rd.get("refresh_interval_s", 120.0)))
+            rs.meta_ttl_s = interval
             if rd.get("animate"):
                 rs.animate = True
                 try:
@@ -224,13 +226,13 @@ class CartoTUIApp:
             else:
                 rs.animate = False
                 try:
-                    rs.refresh_frames()
+                    rs.refresh_frames(force=True)
                     changed = rs.latest_changed()
                 except Exception:
                     changed = False
                 if changed:
                     self.map_control.request_render(force=True)
-                self._radar_stop.wait(30.0)
+                self._radar_stop.wait(interval)
 
     def _invalidate(self) -> None:
         app = get_app_or_none()
