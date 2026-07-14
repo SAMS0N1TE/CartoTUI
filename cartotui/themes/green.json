@@ -1,0 +1,30 @@
+{
+  "name": "green",
+  "border": "ascii",
+  "ui": {
+    "bg": "#04120a",
+    "fg": "#5ec46e",
+    "dim": "#2f6b3c",
+    "accent": "#7dffa0",
+    "key": "#7dffa0",
+    "section": "#7dffa0",
+    "border": "#245030",
+    "panel_bg": "#07190e",
+    "title_bg": "#0c2716",
+    "title_fg": "#9dffb8",
+    "sel_bg": "#12401f",
+    "sel_fg": "#c8ffd4"
+  },
+  "map": {
+    "bg": "#04120a",
+    "water": "#0d3a4a",
+    "park": "#0f3a18",
+    "building": "#123322",
+    "road": "#7dffa0",
+    "roads": { "motorway": "#c8ffd4", "primary": "#9dffb8" },
+    "label": "#9dffb8",
+    "halo": "#04120a",
+    "aircraft": "#7dffa0",
+    "aircraft_selected": "#ffffff"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "amber",
+  "border": "ascii",
+  "ui": {
+    "bg": "#0d0b07",
+    "fg": "#d2cbbe",
+    "dim": "#6b6255",
+    "accent": "#ffb84d",
+    "key": "#ffcf87",
+    "section": "#ffb84d",
+    "border": "#4a4336",
+    "panel_bg": "#161209",
+    "title_bg": "#241c0c",
+    "title_fg": "#ffcf87",
+    "sel_bg": "#3a2c10",
+    "sel_fg": "#ffe9c2"
+  },
+  "map": {
+    "bg": "#0d0b07",
+    "water": "#2c3242",
+    "park": "#26301c",
+    "building": "#26221a",
+    "road": "#e8dcc4",
+    "roads": { "motorway": "#ffcf87", "trunk": "#ffbf6a", "primary": "#f2b866" },
+    "label": "#ffcf87",
+    "halo": "#0d0b07",
+    "aircraft": "#ffc83c",
+    "aircraft_selected": "#ffffff",
+    "aircraft_emergency": "#ff5050"
+  }
+}

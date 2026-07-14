@@ -1,0 +1,32 @@
+{
+  "name": "light",
+  "border": "auto",
+  "ui": {
+    "bg": "#e6ebf3",
+    "fg": "#1a2030",
+    "dim": "#5a6579",
+    "accent": "#0a4fb0",
+    "key": "#046a04",
+    "section": "#002266",
+    "border": "#b3bccb",
+    "panel_bg": "#f0f3f8",
+    "title_bg": "#b8c4d8",
+    "title_fg": "#000000",
+    "sel_bg": "#002266",
+    "sel_fg": "#ffffff",
+    "input_bg": "#ffffff",
+    "input_fg": "#000000"
+  },
+  "map": {
+    "bg": "#eef1f6",
+    "water": "#a9c3dc",
+    "park": "#c2e0c0",
+    "building": "#d7d7d7",
+    "road": "#33383f",
+    "roads": { "motorway": "#c05a2a", "primary": "#4a5568" },
+    "label": "#0a3a80",
+    "halo": "#eef1f6",
+    "aircraft": "#0a4fb0",
+    "aircraft_selected": "#000000"
+  }
+}

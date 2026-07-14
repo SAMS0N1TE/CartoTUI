@@ -1,0 +1,8 @@
+build/
+*.a
+*.lib
+*.o
+*.obj
+tests/out/
+tests/*.png
+!tests/golden/*.png

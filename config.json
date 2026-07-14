@@ -1,0 +1,105 @@
+{
+  "aircraft_trails": {
+    "duration_s": 60.0,
+    "enabled": true
+  },
+  "app": {
+    "shutdown_timeout_s": 3.0,
+    "title": "CartoTUI"
+  },
+  "cache": {
+    "dir": "C:\\Users\\*YOUR USERNAME*\\AppData\\Local\\CartoTUI\\Cache\\tiles",
+    "max_bytes": 268435456,
+    "prune_watermark": 0.85
+  },
+  "logging": {
+    "file": null,
+    "level": "INFO",
+    "rotate_bytes": 5242880,
+    "rotate_keep": 3
+  },
+  "map": {
+    "center_lat": 42.3601,
+    "center_lon": -71.0589,
+    "max_composite_px": 1400,
+    "max_zoom": 19,
+    "min_zoom": 0,
+    "mode": "vector",
+    "overzoom": 2,
+    "palette": "shades",
+    "zoom": 4
+  },
+  "network": {
+    "connect_timeout_s": 5.0,
+    "parallel_downloads": 8,
+    "read_timeout_s": 15.0,
+    "retries": 3,
+    "tile_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "user_agent": "CartoTUI/0.7 (+https://github.com/SAMS0N1TE/CartoTUI)"
+  },
+  "prefetch": {
+    "enable": true,
+    "max_inflight": 4,
+    "ring_radius": 1
+  },
+  "render": {
+    "brightness": 1.0,
+    "color": true,
+    "contrast": 1.05,
+    "dither": "none",
+    "edge_boost": false,
+    "gamma": 1.0,
+    "invert": false,
+    "shaded_blocks": false,
+    "sharpen_percent": 150,
+    "sharpen_radius": 1.5,
+    "sharpen_threshold": 3,
+    "subpixel_percentile": 55,
+    "subpixel_threshold": "adaptive",
+    "vector_overlay": true
+  },
+  "theme": {
+    "chrome": {},
+    "road_colors": {}
+  },
+  "traffic": {
+    "enabled": true,
+    "lakeshark": {
+      "baudrate": 115200,
+      "format": "auto",
+      "port": "COM29"
+    },
+    "sbs1": {
+      "host": "localhost",
+      "port": 30003
+    },
+    "source": "lakeshark",
+    "stale_timeout_s": 60.0
+  },
+  "ui": {
+    "border_style": "heavy",
+    "mouse": true,
+    "pan_step_cells": 6,
+    "show_latency": true,
+    "theme": "amber"
+  },
+  "vector": {
+    "mvt_url": "",
+    "pmtiles_url": "https://protomaps.github.io/PMTiles/protomaps(vector)ODbL_firenze.pmtiles",
+    "protomaps_api_key": "",
+    "protomaps_api_url": "https://api.protomaps.com/tiles/v4/{z}/{x}/{y}.mvt",
+    "source": "pmtiles_url",
+    "style": "auto"
+  },
+  "viewport": {
+    "crosshair": true,
+    "crosshair_char": "\u254b",
+    "help_panel": false,
+    "show_compass": true,
+    "show_sidebar": true,
+    "show_statusbar": true,
+    "show_titlebar": true,
+    "show_toolbar": true,
+    "sidebar_width": 36
+  }
+}
