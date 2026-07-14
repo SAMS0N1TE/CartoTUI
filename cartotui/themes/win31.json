@@ -22,9 +22,9 @@
   },
   "map": {
     "bg": "#000030",
-    "water": "#3838e8",
-    "park": "#128a12",
-    "building": "#52526a",
+    "water": "#2020c0",
+    "park": "#0f7a0f",
+    "building": "#3a3a4a",
     "road": "#565a70",
     "roads": {
       "motorway": "#ffe000",
