@@ -146,7 +146,15 @@ CHROME_CLASSES = [
     "panel.dim", "panel.warn", "panel.ok", "panel.hotkey",
 ]
 
-def _gen_chrome(u: dict) -> Dict[str, str]:
+def _gen_chrome(u: dict, map_bg: Optional[str] = None) -> Dict[str, str]:
+    """Build the chrome style map.
+
+    ``map_bg`` is the theme's rasterised map background. The renderer emits
+    fg-only styles, so a cell of uniform map background is a plain space and
+    the *cell* background shows through. That cell background has to be the
+    map's own bg, not the UI's, or themes whose chrome differs from their map
+    (win31: grey chrome, navy map) show bare chrome wherever the map is flat.
+    """
     bg = u["bg"]; fg = u["fg"]; dim = u["dim"]; border = u["border"]
     accent = u["accent"]; key = u["key"]; section = u["section"]
     warn = u["warn"]; ok = u["ok"]; panel_bg = u["panel_bg"]
@@ -154,6 +162,7 @@ def _gen_chrome(u: dict) -> Dict[str, str]:
     sel_bg = u["sel_bg"]; sel_fg = u["sel_fg"]; btn_bg = u["btn_bg"]
     input_bg = u["input_bg"]; input_fg = u["input_fg"]
     ifb = u["input_focus_bg"]; iff = u["input_focus_fg"]
+    mbg = map_bg or bg
     return {
         "titlebar": _s(title_bg, title_fg, "bold"),
         "titlebar.dim": _s(title_bg, dim),
@@ -193,10 +202,10 @@ def _gen_chrome(u: dict) -> Dict[str, str]:
         "sidebar.input": _s(input_bg, input_fg),
         "sidebar.input.focus": _s(ifb, iff, "bold"),
         "sidebar.hotkey": _s(panel_bg, key),
-        "map": _s(bg, fg),
-        "map.water": _s(bg, dim),
-        "map.road": _s(bg, fg),
-        "map.label": _s(bg, accent),
+        "map": _s(mbg, fg),
+        "map.water": _s(mbg, dim),
+        "map.road": _s(mbg, fg),
+        "map.label": _s(mbg, accent),
         "panel": _s(panel_bg, fg),
         "panel.border": _s(panel_bg, border),
         "panel.title": _s(title_bg, title_fg, "bold"),
@@ -295,7 +304,7 @@ def resolve_theme(name: str) -> dict:
 
 def chrome_style_map(name: str, extra_overrides: Optional[dict] = None) -> Dict[str, str]:
     t = resolve_theme(name)
-    base = _gen_chrome(t["ui"])
+    base = _gen_chrome(t["ui"], (t["map"] or {}).get("bg"))
     for k, v in t["chrome_overrides"].items():
         if isinstance(k, str) and isinstance(v, str):
             base[k] = v
