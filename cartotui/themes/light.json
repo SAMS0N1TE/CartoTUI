@@ -18,14 +18,14 @@
     "input_fg": "#000000"
   },
   "map": {
-    "bg": "#eef1f6",
-    "water": "#a9c3dc",
-    "park": "#c2e0c0",
-    "building": "#d7d7d7",
-    "road": "#33383f",
+    "bg": "#eaeef4",
+    "water": "#6f9fca",
+    "park": "#9ec99a",
+    "building": "#c6ccd8",
+    "road": "#2e343d",
     "roads": { "motorway": "#c05a2a", "primary": "#4a5568" },
     "label": "#0a3a80",
-    "halo": "#eef1f6",
+    "halo": "#eaeef4",
     "aircraft": "#0a4fb0",
     "aircraft_selected": "#000000"
   }

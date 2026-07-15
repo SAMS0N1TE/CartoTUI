@@ -21,21 +21,21 @@
     "input_fg": "#000000"
   },
   "map": {
-    "bg": "#000030",
-    "water": "#2020c0",
-    "park": "#0f7a0f",
-    "building": "#3a3a4a",
-    "road": "#565a70",
+    "bg": "#f4f4f4",
+    "water": "#6a86c8",
+    "park": "#8fbf8f",
+    "building": "#c0c0c0",
+    "road": "#000000",
     "roads": {
-      "motorway": "#ffe000",
-      "trunk": "#d4d4e0",
-      "primary": "#b4b8c8",
-      "secondary": "#9498ac",
-      "tertiary": "#787c92"
+      "motorway": "#800000",
+      "trunk": "#404040",
+      "primary": "#000000",
+      "secondary": "#585858",
+      "tertiary": "#707070"
     },
-    "label": "#ffff00",
-    "halo": "#000030",
-    "aircraft": "#ffff00",
-    "aircraft_selected": "#ffffff"
+    "label": "#000080",
+    "halo": "#f4f4f4",
+    "aircraft": "#800000",
+    "aircraft_selected": "#000080"
   }
 }

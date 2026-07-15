@@ -246,13 +246,22 @@ def frame_to_png(
     rows: List[List[Tuple[str, str]]],
     theme: str,
     cell_px: int = 10,
+    base_class: str = "map",
 ) -> Image.Image:
-    """Rasterise a terminal frame to an image using a monospace font."""
+    """Rasterise a terminal frame to an image using a monospace font.
+
+    ``base_class`` is the chrome class the app wraps this frame in (the map
+    Window uses ``class:map``). Cells inherit their background from it, which
+    matters because the renderer emits fg-only styles: a flat region of map
+    background is a space, and what shows is this class's bg.
+    """
     chrome = theme_loader.chrome_style_map(theme)
     ui = theme_loader.resolve_theme(theme)["ui"]
-    page_bg = _hex(ui.get("bg", "#101014"))
-    default_fg = ui.get("fg", "#c8c8c8")
-    default_bg = ui.get("bg", "#101014")
+    base_fg, base_bg = _parse_style(chrome.get(base_class, ""), chrome,
+                                    ui.get("fg", "#c8c8c8"), ui.get("bg", "#101014"))
+    page_bg = _hex(base_bg)
+    default_fg = base_fg
+    default_bg = base_bg
 
     n_rows = len(rows)
     n_cols = max((sum(len(t) for _, t in row) for row in rows), default=1)
