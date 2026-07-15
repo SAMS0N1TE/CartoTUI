@@ -73,17 +73,7 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int):
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
                             road_thickness=1.0):
-    global _load_pending
     renderer = _get_renderer()
-    if style is not None:
-        try:
-            renderer.set_vector_style(
-                style,
-                road_width_scale=(max(1.0, float(supersample))
-                                  * max(0.05, float(road_thickness))),
-            )
-        except Exception:
-            pass
 
     def base_fetch(zz, xx, yy):
         raw = vector_source.get_raw(zz, xx, yy, cached_only=cached_only)
@@ -104,7 +94,12 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
             with _load_lock:
                 _load_pending -= 1
 
-    rgb565, drawn = renderer.render_viewport(lat, lon, z, px_w, px_h, counted_fetch)
+    rgb565, drawn = renderer.render_viewport(
+        lat, lon, z, px_w, px_h, counted_fetch,
+        style=style,
+        road_width_scale=(max(1.0, float(supersample))
+                          * max(0.05, float(road_thickness))),
+    )
     if preload:
         renderer.prefetch_ring(lat, lon, z, px_w, px_h, base_fetch, ring=1)
     if drawn == 0:

@@ -1,3 +1,5 @@
+import pytest
+
 from cartotui import theme_loader as T
 from cartotui.config import Config
 from cartotui.themes import apply_road_highlight, make_style, theme_vector_style
@@ -115,3 +117,28 @@ def test_hex_helpers():
     assert T._hex_to_rgb("#ff8000") == (255, 128, 0)
     assert T._hex_to_rgb("f80") == (255, 136, 0)
     assert T._blend("#000000", "#ffffff", 0.5) == "#808080"
+
+
+def test_saved_preset_round_trips_every_tone_knob(tmp_path, monkeypatch):
+    """A preset that silently drops knobs is worse than no preset: the theme
+    would load back looking different from what was saved."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    from cartotui import theme_loader
+    from cartotui.config import Config
+    from cartotui.ui.state import MapState
+    from cartotui.ui.widgets.base import WidgetContext
+    from cartotui.ui.widgets.theme_widget import ThemeWidget
+
+    cfg = Config()
+    st = MapState(cfg)
+    w = ThemeWidget(WidgetContext(state=st, cfg=cfg))
+
+    want = {"brightness": 1.1, "contrast": 1.2, "gamma": 0.9,
+            "saturation": 1.4, "black_point": 0.18, "white_point": 0.82}
+    for k, v in want.items():
+        setattr(st, k, v)
+
+    w._save_preset()
+    got = theme_loader.theme_render(st.theme)
+    for k, v in want.items():
+        assert got.get(k) == pytest.approx(v), k

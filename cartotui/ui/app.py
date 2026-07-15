@@ -304,10 +304,19 @@ class CartoTUIApp:
                 if open_after:
                     self._open_path(os.path.dirname(path))
             except Exception as e:
+                log.exception("Snapshot (%s) failed", kind)
                 self.state.set_info(f"Snapshot failed: {e}", ttl_s=10.0)
             self._invalidate()
 
-        self.state.set_info(f"Saving {kind.upper()} ({long_side}px)…", ttl_s=12.0)
+        if kind == "png":
+            sn = self.cfg["snapshot"]
+            bits = [sn.get("png_mode", "map"), f"{long_side}px"]
+            bits += [n for n, k in (("labels", "png_labels"),
+                                    ("aircraft", "png_aircraft"))
+                     if sn.get("png_mode", "map") == "map" and sn.get(k)]
+            self.state.set_info("Saving PNG (" + " · ".join(bits) + ")…", ttl_s=12.0)
+        else:
+            self.state.set_info(f"Saving {kind.upper()}…", ttl_s=12.0)
         threading.Thread(target=work, daemon=True).start()
 
     def _open_path(self, path: str) -> None:
@@ -341,8 +350,13 @@ class CartoTUIApp:
                 "dither": st.dither,
                 "brightness": round(st.brightness, 3),
                 "contrast": round(st.contrast, 3),
+                "gamma": round(st.gamma, 3),
+                "saturation": round(st.saturation, 3),
+                "black_point": round(st.black_point, 3),
+                "white_point": round(st.white_point, 3),
                 "subpixel_threshold": st.threshold_mode,
                 "shaded_blocks": bool(st.shaded_blocks),
+                "vector_overlay": bool(st.labels),
                 "vector_render_mode": getattr(st, "_mode_for", {}).get(
                     "vector", r.get("vector_render_mode", "quadrant")),
                 "raster_render_mode": getattr(st, "_mode_for", {}).get(
@@ -500,14 +514,18 @@ class CartoTUIApp:
         st = self.state
         dr = DEFAULT_CONFIG["render"]
 
-        def _num(key, default):
+        def _num(key, default, lo=0.2, hi=3.0):
             try:
-                return max(0.2, min(3.0, float(rp[key])))
+                return max(lo, min(hi, float(rp[key])))
             except (KeyError, TypeError, ValueError):
                 return float(default)
 
         st.brightness = _num("brightness", dr["brightness"])
         st.contrast = _num("contrast", dr["contrast"])
+        st.gamma = _num("gamma", dr["gamma"])
+        st.saturation = _num("saturation", dr["saturation"], lo=0.0)
+        st.black_point = _num("black_point", dr["black_point"], lo=0.0, hi=0.9)
+        st.white_point = _num("white_point", dr["white_point"], lo=0.1, hi=1.0)
         dith = rp.get("dither", dr["dither"])
         st.dither = dith if dith in ("none", "bayer", "atkinson", "floyd") else dr["dither"]
 
@@ -726,6 +744,12 @@ class CartoTUIApp:
             self.state.set_info(f"Color {'on' if self.state.color else 'off'}")
             self.map_control.request_render()
 
+        @kb.add("N", filter=map_active)
+        def _(event):
+            self.state.toggle_labels()
+            self.state.set_info(f"Labels {'on' if self.state.labels else 'off'}")
+            self.map_control.request_render()
+
         @kb.add("k", filter=map_active)
         def _(event):
             self._cycle_source()
@@ -766,6 +790,54 @@ class CartoTUIApp:
         def _(event):
             self.state.adjust_contrast(+0.1)
             self.state.set_info(f"Contrast → {self.state.contrast:.2f}")
+            self.map_control.request_render()
+
+        @kb.add("(", filter=map_active)
+        def _(event):
+            self.state.adjust_gamma(-0.1)
+            self.state.set_info(f"Gamma → {self.state.gamma:.2f}")
+            self.map_control.request_render()
+
+        @kb.add(")", filter=map_active)
+        def _(event):
+            self.state.adjust_gamma(+0.1)
+            self.state.set_info(f"Gamma → {self.state.gamma:.2f}")
+            self.map_control.request_render()
+
+        @kb.add("<", filter=map_active)
+        def _(event):
+            self.state.adjust_saturation(-0.1)
+            self.state.set_info(f"Saturation → {self.state.saturation:.2f}")
+            self.map_control.request_render()
+
+        @kb.add(">", filter=map_active)
+        def _(event):
+            self.state.adjust_saturation(+0.1)
+            self.state.set_info(f"Saturation → {self.state.saturation:.2f}")
+            self.map_control.request_render()
+
+        @kb.add(";", filter=map_active)
+        def _(event):
+            self.state.adjust_black_point(-0.02)
+            self.state.set_info(f"Black point → {self.state.black_point:.2f}")
+            self.map_control.request_render()
+
+        @kb.add(":", filter=map_active)
+        def _(event):
+            self.state.adjust_black_point(+0.02)
+            self.state.set_info(f"Black point → {self.state.black_point:.2f}")
+            self.map_control.request_render()
+
+        @kb.add("'", filter=map_active)
+        def _(event):
+            self.state.adjust_white_point(-0.02)
+            self.state.set_info(f"White point → {self.state.white_point:.2f}")
+            self.map_control.request_render()
+
+        @kb.add('"', filter=map_active)
+        def _(event):
+            self.state.adjust_white_point(+0.02)
+            self.state.set_info(f"White point → {self.state.white_point:.2f}")
             self.map_control.request_render()
 
         @kb.add("\\", filter=map_active)

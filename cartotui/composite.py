@@ -6,7 +6,8 @@ import math
 from collections.abc import Iterable
 from typing import List, Tuple
 
-from PIL import Image, ImageEnhance, ImageFilter
+import numpy as np
+from PIL import Image, ImageFilter
 
 from cartotui.cache import TileCache
 from cartotui.geodesy import TILE_SIZE, latlon_to_tile_xy
@@ -15,6 +16,134 @@ log = logging.getLogger("cartotui.composite")
 
 __all__ = ["composite_from_tiles", "tiles_for_view", "apply_image_adjustments"]
 
+_LUMA = np.array([0.299, 0.587, 0.114], dtype=np.float32)
+
+_KNEE = 0.7
+
+
+def _shoulder(v: np.ndarray, knee: float = _KNEE) -> np.ndarray:
+    """Compress everything above `knee` into [knee, 1) along a tanh asymptote.
+
+    A plain multiply clips: on a light theme it pins whole regions to pure white
+    and the hue with it. This bends instead, so brightening keeps highlights
+    apart from each other however hard it is pushed.
+    """
+    head = max(1.0 - knee, 1e-6)
+    return np.where(v > knee, knee + head * np.tanh((v - knee) / head), v)
+
+
+def _soft_clip01(v: np.ndarray, knee: float = _KNEE) -> np.ndarray:
+    """`_shoulder` at both ends -- contrast pushes values past 0 as well as 1."""
+    v = _shoulder(v, knee)
+    v = 1.0 - _shoulder(1.0 - v, knee)
+    return np.clip(v, 0.0, 1.0)
+
+
+def _retint(rgb: np.ndarray, lum0: np.ndarray, lum1: np.ndarray) -> np.ndarray:
+    """Move pixels from luminance `lum0` to `lum1`, keeping their colour.
+
+    Scaling RGB by the luminance ratio holds the channel proportions -- hence
+    the hue and saturation -- fixed. Where that overshoots the gamut, the pixel
+    is pulled toward its own grey just far enough to fit, which reads as a
+    highlight rolling off rather than a channel slamming into its ceiling.
+
+    A black pixel has no colour to scale, so the ratio cannot move it; it is
+    assigned its target grey outright, which is what lets a raised black point
+    lift a theme with a #000000 background.
+
+    The peak is taken with pairwise maxima over contiguous channel slices rather
+    than max(axis=-1): reducing a 3-long trailing axis is strided and costs an
+    order of magnitude more, enough to dominate the whole frame.
+    """
+    ratio = lum1 / np.maximum(lum0, 1e-5)
+    out = rgb * ratio[..., None]
+
+    black = lum0 < 1e-4
+    if black.any():
+        out[black] = lum1[black][:, None]
+
+    peak = np.maximum(np.maximum(out[..., 0], out[..., 1]), out[..., 2])
+
+    over = peak > 1.0
+    if over.any():
+        l1 = lum1[over][:, None]
+        hit = out[over]
+        room = np.maximum(peak[over][:, None] - l1, 1e-5)
+        t = np.clip((1.0 - l1) / room, 0.0, 1.0)
+        out[over] = l1 + (hit - l1) * t
+
+    return np.clip(out, 0.0, 1.0, out=out)
+
+
+def _luma_curve(
+    *,
+    brightness: float,
+    contrast: float,
+    gamma: float,
+    black_point: float,
+    white_point: float,
+    pivot: float,
+) -> np.ndarray:
+    """The whole tone chain as a 256-entry luminance transfer curve.
+
+    Every knob is a function of luminance alone, so they compose into one curve
+    that can be sampled per pixel. That keeps the expensive parts (tanh, pow)
+    off the image and lets a frame cost one lookup instead of four passes.
+    """
+    y = np.linspace(0.0, 1.0, 256, dtype=np.float32)
+
+    if abs(brightness - 1.0) > 1e-3:
+        y = _shoulder(y * max(0.0, brightness))
+    if abs(contrast - 1.0) > 1e-3:
+        y = _soft_clip01(pivot + (y - pivot) * max(0.0, contrast))
+    if abs(gamma - 1.0) > 1e-3:
+        y = np.power(np.clip(y, 0.0, 1.0), 1.0 / max(1e-3, gamma), dtype=np.float32)
+
+    bp = float(np.clip(black_point, 0.0, 0.95))
+    wp = float(np.clip(white_point, 0.05, 1.0))
+    if bp > wp:
+        bp, wp = wp, bp
+    if bp > 1e-3 or wp < 1.0 - 1e-3:
+        y = bp + np.clip(y, 0.0, 1.0) * (wp - bp)
+
+    return np.clip(y, 0.0, 1.0).astype(np.float32)
+
+
+def _tone(
+    img: Image.Image,
+    *,
+    brightness: float,
+    contrast: float,
+    gamma: float,
+    saturation: float,
+    black_point: float,
+    white_point: float,
+) -> Image.Image:
+    """Exposure -> contrast -> gamma -> output levels -> saturation.
+
+    The tone knobs all act on luminance and land in a single re-tint, so colour
+    survives: nothing is blended toward a flat grey, and pulling contrast down
+    flattens tone without draining chroma the way the old enhancer did.
+    """
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    rgb = np.asarray(img, dtype=np.float32) / 255.0
+    lum = rgb @ _LUMA
+
+    curve = _luma_curve(
+        brightness=brightness, contrast=contrast, gamma=gamma,
+        black_point=black_point, white_point=white_point,
+        pivot=float(lum.mean()),
+    )
+    target = curve[np.clip(lum * 255.0 + 0.5, 0, 255).astype(np.uint8)]
+    rgb = _retint(rgb, lum, target)
+
+    if abs(saturation - 1.0) > 1e-3:
+        grey = target[..., None]
+        rgb = np.clip(grey + (rgb - grey) * max(0.0, saturation), 0.0, 1.0)
+
+    return Image.fromarray((rgb * 255.0 + 0.5).astype(np.uint8), "RGB")
+
 
 def apply_image_adjustments(
     img: Image.Image,
@@ -22,30 +151,27 @@ def apply_image_adjustments(
     contrast: float = 1.0,
     brightness: float = 1.0,
     gamma: float = 1.0,
+    saturation: float = 1.0,
+    black_point: float = 0.0,
+    white_point: float = 1.0,
     sharpen_percent: int = 0,
     sharpen_radius: float = 1.5,
     sharpen_threshold: int = 3,
     edge_boost: bool = False,
     invert: bool = False,
 ) -> Image.Image:
-    """Apply brightness/contrast/gamma/sharpen/edge/invert in a fixed order."""
-    if abs(brightness - 1.0) > 1e-3:
+    """Apply the tone knobs, then sharpen/edge/invert, in a fixed order."""
+    if (abs(brightness - 1.0) > 1e-3 or abs(contrast - 1.0) > 1e-3
+            or abs(gamma - 1.0) > 1e-3 or abs(saturation - 1.0) > 1e-3
+            or black_point > 1e-3 or white_point < 1.0 - 1e-3):
         try:
-            img = ImageEnhance.Brightness(img).enhance(brightness)
+            img = _tone(
+                img, brightness=brightness, contrast=contrast, gamma=gamma,
+                saturation=saturation, black_point=black_point,
+                white_point=white_point,
+            )
         except Exception as e:
-            log.debug("brightness failed: %s", e)
-    if abs(contrast - 1.0) > 1e-3:
-        try:
-            img = ImageEnhance.Contrast(img).enhance(contrast)
-        except Exception as e:
-            log.debug("contrast failed: %s", e)
-    if abs(gamma - 1.0) > 1e-3:
-        try:
-            inv = 1.0 / max(1e-3, gamma)
-            lut = [min(255, max(0, int(((i / 255.0) ** inv) * 255))) for i in range(256)]
-            img = img.point(lut * 3)
-        except Exception as e:
-            log.debug("gamma failed: %s", e)
+            log.debug("tone adjust failed: %s", e)
     if edge_boost:
         try:
             img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
@@ -107,6 +233,9 @@ def composite_from_tiles(
     contrast: float = 1.0,
     brightness: float = 1.0,
     gamma: float = 1.0,
+    saturation: float = 1.0,
+    black_point: float = 0.0,
+    white_point: float = 1.0,
     sharpen_percent: int = 150,
     sharpen_radius: float = 1.5,
     sharpen_threshold: int = 3,
@@ -145,6 +274,9 @@ def composite_from_tiles(
         contrast=contrast,
         brightness=brightness,
         gamma=gamma,
+        saturation=saturation,
+        black_point=black_point,
+        white_point=white_point,
         sharpen_percent=sharpen_percent,
         sharpen_radius=sharpen_radius,
         sharpen_threshold=sharpen_threshold,

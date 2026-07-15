@@ -78,6 +78,21 @@ def tile_center(x, y, z):
     return lat, lon
 
 class Renderer:
+    """Handle on the native renderer.
+
+    One scratch arena and one style struct are shared by every caller, and the
+    native side carves its context out of that arena while holding a live
+    pointer to the style. Two threads rendering at once therefore hand each
+    other overlapping memory: the second carto_begin lands on the first one's
+    context, and the first then draws through a framebuffer pointer that is no
+    longer its own. Once the other thread returns and Python frees its pixel
+    buffer, that write goes into freed memory and the process dies inside
+    carto_put_px, with no Python traceback to show for it.
+
+    Renders are therefore serialised on `lock`. Pass a style to `render_viewport`
+    rather than calling `set_vector_style` separately, so both land under it.
+    """
+
     def __init__(self, dll_path=None):
         self.lib = ctypes.CDLL(dll_path or _DEFAULT_DLL)
         L = self.lib
@@ -94,8 +109,9 @@ class Renderer:
         L.carto_end.restype = None
 
         self._arena_buf = (c_char * (8 * 1024 * 1024))()
+        self._render_lock = threading.RLock()
         self._style = CartoStyle()
-        self._style_lock = threading.Lock()
+        self._style_lock = self._render_lock
         L.carto_style_default(byref(self._style))
 
         self._tile_cache = {}
@@ -180,34 +196,37 @@ class Renderer:
                 pass
         threading.Thread(target=work, daemon=True).start()
 
+    @property
+    def lock(self):
+        """Guards the shared arena and style. Reentrant: hold it across a
+        style-then-render pair to stop another thread restyling mid-render."""
+        return self._render_lock
+
     def render_tile(self, tile: bytes, z: int, x: int, y: int, w: int, h: int) -> bytes:
         L = self.lib
-        arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
-        pixels = (c_uint8 * (w * h * 2))()
-        fb = CartoFB()
-        L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
-
-        lat, lon = tile_center(x, y, z)
-        vp = CartoViewport(lat, lon, z, w, h, w, 0, 0, 0)
-        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
-        if not ctx:
-            raise RuntimeError("carto_begin failed (arena too small?)")
         mvt = (c_ubyte * len(tile)).from_buffer_copy(tile)
-        L.carto_render_tile(ctx, mvt, len(tile), x, y, z)
-        L.carto_end(ctx)
-        return bytes(pixels)
+        with self._render_lock:
+            arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
+            pixels = (c_uint8 * (w * h * 2))()
+            fb = CartoFB()
+            L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
 
-    def render_viewport(self, lat, lon, z, w, h, fetch, tile_px=256):
+            lat, lon = tile_center(x, y, z)
+            vp = CartoViewport(lat, lon, z, w, h, w, 0, 0, 0)
+            ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
+            if not ctx:
+                raise RuntimeError("carto_begin failed (arena too small?)")
+            L.carto_render_tile(ctx, mvt, len(tile), x, y, z)
+            L.carto_end(ctx)
+            return bytes(pixels)
+
+    def render_viewport(self, lat, lon, z, w, h, fetch, tile_px=256,
+                        style=None, road_width_scale=1.0):
+        """Render a viewport. Pass `style` here rather than calling
+        `set_vector_style` separately: the native context keeps a live pointer to
+        the one style struct, so applying it under the same lock as the render is
+        what stops another thread restyling this frame mid-flight."""
         L = self.lib
-        arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
-        pixels = (c_uint8 * (w * h * 2))()
-        fb = CartoFB()
-        L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
-        vp = CartoViewport(lat, lon, z, w, h, tile_px, 0, 0, 0)
-        ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
-        if not ctx:
-            raise RuntimeError("carto_begin failed (arena too small?)")
-
         n = 2 ** z
         cx = ((lon + 180.0) / 360.0) * n * tile_px
         yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0
@@ -233,12 +252,24 @@ class Renderer:
             k = missing[0]
             self._store_tile(k, fetch(k[0], k[1], k[2]))
 
-        drawn = 0
-        for (tx, ty) in tiles:
-            buf = self._tile_cache.get((z, tx, ty))
-            if buf:
-                arr, ln = buf
-                L.carto_render_tile(ctx, arr, ln, tx, ty, z)
-                drawn += 1
-        L.carto_end(ctx)
-        return bytes(pixels), drawn
+        with self._render_lock:
+            if style is not None:
+                self.set_vector_style(style, road_width_scale=road_width_scale)
+            arena = CartoArena(cast(self._arena_buf, c_void_p), len(self._arena_buf), 0, 0)
+            pixels = (c_uint8 * (w * h * 2))()
+            fb = CartoFB()
+            L.carto_fb_init(byref(fb), w, h, CARTO_FMT_RGB565, cast(pixels, c_void_p))
+            vp = CartoViewport(lat, lon, z, w, h, tile_px, 0, 0, 0)
+            ctx = L.carto_begin(byref(arena), byref(fb), byref(vp), byref(self._style))
+            if not ctx:
+                raise RuntimeError("carto_begin failed (arena too small?)")
+
+            drawn = 0
+            for (tx, ty) in tiles:
+                buf = self._tile_cache.get((z, tx, ty))
+                if buf:
+                    arr, ln = buf
+                    L.carto_render_tile(ctx, arr, ln, tx, ty, z)
+                    drawn += 1
+            L.carto_end(ctx)
+            return bytes(pixels), drawn

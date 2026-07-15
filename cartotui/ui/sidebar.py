@@ -147,16 +147,6 @@ class SidebarControl(UIControl):
         lines.append([("class:sidebar.dim",
                        (bc["v"] + "  l = next   L = gallery").ljust(w - 1)
                        + bc["v"])])
-        if active is None:
-            notes = looks.describe_incompatibilities(
-                render_mode=s.render_mode, color=s.color, dither=s.dither,
-                threshold=s.threshold_mode,
-                invert=bool(self.cfg["render"].get("invert", False)),
-                palette=s.palette,
-            )
-            for n in notes[:2]:
-                lines.append([("class:sidebar.warn",
-                               (bc["v"] + " ⚠ " + n).ljust(w - 1)[:w - 1] + bc["v"])])
         lines.append(self._section_end(w, bc))
 
         lines.append(self._section("Fine-tune", w, bc))
@@ -167,9 +157,14 @@ class SidebarControl(UIControl):
         lines.append(self._kv("Color",   "on" if s.color else "off",        w, bc, hot="c"))
         lines.append(self._kv("Dither",  s.dither,                          w, bc, hot="d"))
         lines.append(self._kv("Shaded",  "on" if s.shaded_blocks else "off",w, bc, hot="s"))
+        lines.append(self._kv("Labels",  "on" if s.labels else "off",       w, bc, hot="N"))
         lines.append(self._kv("Threshold",  s.threshold_mode,          w, bc, hot="u"))
         lines.append(self._kv("Brightness", f"{s.brightness:+.2f}",   w, bc, hot="[/]"))
         lines.append(self._kv("Contrast",   f"{s.contrast:+.2f}",     w, bc, hot="{/}"))
+        lines.append(self._kv("Gamma",      f"{s.gamma:+.2f}",        w, bc, hot="(/)"))
+        lines.append(self._kv("Saturation", f"{s.saturation:+.2f}",   w, bc, hot="</>"))
+        lines.append(self._kv("Black pt",   f"{s.black_point:.2f}",   w, bc, hot=";/:"))
+        lines.append(self._kv("White pt",   f"{s.white_point:.2f}",   w, bc, hot="'/\""))
         lines.append(self._section_end(w, bc))
 
         lines.append(self._section("View", w, bc))
@@ -355,6 +350,7 @@ class SidebarControl(UIControl):
             ("d", "dither"),
             ("s", "shaded"),
             ("c", "color"),
+            ("N", "map labels"),
             ("u", "threshold"),
         ):
             lines.append(self._kv(key, desc, w, bc))
@@ -364,6 +360,10 @@ class SidebarControl(UIControl):
         for key, desc in (
             ("[ / ]", "brightness ±"),
             ("{ / }", "contrast ±"),
+            ("( / )", "gamma ±"),
+            ("< / >", "saturation ±"),
+            ("; / :", "black point ± (lift darks)"),
+            ("' / \"", "white point ± (tame brights)"),
             ("\\",    "reset"),
         ):
             lines.append(self._kv(key, desc, w, bc))

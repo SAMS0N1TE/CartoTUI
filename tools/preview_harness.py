@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cartotui import theme_loader  # noqa: E402
+from cartotui.composite import apply_image_adjustments as _real_adjust  # noqa: E402
 from cartotui.rendering.renderer import Renderer, default_palettes  # noqa: E402
 
 
@@ -27,6 +28,21 @@ def _find_mono_font() -> str:
     for c in candidates:
         if os.path.exists(c):
             return c
+
+    try:
+        import subprocess
+        for query in ("DejaVu Sans Mono", "monospace"):
+            got = subprocess.run(["fc-match", "-f", "%{file}", query],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+            if got and os.path.exists(got):
+                return got
+    except Exception:
+        pass
+
+    for root, _dirs, files in os.walk("/usr/share/fonts"):
+        for f in sorted(files):
+            if "mono" in f.lower() and f.lower().endswith((".ttf", ".otf")):
+                return os.path.join(root, f)
     return candidates[0]
 
 
@@ -149,6 +165,9 @@ class Look:
     brightness: float = 1.0
     contrast: float = 1.05
     gamma: float = 1.0
+    saturation: float = 1.0
+    black_point: float = 0.0
+    white_point: float = 1.0
     sharpen_percent: int = 150
     edge_boost: bool = False
     invert: bool = False
@@ -159,30 +178,26 @@ class Look:
 def apply_image_adjustments(
     img: Image.Image, look: Look, *, full: bool
 ) -> Image.Image:
-    """Replicate the app's adjustment order.
+    """Run the app's real adjustment pipeline.
 
-    ``full`` mirrors the raster path (all knobs).  For vector the current app
-    only applies brightness+contrast, so ``full=False`` matches today's behaviour.
+    Calls into ``cartotui.composite`` rather than restating it: a QA tool that
+    reimplements what it is meant to inspect stops matching the app the moment
+    either side moves, and then quietly previews a renderer that doesn't exist.
+
+    ``full`` mirrors the raster path, which additionally sharpens/inverts.
     """
-    if abs(look.brightness - 1.0) > 1e-3:
-        img = ImageEnhance.Brightness(img).enhance(look.brightness)
-    if abs(look.contrast - 1.0) > 1e-3:
-        img = ImageEnhance.Contrast(img).enhance(look.contrast)
-    if not full:
-        return img
-    if abs(look.gamma - 1.0) > 1e-3:
-        inv = 1.0 / max(1e-3, look.gamma)
-        lut = [min(255, max(0, int(((i / 255.0) ** inv) * 255))) for i in range(256)]
-        img = img.point(lut * 3)
-    if look.edge_boost:
-        img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
-    if look.sharpen_percent > 0:
-        img = img.filter(ImageFilter.UnsharpMask(radius=1.5,
-                                                 percent=look.sharpen_percent,
-                                                 threshold=3))
-    if look.invert:
-        img = img.point([255 - i for i in range(256)] * 3)
-    return img
+    return _real_adjust(
+        img,
+        brightness=look.brightness,
+        contrast=look.contrast,
+        gamma=look.gamma,
+        saturation=look.saturation,
+        black_point=look.black_point,
+        white_point=look.white_point,
+        sharpen_percent=look.sharpen_percent if full else 0,
+        edge_boost=look.edge_boost if full else False,
+        invert=look.invert if full else False,
+    )
 
 
 def render_look(look: Look, term_w: int, term_h: int) -> List[List[Tuple[str, str]]]:
@@ -197,9 +212,14 @@ def render_look(look: Look, term_w: int, term_h: int) -> List[List[Tuple[str, st
                  subpixel_threshold=look.threshold,
                  subpixel_percentile=55.0,
                  shaded_blocks=look.shaded)
+    orientation = None
+    if look.source == "vector":
+        br, bg_, bb = _theme_map_rgb(look.theme)["bg"]
+        orientation = ("dark" if (0.299 * br + 0.587 * bg_ + 0.114 * bb) / 255.0 < 0.4
+                       else "bright")
     return r.render(src, term_w, term_h, look.color, mode=look.mode,
                     palette_name=look.palette, dither=look.dither,
-                    source_kind=look.source)
+                    source_kind=look.source, orientation=orientation)
 
 
 def _parse_style(style: str, chrome: dict, default_fg, default_bg):
@@ -445,12 +465,41 @@ def _cmd_extremes(args):
     print("wrote", args.out, sheet.size)
 
 
+def _cmd_tone(args):
+    """The tone knobs: levels and saturation against brightness/contrast."""
+    looks = [
+        Look(source="raster" if args.raster else "vector", mode="quadrant",
+             theme=args.theme, brightness=b, contrast=c, saturation=sa,
+             black_point=bp, white_point=wp, label=lbl)
+        for (b, c, sa, bp, wp, lbl) in [
+            (1.0, 1.05, 1.0, 0.00, 1.00, "default"),
+            (1.6, 1.05, 1.0, 0.00, 1.00, "brightness 1.6"),
+            (1.0, 1.05, 1.0, 0.20, 1.00, "black pt 0.20 (lift darks)"),
+            (1.0, 1.05, 1.0, 0.35, 1.00, "black pt 0.35"),
+            (1.0, 1.05, 1.0, 0.00, 0.70, "white pt 0.70 (tame brights)"),
+            (1.0, 1.05, 1.0, 0.00, 0.50, "white pt 0.50"),
+            (1.0, 1.05, 1.0, 0.15, 0.75, "levels 0.15-0.75"),
+            (1.0, 0.50, 1.0, 0.00, 1.00, "contrast 0.5"),
+            (1.0, 2.00, 1.0, 0.00, 1.00, "contrast 2.0"),
+            (1.0, 1.05, 0.0, 0.00, 1.00, "saturation 0"),
+            (1.0, 1.05, 1.8, 0.00, 1.00, "saturation 1.8"),
+            (1.3, 1.20, 1.2, 0.12, 0.85, "combined"),
+        ]
+    ]
+    sheet = contact_sheet(looks, cols=4, term_w=44, term_h=20,
+                          title=f"Tone controls (theme={args.theme})")
+    sheet.save(args.out)
+    print("wrote", args.out, sheet.size)
+
+
 def _from_curated(cl, *, source="vector") -> Look:
     """Convert a cartotui.looks.Look into a harness Look."""
     return Look(
         source=source, mode=cl.render_mode, palette=cl.palette, color=cl.color,
         dither=cl.dither, threshold=cl.threshold, shaded=cl.shaded,
         brightness=cl.brightness, contrast=cl.contrast, gamma=cl.gamma,
+        saturation=cl.saturation, black_point=cl.black_point,
+        white_point=cl.white_point,
         theme=cl.theme or "amber",
         label=f"{cl.name}  —  {cl.summary()}",
     )
@@ -487,6 +536,7 @@ def main(argv=None):
     for name, fn in [("sheet", _cmd_sheet), ("mono", _cmd_mono),
                      ("dither", _cmd_dither), ("threshold", _cmd_threshold),
                      ("invert", _cmd_invert), ("extremes", _cmd_extremes),
+                     ("tone", _cmd_tone),
                      ("themes", _cmd_themes), ("looks", _cmd_looks)]:
         s = sub.add_parser(name)
         s.add_argument("--out", default=f"preview_{name}.png")

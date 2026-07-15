@@ -27,6 +27,19 @@ from cartotui.vector_source import VectorTileSource
 
 log = logging.getLogger("cartotui.map")
 
+
+def _theme_orientation(style) -> Optional[str]:
+    """Whether a theme draws light-on-dark ("dark") or ink-on-paper ("bright").
+
+    Read off the map background, so it stays put no matter what the brightness,
+    contrast or levels knobs do to the frame.
+    """
+    try:
+        r, g, b = (float(c) for c in tuple(style.bg)[:3])
+    except Exception:
+        return None
+    return "dark" if (0.299 * r + 0.587 * g + 0.114 * b) / 255.0 < 0.4 else "bright"
+
 @dataclass
 class _Frame:
     width: int
@@ -444,7 +457,8 @@ class MapControl(UIControl):
 
             w, h, snap, snap_key = job
             (lat, lon, z, source, render_mode, palette, color, dither,
-             theme, shaded, brightness, contrast, threshold_mode, _src_idx) = snap
+             theme, shaded, labels, brightness, contrast, gamma, saturation,
+             black_point, white_point, threshold_mode, _src_idx) = snap
 
             with self._dedup_lock:
                 self._inflight_key = snap_key
@@ -540,13 +554,16 @@ class MapControl(UIControl):
                         log.warning("Vector rasterise failed: %s", e)
                         img = None
                 if img is not None:
-                    v_gamma = 1.0 if panning else float(r.get("gamma", 1.0))
+                    v_gamma = 1.0 if panning else float(gamma)
                     if (abs(brightness - 1.0) > 1e-3 or abs(contrast - 1.0) > 1e-3
-                            or abs(v_gamma - 1.0) > 1e-3):
+                            or abs(v_gamma - 1.0) > 1e-3
+                            or abs(saturation - 1.0) > 1e-3
+                            or black_point > 1e-3 or white_point < 1.0 - 1e-3):
                         from cartotui.composite import apply_image_adjustments
                         img = apply_image_adjustments(
                             img, brightness=brightness, contrast=contrast,
-                            gamma=v_gamma)
+                            gamma=v_gamma, saturation=saturation,
+                            black_point=black_point, white_point=white_point)
 
             if img is None:
                 cfg_sharpen = int(r.get("sharpen_percent", 150))
@@ -568,7 +585,10 @@ class MapControl(UIControl):
                         overzoom_levels=overzoom,
                         contrast=float(contrast),
                         brightness=float(brightness),
-                        gamma=1.0 if panning else float(r.get("gamma", 1.0)),
+                        gamma=1.0 if panning else float(gamma),
+                        saturation=float(saturation),
+                        black_point=float(black_point),
+                        white_point=float(white_point),
                         sharpen_percent=sharpen,
                         sharpen_radius=float(r.get("sharpen_radius", 1.5)),
                         sharpen_threshold=int(r.get("sharpen_threshold", 3)),
@@ -592,24 +612,28 @@ class MapControl(UIControl):
                     except Exception as e:
                         log.debug("raster tint failed: %s", e)
 
+            radar_layer = None
             if img is not None:
-                img = self._apply_radar(img, lat, lon, z)
+                radar_layer = self._radar_layer(lat, lon, z, img.width, img.height)
 
             effective_color = bool(color)
 
+            orientation = (_theme_orientation(style) if source == "vector" else None)
+
             try:
                 rows = self.renderer.render(
-                    img, w, h, effective_color, render_mode, palette, dither
+                    img, w, h, effective_color, render_mode, palette, dither,
+                    overlay=radar_layer, orientation=orientation,
                 )
             except Exception as e:
                 log.warning("Render failed: %s", e)
                 rows = [[("", " " * w)] for _ in range(h)]
 
             r_cfg = self.cfg["render"]
-            vector_overlay_enabled = bool(r_cfg.get("vector_overlay", True))
+            labels_enabled = bool(labels)
             boundaries_enabled = bool(r_cfg.get("boundaries", True)) and not panning
             if (self.vector_source is not None
-                    and (vector_overlay_enabled or boundaries_enabled)):
+                    and (labels_enabled or boundaries_enabled)):
                 try:
                     apply_vector_overlay(
                         rows, self.vector_source,
@@ -617,7 +641,7 @@ class MapControl(UIControl):
                         term_w=w, term_h=h,
                         canvas_px_w=px_w, canvas_px_h=px_h,
                         style=style,
-                        max_labels=64 if vector_overlay_enabled else 0,
+                        max_labels=64 if labels_enabled else 0,
                         draw_boundaries=boundaries_enabled,
                         boundary_style=str(r_cfg.get("boundary_style", "dots")),
                     )
@@ -648,6 +672,7 @@ class MapControl(UIControl):
                         predict_seconds=float(ac_cfg.get("predict_seconds", 60.0)),
                         highlight_interesting=bool(ac_cfg.get("highlight_interesting", True)),
                         marker_style=str(ac_cfg.get("marker_style", "arrow")),
+                        marker_size=str(ac_cfg.get("marker_size", "normal")),
                     )
                 except Exception as e:
                     log.debug("Aircraft post-render overlay failed: %s", e)
@@ -697,13 +722,19 @@ class MapControl(UIControl):
     def _cell_pixel_size(self) -> Tuple[int, int]:
         return self.renderer.cell_pixel_size(self.state.render_mode)
 
-    def _apply_radar(self, img, lat, lon, z, cached_only: bool = True):
+    def _radar_layer(self, lat, lon, z, px_w, px_h, cached_only: bool = True):
+        """The radar as a separate RGBA layer for the renderer, or None.
+
+        Deliberately not pasted into the map image: the renderer needs the base
+        map alone to derive its tone mapping, or precipitation ends up setting
+        the white point and blacking out everything around it.
+        """
         rd = self.cfg.get("overlays", {}).get("radar", {})
-        if not rd.get("enabled") or self.radar_source is None or img is None:
-            return img
+        if not rd.get("enabled") or self.radar_source is None:
+            return None
         try:
-            return self.radar_source.composite_onto(
-                img, lat, lon, z, img.width, img.height,
+            return self.radar_source.build_layer(
+                lat, lon, z, px_w, px_h,
                 opacity=float(rd.get("opacity", 0.65)),
                 color=int(rd.get("color", 4)),
                 smooth=int(rd.get("smooth", 1)),
@@ -713,9 +744,73 @@ class MapControl(UIControl):
             )
         except Exception as e:
             log.debug("radar overlay failed: %s", e)
-            return img
+            return None
 
-    def snapshot_png(self, path: str, long_side: int = 2048) -> str:
+    def _apply_radar(self, img, lat, lon, z, cached_only: bool = True):
+        """Flatten radar onto `img` -- for PNG snapshots, which skip the renderer."""
+        if img is None:
+            return img
+        layer = self._radar_layer(lat, lon, z, img.width, img.height,
+                                  cached_only=cached_only)
+        if layer is None:
+            return img
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.paste(layer, (0, 0), layer)
+        return img
+
+    def _aircraft_for_export(self):
+        """The aircraft the map is showing, filtered exactly as the map filters.
+
+        Same declutter rules as the live overlay, so an export matches what was
+        on screen rather than quietly including planes the map had dropped.
+        """
+        reg = self.aircraft_registry
+        if reg is None:
+            return None
+        try:
+            from cartotui.ui.aircraft_overlay import select_visible
+            ac_cfg = self.cfg.get("aircraft", {})
+            return select_visible(
+                reg.with_position(),
+                self.state.lat, self.state.lon,
+                max_shown=int(ac_cfg.get("max_shown", 0) or 0),
+                hide_ground=bool(ac_cfg.get("hide_ground", False)),
+                min_altitude=float(ac_cfg.get("min_altitude", 0.0) or 0.0),
+                max_altitude=float(ac_cfg.get("max_altitude", 0.0) or 0.0),
+                keep_icao=self.state.selected_aircraft_icao,
+                highlight_interesting=bool(ac_cfg.get("highlight_interesting", True)),
+            ) or None
+        except Exception as e:
+            log.debug("aircraft export selection failed: %s", e)
+            return None
+
+    def snapshot_png(
+        self,
+        path: str,
+        long_side: int = 2048,
+        mode: Optional[str] = None,
+        labels: Optional[bool] = None,
+        aircraft: Optional[bool] = None,
+    ) -> str:
+        """Save the map as a PNG.
+
+        `mode` "ascii" exports what the terminal actually shows -- glyphs, place
+        labels and aircraft included -- by rasterising the live frame with a
+        monospace font. `mode` "map" re-renders the vector/raster map at full
+        resolution instead, where `labels` and `aircraft` decide whether those
+        get drawn in image space. Anything not passed falls back to config.
+        """
+        sn = self.cfg.get("snapshot", {})
+        mode = str(mode if mode is not None else sn.get("png_mode", "map"))
+        if mode == "ascii":
+            return self._snapshot_png_ascii(path, long_side)
+
+        want_labels = bool(labels if labels is not None
+                           else sn.get("png_labels", False))
+        want_aircraft = bool(aircraft if aircraft is not None
+                             else sn.get("png_aircraft", False))
+
         from cartotui.themes import apply_road_highlight, theme_vector_style
         term_w = max(20, self._last_w)
         term_h = max(10, self._last_h)
@@ -735,11 +830,17 @@ class MapControl(UIControl):
         style = theme_vector_style(theme, theme_overrides)
         if bool(self.cfg["render"].get("road_highlight", False)):
             apply_road_highlight(style)
+        style.draw_labels = want_labels
+
+        planes = self._aircraft_for_export() if want_aircraft else None
+        sel = self.state.selected_aircraft_icao if want_aircraft else None
+        scale = max(1.0, (px_w / float(max(1, term_w))) / 8.0)
+        label_px = max(9, int(round(11 * scale)))
 
         img = None
         if source == "vector" and self.vector_source is not None:
             engine = self.cfg["render"].get("vector_engine", "libcarto")
-            if engine == "libcarto":
+            if engine == "libcarto" and not (want_labels or planes):
                 try:
                     from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
                     img = rasterise_view_libcarto(self.vector_source, lat, lon, z, px_w, px_h, style=style)
@@ -747,8 +848,13 @@ class MapControl(UIControl):
                     img = None
             if img is None:
                 try:
-                    img = rasterise_view(self.vector_source, lat, lon, z, px_w, px_h, style=style)
-                except Exception:
+                    img = rasterise_view(
+                        self.vector_source, lat, lon, z, px_w, px_h, style=style,
+                        aircraft_overlay=planes, selected_icao=sel,
+                        label_px=label_px, marker_scale=scale,
+                    )
+                except Exception as e:
+                    log.warning("Snapshot vector rasterise failed: %s", e)
                     img = None
         if img is None:
             r = self.cfg["render"]
@@ -756,7 +862,10 @@ class MapControl(UIControl):
                 self.cache, lat, lon, z, px_w, px_h,
                 overzoom_levels=int(self.cfg["map"].get("overzoom", 2)),
                 contrast=float(self.state.contrast), brightness=float(self.state.brightness),
-                gamma=float(r.get("gamma", 1.0)),
+                gamma=float(self.state.gamma),
+                saturation=float(self.state.saturation),
+                black_point=float(self.state.black_point),
+                white_point=float(self.state.white_point),
                 sharpen_percent=int(r.get("sharpen_percent", 150)),
                 sharpen_radius=float(r.get("sharpen_radius", 1.5)),
                 sharpen_threshold=int(r.get("sharpen_threshold", 3)),
@@ -773,11 +882,30 @@ class MapControl(UIControl):
             img = apply_image_adjustments(
                 img, brightness=float(self.state.brightness),
                 contrast=float(self.state.contrast),
-                gamma=float(self.cfg["render"].get("gamma", 1.0)))
+                gamma=float(self.state.gamma),
+                saturation=float(self.state.saturation),
+                black_point=float(self.state.black_point),
+                white_point=float(self.state.white_point))
 
-        img = self._apply_radar(img, lat, lon, z, cached_only=False)
+        if bool(sn.get("png_radar", True)):
+            img = self._apply_radar(img, lat, lon, z, cached_only=False)
         img.save(path)
         return path
+
+    def _snapshot_png_ascii(self, path: str, long_side: int) -> str:
+        """Export the terminal view itself, glyphs and all.
+
+        The live frame already carries everything -- the glyph rendering, the
+        place labels, the aircraft, the radar wash -- so there is nothing to
+        re-render: it only needs a font and the theme's colours.
+        """
+        from cartotui.snapshot import save_frame_png
+        frame = self._last_frame
+        rows = frame.rows if frame is not None else []
+        if not rows:
+            raise RuntimeError("nothing rendered yet — let the map draw first")
+        return save_frame_png(rows, self.state.theme, path,
+                              long_side=max(512, min(6144, int(long_side))))
 
     def snapshot_html(self, path: str) -> str:
         from cartotui.snapshot import save_html

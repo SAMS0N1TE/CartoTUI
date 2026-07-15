@@ -31,6 +31,9 @@ PROVIDERS = {
 DEFAULT_PROVIDER = "airplanes.live"
 MAX_RADIUS_NM = 250
 
+INTERVAL_MIN_S = 0.5
+INTERVAL_MAX_S = 10.0
+
 GetCenter = Callable[[], Tuple[float, float]]
 
 _ZOOM_RADIUS_NM = {
@@ -187,6 +190,28 @@ class ADSBApiSource(TrafficSource):
             name=self.name,
             detail=f"{self.provider} r={self.radius_nm}nm",
         )
+
+    @property
+    def min_interval_s(self) -> float:
+        """The provider's published floor -- the fastest it is polite to poll."""
+        return float(PROVIDERS[self.provider]["min_interval_s"])
+
+    def set_interval(self, seconds: float) -> float:
+        """Repoint the poll period while running; returns the effective value.
+
+        The run loop reads `interval_s` fresh each cycle, so this takes effect on
+        the next one -- no restart, and no reconnect for a source that is only
+        polling anyway.
+        """
+        want = max(INTERVAL_MIN_S, min(INTERVAL_MAX_S, float(seconds)))
+        self.interval_s = max(self.min_interval_s, want)
+        return self.interval_s
+
+    def set_radius(self, nm: float) -> float:
+        """Repoint the fetch radius while running; returns the effective value."""
+        self.radius_cap_nm = int(max(1, min(MAX_RADIUS_NM, round(float(nm)))))
+        self.radius_nm = self.radius_cap_nm
+        return float(self.radius_nm)
 
     def _center(self) -> Tuple[float, float]:
         if self.follow_map and self._get_center is not None:

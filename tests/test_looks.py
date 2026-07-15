@@ -85,14 +85,10 @@ def test_guardrail_predicates():
     assert not looks.palette_affects("half")
 
 
-def test_incompatibility_notes():
-    notes = looks.describe_incompatibilities(
-        render_mode="quadrant", color=True, dither="floyd",
-        threshold="fixed", invert=True, palette="dots")
-    joined = " ".join(notes).lower()
-    assert "dither" in joined
-    assert "invert" in joined
-    assert "fixed" in joined
-    assert looks.describe_incompatibilities(
-        render_mode="quadrant", color=True, dither="none",
-        threshold="adaptive", invert=False, palette="shades") == []
+def test_affects_helpers_still_drive_the_transient_keypress_hints():
+    """The persistent ⚠ notes are gone, but pressing p/d/s still says when a
+    setting won't do anything in the current mode."""
+    assert looks.dither_affects("ascii")
+    assert not looks.dither_affects("quadrant")
+    assert looks.shading_affects("quadrant")
+    assert not looks.shading_affects("half")

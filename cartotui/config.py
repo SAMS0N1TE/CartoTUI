@@ -65,6 +65,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "contrast": 1.05,
         "brightness": 1.0,
         "gamma": 1.0,
+        "saturation": 1.0,
+        "black_point": 0.0,
+        "white_point": 1.0,
         "sharpen_percent": 150,
         "sharpen_radius": 1.5,
         "sharpen_threshold": 3,
@@ -116,6 +119,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_shown": 150,
         "label_mode": "smart",
         "marker_style": "arrow",
+        "marker_size": "normal",
         "hide_ground": False,
         "min_altitude": 0.0,
         "max_altitude": 0.0,
@@ -184,6 +188,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "snapshot": {
         "png_long_side": 1600,
         "open_after": True,
+        "png_mode": "map",
+        "png_labels": False,
+        "png_aircraft": False,
+        "png_radar": True,
     },
 }
 
@@ -342,6 +350,9 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["contrast"]  = _coerce_num(r.get("contrast"), 1.05, (0.1, 3.0))
     r["brightness"] = _coerce_num(r.get("brightness"), 1.0, (0.1, 3.0))
     r["gamma"]     = _coerce_num(r.get("gamma"), 1.0, (0.2, 3.0))
+    r["saturation"] = _coerce_num(r.get("saturation"), 1.0, (0.0, 3.0))
+    r["black_point"] = _coerce_num(r.get("black_point"), 0.0, (0.0, 0.9))
+    r["white_point"] = _coerce_num(r.get("white_point"), 1.0, (0.1, 1.0))
     r["sharpen_percent"] = _coerce_int(r.get("sharpen_percent"), 150, (0, 500))
     r["sharpen_radius"]  = _coerce_num(r.get("sharpen_radius"), 1.5, (0.0, 10.0))
     r["sharpen_threshold"] = _coerce_int(r.get("sharpen_threshold"), 3, (0, 50))
@@ -419,7 +430,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                     ("airplanes.live", "adsb.lol", "adsb.fi"),
                                     DEFAULT_CONFIG["traffic"]["api"]["provider"])
     ap["radius_nm"] = _coerce_num(ap.get("radius_nm"), 100.0, (1.0, 250.0))
-    ap["interval_s"] = _coerce_num(ap.get("interval_s"), 5.0, (1.0, 3600.0))
+    ap["interval_s"] = _coerce_num(ap.get("interval_s"), 5.0, (0.5, 3600.0))
     ap["follow_map"] = _coerce_bool(ap.get("follow_map"), True)
     ap["follow_zoom"] = _coerce_bool(ap.get("follow_zoom"), True)
     ap["lat"] = _coerce_num(ap.get("lat"), 0.0, (-90.0, 90.0))
@@ -439,6 +450,35 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     rc["path"] = str(rc.get("path") or "")
     rc["interval_s"] = _coerce_num(rc.get("interval_s"), 1.0, (0.2, 60.0))
 
+    acf = c.get("aircraft")
+    if not isinstance(acf, dict):
+        acf = dict(DEFAULT_CONFIG["aircraft"])
+        c["aircraft"] = acf
+    _ad = DEFAULT_CONFIG["aircraft"]
+    acf["label_mode"] = _coerce_choice(acf.get("label_mode"),
+                                       ("smart", "all", "selected", "none"),
+                                       _ad["label_mode"])
+    acf["marker_style"] = _coerce_choice(acf.get("marker_style"),
+                                         ("arrow", "dot", "large", "plane", "square"),
+                                         _ad["marker_style"])
+    acf["marker_size"] = _coerce_choice(acf.get("marker_size"),
+                                        ("small", "normal", "large", "huge"),
+                                        _ad["marker_size"])
+    acf["max_shown"] = _coerce_int(acf.get("max_shown"), _ad["max_shown"], (0, 10000))
+    acf["predict_seconds"] = _coerce_num(acf.get("predict_seconds"),
+                                         _ad["predict_seconds"], (0.0, 600.0))
+    for _k in ("altitude_colors", "legend", "dead_reckoning", "predict_track",
+               "highlight_interesting", "hide_ground", "follow_selected"):
+        acf[_k] = _coerce_bool(acf.get(_k), _ad[_k])
+
+    at = c.get("aircraft_trails")
+    if not isinstance(at, dict):
+        at = dict(DEFAULT_CONFIG["aircraft_trails"])
+        c["aircraft_trails"] = at
+    at["enabled"] = _coerce_bool(at.get("enabled"),
+                                 DEFAULT_CONFIG["aircraft_trails"]["enabled"])
+    at["duration_s"] = _coerce_num(at.get("duration_s"), 60.0, (5.0, 600.0))
+
     ov = c["overlays"]
     rd = ov.get("radar")
     if not isinstance(rd, dict):
@@ -457,6 +497,11 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     sn = c["snapshot"]
     sn["png_long_side"] = _coerce_int(sn.get("png_long_side"), 1600, (512, 6144))
     sn["open_after"] = _coerce_bool(sn.get("open_after"), True)
+    sn["png_mode"] = _coerce_choice(sn.get("png_mode"), ("map", "ascii"),
+                                    DEFAULT_CONFIG["snapshot"]["png_mode"])
+    sn["png_labels"] = _coerce_bool(sn.get("png_labels"), False)
+    sn["png_aircraft"] = _coerce_bool(sn.get("png_aircraft"), False)
+    sn["png_radar"] = _coerce_bool(sn.get("png_radar"), True)
 
     lg = c["logging"]
     lg["level"] = _coerce_choice(
