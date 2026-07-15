@@ -50,8 +50,8 @@ maps whatever overshoots, and assigns black pixels their target grey outright
 since a ratio cannot move them.
 
 Take the peak with pairwise `np.maximum` over channel slices, not
-`max(axis=-1)`. Reducing a 3-long trailing axis is strided and was the single
-most expensive step in the frame.
+`max(axis=-1)`. Reducing a 3-long trailing axis is strided and an order of
+magnitude slower.
 
 ## Threshold
 
@@ -111,5 +111,5 @@ python tools/preview_harness.py themes
 python tools/preview_harness.py threshold --theme paper
 ```
 
-It calls the real pipeline. Keep it that way. A QA tool that reimplements what it
-is meant to inspect stops matching the app the moment either side moves.
+It calls the real pipeline rather than restating it, so what it shows is what the
+app does. Keep it that way.

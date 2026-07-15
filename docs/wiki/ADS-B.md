@@ -37,10 +37,9 @@ check. Setting up a receiver server is covered in the README.
 The ADS-B widget has an Update row, 0.5 to 10 seconds in half second steps. It
 applies to the running source straight away, no restart.
 
-The three API providers all publish a limit of about one request per second, and
-CartoTUI holds you to it. Ask for 0.5s on a public provider and it settles at
-1.0s, and the widget says so rather than showing you a rate you are not getting.
-Going faster than a provider's published limit earns HTTP 429s, not fresher data.
+Each API provider limits requests to about one per second. Ask for anything
+faster and the rate settles at the provider's floor, which the widget shows.
+Polling past the limit gets you rate limited, not fresher data.
 
 | Provider | Floor |
 | --- | --- |

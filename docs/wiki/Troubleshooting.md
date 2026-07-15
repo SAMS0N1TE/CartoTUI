@@ -30,39 +30,26 @@ Ink is landing on the wrong side. For vector maps polarity comes from the theme'
 raster it is guessed from the frame, and heavily adjusted imagery can fool the
 guess.
 
-## Black patches, especially over water
-
-Fixed. Radar used to be composited into the map image before the renderer chose
-its fill levels, so precipitation set the white point and crushed the map around
-it. If you see this on an older build, turn the radar off to confirm, then
-update.
-
 ## Brightness blows the map out to white
 
-Use the white point instead. Brightness multiplies, so on a light theme it hits
-white almost immediately, and white cannot hold colour. [Image
-adjust](Image-adjust.md) has the detail.
+Lower the white point instead of raising brightness. See [Image
+adjust](Image-adjust.md).
 
-## It crashed with no traceback
+## It quit with nothing in the log
 
-If the process died and the log has nothing, it was probably a native crash in
-`libcarto`. On Linux with systemd:
+A native crash in `libcarto` leaves no Python traceback. On Linux with systemd:
 
 ```
 coredumpctl list --since "-1 hour"
 coredumpctl info <pid>
 ```
 
-A stack ending in `carto_put_px` or another `carto_*` frame confirms it. Work
-around it by switching the renderer:
+A stack with `carto_*` frames in it confirms the renderer. Switch to the Python
+one:
 
 ```
 ./configure.sh set render.vector_engine python
 ```
-
-One of these has been fixed: concurrent renders used to share one scratch arena,
-so a PNG export running while the map was still drawing could corrupt the other's
-framebuffer. Renders are serialised now.
 
 ## Slow
 
