@@ -41,18 +41,6 @@ class LooksWidget(Widget):
             self.add_kv("Look", "Custom", width)
         self.add_dim("Tip: press  l  to cycle looks", width)
 
-        r = cfg["render"]
-        notes = L.describe_incompatibilities(
-            render_mode=st.render_mode, color=st.color, dither=st.dither,
-            threshold=st.threshold_mode, invert=bool(r.get("invert", False)),
-            palette=st.palette,
-        )
-        if notes and active is None:
-            self.add_section("Heads up", width)
-            for n in notes[:3]:
-                self.add_row([("class:panel.warn", " ⚠ "),
-                              ("class:panel.dim", self._pad(n, width - 3))], width)
-
     def _make_apply(self, key: str):
         def fn():
             lk = L.get_look(key)

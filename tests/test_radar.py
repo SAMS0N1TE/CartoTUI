@@ -25,6 +25,22 @@ def test_precip_detection():
     assert _is_precip_tile(transparent) is False
 
 
+def test_build_layer_returns_a_standalone_rgba_layer():
+    rs = _stub()
+    rs._get_cached = lambda *a, **k: _red_tile()
+    layer = rs.build_layer(43.2, -71.5, 8, 200, 200, opacity=0.5, which="latest")
+    assert layer is not None
+    assert layer.mode == "RGBA"
+    assert layer.size == (200, 200)
+    assert 100 < layer.getpixel((100, 100))[3] < 160
+
+
+def test_build_layer_returns_none_when_nothing_cached():
+    rs = _stub()
+    rs._get_cached = lambda *a, **k: None
+    assert rs.build_layer(43.2, -71.5, 8, 200, 200) is None
+
+
 def test_composite_cached_only_draws_from_cache():
     rs = _stub()
     rs._get_cached = lambda *a, **k: _red_tile()

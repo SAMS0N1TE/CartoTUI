@@ -31,24 +31,53 @@ _HEADING_GLYPHS = (
     "▲",
 )
 
-def _glyph_for_track(track_deg: Optional[float]) -> str:
+_HEADING_GLYPHS_SMALL = (
+    "▵", "▵", "◹", "▹", "▹", "▹", "◺", "▿",
+    "▿", "▿", "◺", "◃", "◃", "◃", "◸", "▵",
+)
+
+MARKER_SIZES = ("small", "normal", "large", "huge")
+
+_WING_SPAN = {"small": 0, "normal": 0, "large": 1, "huge": 2}
+
+_WING_BY_OCTANT = ("─", "╲", "│", "╱", "─", "╲", "│", "╱")
+
+
+def _glyph_for_track(track_deg: Optional[float], small: bool = False) -> str:
+    table = _HEADING_GLYPHS_SMALL if small else _HEADING_GLYPHS
     if track_deg is None:
-        return "●"
+        return "▫" if small else "●"
     idx = int(round(track_deg / 22.5)) % 16
-    return _HEADING_GLYPHS[idx]
+    return table[idx]
 
-_DOT_GLYPHS = {"small": "·", "normal": "•", "large": "●"}
-
-def _marker_glyph(track_deg: Optional[float], marker_style: str) -> str:
+def _marker_glyph(track_deg: Optional[float], marker_style: str,
+                  marker_size: str = "normal") -> str:
     if marker_style == "dot":
-        return "•"
+        return {"small": "·", "large": "●", "huge": "●"}.get(marker_size, "•")
     if marker_style == "large":
         return "●"
     if marker_style == "plane":
         return "✈"
     if marker_style == "square":
-        return "■"
-    return _glyph_for_track(track_deg)
+        return {"small": "▫"}.get(marker_size, "■")
+    return _glyph_for_track(track_deg, small=(marker_size == "small"))
+
+def marker_span(marker_size: str) -> int:
+    """Cells the marker reaches either side of its centre."""
+    return _WING_SPAN.get(marker_size, 0)
+
+def _wing_cells(cx: int, cy: int, track_deg: Optional[float], style: str,
+                span: int) -> List[Tuple[int, int, str, str]]:
+    """Flanking cells for an oversized marker, angled across the heading."""
+    if span < 1:
+        return []
+    octant = 0 if track_deg is None else int(round(track_deg / 45.0)) % 8
+    wing = _WING_BY_OCTANT[octant]
+    out: List[Tuple[int, int, str, str]] = []
+    for d in range(1, span + 1):
+        out.append((cx - d, cy, wing, style))
+        out.append((cx + d, cy, wing, style))
+    return out
 
 def select_visible(
     aircraft: List,
@@ -246,6 +275,7 @@ def apply_aircraft_overlay(
     highlight_interesting: bool = True,
     show_banner: bool = True,
     marker_style: str = "arrow",
+    marker_size: str = "normal",
     now: Optional[float] = None,
 ) -> List[Tuple[str, int, int, int, int]]:
     import time as _time
@@ -299,8 +329,8 @@ def apply_aircraft_overlay(
         elif is_alert:
             glyph = "⚠"
         else:
-            glyph = _marker_glyph(ac.track_deg, marker_style)
-        marker_cell_style = _rgb_to_style(color, bold=True)
+            glyph = _marker_glyph(ac.track_deg, marker_style, marker_size)
+        marker_cell_style = _rgb_to_style(color, bold=(marker_size != "small"))
 
         if label_mode == "all":
             want_label = True
@@ -359,23 +389,29 @@ def apply_aircraft_overlay(
         )
 
     occupied_labels: set = set()
+    wing = marker_span(marker_size)
     for ac, cx, cy, glyph, m_style, label, l_style, is_sel, _c, is_alert in items:
+        if wing:
+            _stamp_cells_batch(rows, term_w,
+                               _wing_cells(cx, cy, ac.track_deg, m_style, wing))
         _stamp_cell(rows, term_w, cx, cy, glyph, m_style)
 
+        label_x = cx + wing + 1
         drew_label = False
         if label:
             protected = is_sel or is_alert
-            span = range(cx + 1, cx + 1 + len(label))
+            span = range(label_x, label_x + len(label))
             collides = any((x, cy) in occupied_labels for x in span)
             if protected or not collides:
-                _stamp_label(rows, term_w, cx + 1, cy, label, l_style)
+                _stamp_label(rows, term_w, label_x, cy, label, l_style)
                 for x in span:
                     occupied_labels.add((x, cy))
                 drew_label = True
 
-        x0 = max(0, cx)
+        x0 = max(0, cx - wing)
         y0 = max(0, cy)
-        x1 = min(term_w - 1, cx + (len(label) if drew_label else 0))
+        right = (label_x + len(label) - 1) if drew_label else (cx + wing)
+        x1 = min(term_w - 1, right)
         y1 = min(term_h - 1, cy)
         if x1 >= x0 and y1 >= y0:
             hitboxes.append((ac.icao, x0, y0, x1, y1))

@@ -208,3 +208,67 @@ def test_aircraft_dict_roundtrip():
     assert b.operator == "ACME"
     assert b.altitude_ft == 30000
     assert aircraft_from_dict({}) is None
+
+
+def test_set_interval_honours_the_provider_floor():
+    """These are free public endpoints publishing ~1 req/s. Asking for 0.5s must
+    settle at the floor and say so, not quietly hammer the API."""
+    from cartotui.traffic.adsb_api import PROVIDERS, ADSBApiSource
+    from cartotui.traffic.aircraft import AircraftRegistry
+
+    src = ADSBApiSource(AircraftRegistry(), provider="airplanes.live")
+    floor = PROVIDERS["airplanes.live"]["min_interval_s"]
+
+    assert src.set_interval(0.5) == floor
+    assert src.interval_s == floor
+    assert src.set_interval(3.0) == 3.0
+    assert src.set_interval(10.0) == 10.0
+
+
+def test_set_interval_clamps_to_the_ui_range():
+    from cartotui.traffic.adsb_api import INTERVAL_MAX_S, ADSBApiSource
+    from cartotui.traffic.aircraft import AircraftRegistry
+
+    src = ADSBApiSource(AircraftRegistry())
+    assert src.set_interval(9999.0) == INTERVAL_MAX_S
+    assert src.set_interval(-5.0) == src.min_interval_s
+
+
+def test_set_radius_clamps_and_applies():
+    from cartotui.traffic.adsb_api import MAX_RADIUS_NM, ADSBApiSource
+    from cartotui.traffic.aircraft import AircraftRegistry
+
+    src = ADSBApiSource(AircraftRegistry())
+    assert src.set_radius(150) == 150
+    assert src.radius_nm == 150
+    assert src.set_radius(9999) == MAX_RADIUS_NM
+    assert src.set_radius(0) == 1
+
+
+def test_aircraft_config_section_is_validated():
+    """The aircraft block shipped with no coercion, so junk reached the overlay."""
+    from cartotui.config import _validate
+
+    c = _validate({
+        "aircraft": {"marker_size": "gigantic", "marker_style": "nonsense",
+                     "max_shown": -5, "label_mode": "wat"},
+        "aircraft_trails": {"duration_s": 99999},
+        "traffic": {"api": {"interval_s": 0.5}},
+    })
+
+    assert c["aircraft"]["marker_size"] == "normal"
+    assert c["aircraft"]["marker_style"] == "arrow"
+    assert c["aircraft"]["label_mode"] == "smart"
+    assert c["aircraft"]["max_shown"] == 0
+    assert c["aircraft_trails"]["duration_s"] == 600.0
+    assert c["traffic"]["api"]["interval_s"] == 0.5
+
+
+def test_valid_aircraft_values_survive_validation():
+    from cartotui.config import _validate
+
+    c = _validate({"aircraft": {"marker_size": "huge", "marker_style": "plane",
+                                "max_shown": 500}})
+    assert c["aircraft"]["marker_size"] == "huge"
+    assert c["aircraft"]["marker_style"] == "plane"
+    assert c["aircraft"]["max_shown"] == 500

@@ -30,9 +30,14 @@ class MapState:
     crosshair: str = field(init=False)
     theme: str = field(init=False)
     shaded_blocks: bool = field(init=False)
+    labels: bool = field(init=False)
 
     brightness: float = field(init=False)
     contrast: float = field(init=False)
+    gamma: float = field(init=False)
+    saturation: float = field(init=False)
+    black_point: float = field(init=False)
+    white_point: float = field(init=False)
     threshold_mode: str = field(init=False)
 
     current_look: str = field(init=False, default="")
@@ -82,8 +87,13 @@ class MapState:
         self.color = bool(r.get("color", True))
         self.dither = str(r.get("dither", "none"))
         self.shaded_blocks = bool(r.get("shaded_blocks", False))
+        self.labels = bool(r.get("vector_overlay", True))
         self.brightness = float(r.get("brightness", 1.0))
         self.contrast = float(r.get("contrast", 1.05))
+        self.gamma = float(r.get("gamma", 1.0))
+        self.saturation = float(r.get("saturation", 1.0))
+        self.black_point = float(r.get("black_point", 0.0))
+        self.white_point = float(r.get("white_point", 1.0))
         self.threshold_mode = str(r.get("subpixel_threshold", "adaptive"))
 
         vp = self.cfg["viewport"]
@@ -196,6 +206,11 @@ class MapState:
         with self._lock:
             self.color = not self.color
 
+    def toggle_labels(self) -> None:
+        """Place-name labels on the map. Aircraft labels are separate (`a`)."""
+        with self._lock:
+            self.labels = not self.labels
+
     def adjust_brightness(self, delta: float) -> None:
         with self._lock:
             self.brightness = max(0.2, min(3.0, self.brightness + delta))
@@ -204,10 +219,35 @@ class MapState:
         with self._lock:
             self.contrast = max(0.2, min(3.0, self.contrast + delta))
 
+    def adjust_gamma(self, delta: float) -> None:
+        with self._lock:
+            self.gamma = max(0.2, min(3.0, self.gamma + delta))
+
+    def adjust_saturation(self, delta: float) -> None:
+        with self._lock:
+            self.saturation = max(0.0, min(3.0, self.saturation + delta))
+
+    def adjust_black_point(self, delta: float) -> None:
+        """Raise the floor to lift a theme off pure black. Never crosses the
+        ceiling -- a floor above it would invert the map."""
+        with self._lock:
+            hi = min(0.9, self.white_point - 0.05)
+            self.black_point = max(0.0, min(hi, self.black_point + delta))
+
+    def adjust_white_point(self, delta: float) -> None:
+        """Lower the ceiling to take the glare off a light theme."""
+        with self._lock:
+            lo = max(0.1, self.black_point + 0.05)
+            self.white_point = max(lo, min(1.0, self.white_point + delta))
+
     def reset_image_adjust(self) -> None:
         with self._lock:
             self.brightness = 1.0
             self.contrast = 1.05
+            self.gamma = 1.0
+            self.saturation = 1.0
+            self.black_point = 0.0
+            self.white_point = 1.0
 
     def cycle_threshold(self) -> None:
         with self._lock:
@@ -253,8 +293,13 @@ class MapState:
                 self.dither,
                 self.theme,
                 self.shaded_blocks,
+                self.labels,
                 self.brightness,
                 self.contrast,
+                self.gamma,
+                self.saturation,
+                self.black_point,
+                self.white_point,
                 self.threshold_mode,
                 self.source_idx,
             )

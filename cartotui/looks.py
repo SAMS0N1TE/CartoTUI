@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 __all__ = [
     "Look", "LOOKS", "look_keys", "look_names", "get_look", "default_look_key",
     "apply_look", "current_look_key", "next_look_key",
     "dither_affects", "palette_affects", "shading_affects",
-    "describe_incompatibilities",
 ]
 
 _MODES = ("ascii", "quadrant", "braille", "half")
@@ -32,6 +31,9 @@ class Look:
     brightness: float = 1.0
     contrast: float = 1.05
     gamma: float = 1.0
+    saturation: float = 1.0
+    black_point: float = 0.0
+    white_point: float = 1.0
     theme: Optional[str] = None
     tags: Tuple[str, ...] = ()
 
@@ -158,25 +160,6 @@ def shading_affects(mode: str) -> bool:
     return mode in ("quadrant", "braille")
 
 
-def describe_incompatibilities(
-    *, render_mode: str, color: bool, dither: str, threshold: str,
-    invert: bool = False, palette: str = "shades",
-) -> List[str]:
-    """Notes for combinations that render wrong or do nothing, for the UI to hint."""
-    notes: List[str] = []
-    if dither != "none" and not dither_affects(render_mode):
-        notes.append(f"Dither is ignored in {render_mode} mode (ASCII only).")
-    if dither != "none" and color:
-        notes.append("Dither looks muddy with colour — try mono.")
-    if invert and color:
-        notes.append("Invert scrambles colour hues — use it with mono only.")
-    if threshold == "fixed":
-        notes.append("Fixed threshold can wash out dark maps — try adaptive.")
-    if not palette_affects(render_mode) and palette not in ("shades", "blocks"):
-        notes.append(f"Palette '{palette}' barely changes {render_mode} mode.")
-    return notes
-
-
 def apply_look(state, cfg, look: Look) -> bool:
     """Apply a Look to state + config. Returns True if the theme changed."""
     theme_changed = False
@@ -190,6 +173,10 @@ def apply_look(state, cfg, look: Look) -> bool:
     state.shaded_blocks = bool(look.shaded)
     state.brightness = float(look.brightness)
     state.contrast = float(look.contrast)
+    state.gamma = float(look.gamma)
+    state.saturation = float(look.saturation)
+    state.black_point = float(look.black_point)
+    state.white_point = float(look.white_point)
     state.current_look = look.key
 
     if look.theme and look.theme != state.theme:
@@ -202,6 +189,9 @@ def apply_look(state, cfg, look: Look) -> bool:
         "brightness": round(float(look.brightness), 3),
         "contrast": round(float(look.contrast), 3),
         "gamma": round(float(look.gamma), 3),
+        "saturation": round(float(look.saturation), 3),
+        "black_point": round(float(look.black_point), 3),
+        "white_point": round(float(look.white_point), 3),
         "subpixel_threshold": state.threshold_mode,
         "shaded_blocks": bool(look.shaded),
         "invert": False,
@@ -223,8 +213,7 @@ def apply_look(state, cfg, look: Look) -> bool:
     return theme_changed
 
 
-def _current_tuple(state, cfg) -> tuple:
-    r = cfg["render"] if cfg is not None else {}
+def _current_tuple(state, cfg=None) -> tuple:
     return (
         state.render_mode,
         state.palette,
@@ -234,7 +223,10 @@ def _current_tuple(state, cfg) -> tuple:
         bool(state.shaded_blocks),
         round(float(state.brightness), 2),
         round(float(state.contrast), 2),
-        round(float(r.get("gamma", 1.0)), 2),
+        round(float(getattr(state, "gamma", 1.0)), 2),
+        round(float(getattr(state, "saturation", 1.0)), 2),
+        round(float(getattr(state, "black_point", 0.0)), 2),
+        round(float(getattr(state, "white_point", 1.0)), 2),
     )
 
 
@@ -249,6 +241,9 @@ def _look_tuple(look: Look) -> tuple:
         round(float(look.brightness), 2),
         round(float(look.contrast), 2),
         round(float(look.gamma), 2),
+        round(float(look.saturation), 2),
+        round(float(look.black_point), 2),
+        round(float(look.white_point), 2),
     )
 
 

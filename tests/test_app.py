@@ -50,3 +50,18 @@ def test_theme_preset_restores_saved_values():
     finally:
         T.delete_user_theme("presettest")
         app.map_control.shutdown()
+
+
+def test_toggle_labels_flips_state_and_snapshot():
+    """Map labels are place names -- separate from the aircraft labels on `a`."""
+    from cartotui.config import Config
+    from cartotui.ui.state import MapState
+
+    st = MapState(Config())
+    assert st.labels is True
+    before = st.snapshot()
+    st.toggle_labels()
+    assert st.labels is False
+    assert st.snapshot() != before
+    st.toggle_labels()
+    assert st.labels is True

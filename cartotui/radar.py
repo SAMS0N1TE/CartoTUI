@@ -276,15 +276,22 @@ class RadarSource:
         self._prefetch_cur_sig = sig
         self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow, [frame])
 
-    def composite_onto(self, base: Image.Image, lat: float, lon: float, z: int,
-                       px_w: int, px_h: int, opacity: float = 0.65, color: int = 4,
-                       smooth: int = 1, snow: int = 1, which: str = "latest",
-                       cached_only: bool = True) -> Image.Image:
+    def build_layer(self, lat: float, lon: float, z: int,
+                    px_w: int, px_h: int, opacity: float = 0.65, color: int = 4,
+                    smooth: int = 1, snow: int = 1, which: str = "latest",
+                    cached_only: bool = True) -> Optional[Image.Image]:
+        """The radar as a standalone RGBA layer sized (px_w, px_h), or None.
+
+        Kept separate from the base map on purpose: compositing radar into the
+        map before the renderer thresholds it lets precipitation pixels drive
+        the tone statistics, which crushes the map underneath. Callers hand this
+        layer to the renderer so the map's tone mapping stays radar-independent.
+        """
         if not cached_only:
             self.refresh_frames()
         frame = self._active_frame(which)
         if not frame:
-            return base
+            return None
         self._frame_time = frame.get("time")
         self._frame_path = frame.get("path")
 
@@ -321,12 +328,25 @@ class RadarSource:
                 layer.paste(tile, (sx, sy), tile)
                 drew += 1
         if drew == 0:
-            return base
+            return None
 
         if (rpx_w, rpx_h) != (px_w, px_h):
             layer = layer.resize((px_w, px_h), Image.BILINEAR)
         if opacity < 1.0:
             layer.putalpha(layer.getchannel("A").point(lambda a: int(a * opacity)))
+        return layer
+
+    def composite_onto(self, base: Image.Image, lat: float, lon: float, z: int,
+                       px_w: int, px_h: int, opacity: float = 0.65, color: int = 4,
+                       smooth: int = 1, snow: int = 1, which: str = "latest",
+                       cached_only: bool = True) -> Image.Image:
+        """Flatten the radar onto `base`. For still images (PNG snapshots); the
+        live renderer uses `build_layer` so thresholding stays radar-free."""
+        layer = self.build_layer(lat, lon, z, px_w, px_h, opacity=opacity,
+                                 color=color, smooth=smooth, snow=snow,
+                                 which=which, cached_only=cached_only)
+        if layer is None:
+            return base
         if base.mode != "RGB":
             base = base.convert("RGB")
         base.paste(layer, (0, 0), layer)

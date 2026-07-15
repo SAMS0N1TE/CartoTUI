@@ -58,6 +58,42 @@ def _luminance(arr_u8: np.ndarray) -> np.ndarray:
         + 0.114 * arr_u8[..., 2]
     ).astype(np.float32) / 255.0
 
+class _Overlay:
+    """A translucent layer resampled onto a backend's pixel grid.
+
+    Held apart from the base image so its brightness reaches the *colour* of a
+    cell without reaching the tone statistics that pick the cell's glyph.
+    """
+
+    __slots__ = ("rgb", "alpha", "lum")
+
+    def __init__(self, rgb: np.ndarray, alpha: np.ndarray, lum: np.ndarray) -> None:
+        self.rgb = rgb
+        self.alpha = alpha
+        self.lum = lum
+
+    def over(self, base_u8: np.ndarray) -> np.ndarray:
+        """Alpha-composite onto `base_u8` -- colour output only."""
+        a = self.alpha[..., None]
+        out = base_u8.astype(np.float32) * (1.0 - a) + self.rgb.astype(np.float32) * a
+        return np.clip(out, 0.0, 255.0).astype(np.uint8)
+
+def _prep_overlay(
+    overlay: Optional[Image.Image], tw: int, th: int
+) -> Optional[_Overlay]:
+    if overlay is None:
+        return None
+    try:
+        if overlay.mode != "RGBA":
+            overlay = overlay.convert("RGBA")
+        a = np.asarray(_resample(overlay, tw, th), dtype=np.uint8)
+        if a.ndim != 3 or a.shape[-1] != 4:
+            return None
+        return _Overlay(a[..., :3], a[..., 3].astype(np.float32) / 255.0,
+                        _luminance(a[..., :3]))
+    except Exception:
+        return None
+
 def _quantize(lum: np.ndarray, levels: int, mode: str) -> np.ndarray:
     if mode == "atkinson":
         return dither_mod.atkinson(lum, levels)
@@ -134,6 +170,8 @@ class AsciiBackend:
         use_color: bool,
         palette: str,
         dither: str = "none",
+        overlay: Optional[Image.Image] = None,
+        orientation: Optional[str] = None,
     ) -> FrameFrag:
         if term_w < 1 or term_h < 1:
             return [[("", "")]]
@@ -144,18 +182,27 @@ class AsciiBackend:
 
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
+        ov = _prep_overlay(overlay, term_w, term_h)
         glyph_chars = list(palette) if palette else list(" .")
         levels = len(glyph_chars)
         if dither and dither != "none":
-            from cartotui.rendering.threshold import estimate_orientation
-            flip_lum = lum if estimate_orientation(lum) == "dark" else (1.0 - lum)
+            from cartotui.rendering.threshold import _blend_overlay, estimate_orientation
+            orient = orientation if orientation in ("dark", "bright") else estimate_orientation(lum)
+            flip_lum = lum if orient == "dark" else (1.0 - lum)
+            if ov is not None:
+                flip_lum = _blend_overlay(flip_lum, ov.lum, ov.alpha)
             idx = _quantize(flip_lum, levels, dither)
         else:
             idx = compute_fill_levels(
                 lum, levels,
                 threshold_mode=self.threshold_mode,
                 percentile=self.percentile,
+                overlay_lum=None if ov is None else ov.lum,
+                overlay_alpha=None if ov is None else ov.alpha,
+                orientation=orientation,
             )
+        if ov is not None:
+            arr = ov.over(arr)
         glyphs_arr = np.array(glyph_chars)
 
         frame: FrameFrag = []
@@ -196,6 +243,8 @@ class QuadrantBackend:
         use_color: bool,
         palette: str,
         dither: str = "none",
+        overlay: Optional[Image.Image] = None,
+        orientation: Optional[str] = None,
     ) -> FrameFrag:
         if term_w < 1 or term_h < 1:
             return [[("", "")]]
@@ -208,6 +257,7 @@ class QuadrantBackend:
             img = _resample(img, target_w, target_h)
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
+        ov = _prep_overlay(overlay, target_w, target_h)
 
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
@@ -215,7 +265,12 @@ class QuadrantBackend:
             lum, levels,
             threshold_mode=self.threshold_mode,
             percentile=self.percentile,
+            overlay_lum=None if ov is None else ov.lum,
+            overlay_alpha=None if ov is None else ov.alpha,
+            orientation=orientation,
         )
+        if ov is not None:
+            arr = ov.over(arr)
 
         tl = fill[0::2, 0::2]
         tr = fill[0::2, 1::2]
@@ -301,6 +356,8 @@ class BrailleBackend:
         use_color: bool,
         palette: str,
         dither: str = "none",
+        overlay: Optional[Image.Image] = None,
+        orientation: Optional[str] = None,
     ) -> FrameFrag:
         if term_w < 1 or term_h < 1:
             return [[("", "")]]
@@ -313,6 +370,7 @@ class BrailleBackend:
             img = _resample(img, target_w, target_h)
         arr = np.asarray(img, dtype=np.uint8)
         lum = _luminance(arr)
+        ov = _prep_overlay(overlay, target_w, target_h)
 
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
@@ -320,7 +378,12 @@ class BrailleBackend:
             lum, levels,
             threshold_mode=self.threshold_mode,
             percentile=self.percentile,
+            overlay_lum=None if ov is None else ov.lum,
+            overlay_alpha=None if ov is None else ov.alpha,
+            orientation=orientation,
         )
+        if ov is not None:
+            arr = ov.over(arr)
 
         cell_avg = fill.reshape(term_h, 4, term_w, 2).mean(axis=(1, 3))
 
@@ -408,6 +471,8 @@ class HalfBlockBackend:
         use_color: bool,
         palette: str,
         dither: str = "none",
+        overlay: Optional[Image.Image] = None,
+        orientation: Optional[str] = None,
     ) -> FrameFrag:
         if term_w < 1 or term_h < 1:
             return [[("", "")]]
@@ -417,6 +482,9 @@ class HalfBlockBackend:
         if img.width != tw or img.height != th:
             img = _resample(img, tw, th)
         arr = np.asarray(img, dtype=np.uint8)
+        ov = _prep_overlay(overlay, tw, th)
+        if ov is not None:
+            arr = ov.over(arr)
         if not use_color:
             g = (_luminance(arr) * 255.0).astype(np.uint8)
             arr = np.stack([g, g, g], axis=-1)
@@ -518,7 +586,19 @@ class Renderer:
         palette_name: Optional[str] = None,
         dither: str = "none",
         source_kind: Optional[str] = None,
+        overlay: Optional[Image.Image] = None,
+        orientation: Optional[str] = None,
     ) -> FrameFrag:
+        """Render `img` to terminal cells.
+
+        `img` is the base map alone. Translucent layers (radar) belong in
+        `overlay` -- an RGBA image the size of `img` -- so they tint the output
+        without steering the tone mapping that chooses glyphs.
+
+        `orientation` pins the ink polarity ("dark"/"bright"). Callers that know
+        it -- a themed map does -- should pass it; otherwise it is guessed from
+        the frame, and a tone-adjusted frame can guess wrong and invert.
+        """
         effective_mode = self._resolve_mode(mode, source_kind)
         self.last_effective_mode = effective_mode
         backend = self._backends.get(effective_mode) or self._backends["ascii"]
@@ -529,4 +609,6 @@ class Renderer:
             use_color,
             self.get_palette(palette_name),
             dither,
+            overlay=overlay,
+            orientation=orientation,
         )

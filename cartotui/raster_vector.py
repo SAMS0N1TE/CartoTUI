@@ -109,7 +109,15 @@ def rasterise_view(
     selected_icao: Optional[str] = None,
     supersample: float = 1.0,
     road_thickness: float = 1.0,
+    label_px: int = 0,
+    marker_scale: float = 1.0,
 ) -> Image.Image:
+    """Rasterise the vector map.
+
+    `label_px` sizes place labels (0 keeps PIL's default bitmap font, which is
+    what the terminal canvas wants); `marker_scale` sizes aircraft. Both exist so
+    a big PNG export gets legible text rather than specks.
+    """
 
     style = style or default_style()
     width_px = max(1, int(width_px))
@@ -184,7 +192,7 @@ def rasterise_view(
     _draw_water_and_landuse(draw, tiles, style)
     _draw_roads(draw, tiles, style, road_scale, min_road_prio)
     if style.draw_labels:
-        _draw_labels(draw, tiles, style, width_px, height_px)
+        _draw_labels(draw, tiles, style, width_px, height_px, label_px=label_px)
     if aircraft_overlay:
         _draw_aircraft(
             draw,
@@ -196,6 +204,7 @@ def rasterise_view(
             height_px=height_px,
             style=style,
             selected_icao=(selected_icao.upper() if selected_icao else None),
+            scale=marker_scale,
         )
 
     return img
@@ -435,7 +444,7 @@ def _draw_roads(draw, tiles, style, road_scale: float = 1.0,
     if log.isEnabledFor(logging.DEBUG) and (len(items) + skipped) > 0:
         log.debug("roads: drew %d, skipped %d sub-width", len(items), skipped)
 
-def _draw_labels(draw, tiles, style, w: int, h: int):
+def _draw_labels(draw, tiles, style, w: int, h: int, label_px: int = 0):
     candidates: List[Tuple[int, float, float, str]] = []
     for tile, sx, sy, px_per_ext in tiles:
         for layer_name in _PLACE_LAYERS:
@@ -471,12 +480,19 @@ def _draw_labels(draw, tiles, style, w: int, h: int):
     candidates.sort(key=lambda t: t[0])
 
     placed: List[Tuple[float, float, float, float]] = []
-    try:
-        font = ImageFont.load_default()
-    except Exception:
-        font = None
 
+    font = None
     char_w, char_h = 6, 11
+    if label_px > 0:
+        from cartotui.snapshot import load_mono_font
+        font = load_mono_font(label_px)
+        if font is not None:
+            char_w, char_h = max(1, int(label_px * 0.6)), label_px
+    if font is None:
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
 
     def overlaps(box, others):
         x0, y0, x1, y1 = box
@@ -484,6 +500,12 @@ def _draw_labels(draw, tiles, style, w: int, h: int):
             if not (x1 < ox0 or x0 > ox1 or y1 < oy0 or y0 > oy1):
                 return True
         return False
+
+    halo = max(1, int(round(char_h / 9.0)))
+    pad_x, pad_y = max(4, char_w), max(2, char_h // 4)
+    ring = [(dx * halo, dy * halo)
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1),
+                           (-1, -1), (1, -1), (-1, 1), (1, 1))]
 
     for _rank, px, py, name in candidates[:200]:
         text = name[:32]
@@ -495,11 +517,10 @@ def _draw_labels(draw, tiles, style, w: int, h: int):
         y1 = y0 + th
         if x0 < 0 or y0 < 0 or x1 >= w or y1 >= h:
             continue
-        if overlaps((x0 - 4, y0 - 2, x1 + 4, y1 + 2), placed):
+        if overlaps((x0 - pad_x, y0 - pad_y, x1 + pad_x, y1 + pad_y), placed):
             continue
         if font is not None:
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1),
-                           (-1, -1), (1, -1), (-1, 1), (1, 1)):
+            for dx, dy in ring:
                 try:
                     draw.text((x0 + dx, y0 + dy), text, fill=style.halo_color, font=font)
                 except Exception:
@@ -508,7 +529,7 @@ def _draw_labels(draw, tiles, style, w: int, h: int):
                 draw.text((x0, y0), text, fill=style.label_color, font=font)
             except Exception:
                 pass
-        placed.append((x0 - 4, y0 - 2, x1 + 4, y1 + 2))
+        placed.append((x0 - pad_x, y0 - pad_y, x1 + pad_x, y1 + pad_y))
 
 _LAST_HITBOXES: List[Tuple[str, float, float, float, float]] = []
 
@@ -571,17 +592,24 @@ def _draw_aircraft(
     height_px: int,
     style: VectorStyle,
     selected_icao: Optional[str] = None,
+    scale: float = 1.0,
 ):
     global _LAST_HITBOXES
     _LAST_HITBOXES = []
 
+    scale = max(0.25, float(scale))
     font = None
-    try:
-        font = ImageFont.load_default()
-    except Exception:
-        pass
+    if scale > 1.5:
+        from cartotui.snapshot import load_mono_font
+        font = load_mono_font(max(8, int(round(9 * scale))))
+    if font is None:
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            pass
 
     marker_size = max(4, min(10, 4 + z // 3))
+    marker_size = max(3, int(round(marker_size * scale)))
 
     margin = marker_size * 4
 

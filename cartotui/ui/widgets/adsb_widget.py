@@ -11,6 +11,7 @@ from cartotui.ui.widgets.registry import register_widget
 
 _LABEL_MODES = ["smart", "all", "selected", "none"]
 _MARKER_STYLES = ["arrow", "dot", "large", "plane", "square"]
+_MARKER_SIZES = ["small", "normal", "large", "huge"]
 _DENSITY_STEPS = [50, 150, 500, 0]
 _TRACK_ZOOM = 12
 
@@ -28,6 +29,17 @@ class AdsbWidget(Widget):
     default_top = 2
     default_left = 24
     default_visible = False
+
+    _display_open = False
+    _declutter_open = False
+
+    def _toggle_display(self) -> None:
+        self._display_open = not self._display_open
+        self.ctx.refresh()
+
+    def _toggle_declutter(self) -> None:
+        self._declutter_open = not self._declutter_open
+        self.ctx.refresh()
 
     def _ac(self) -> dict:
         data = getattr(self.ctx.cfg, "data", None)
@@ -51,11 +63,80 @@ class AdsbWidget(Widget):
         i = options.index(cur) if cur in options else 0
         self._set(key, options[(i + 1) % len(options)])
 
-    def _toggle_trails(self) -> None:
-        data = self.ctx.cfg.data
+    def _api(self) -> dict:
+        data = getattr(self.ctx.cfg, "data", None)
+        if not isinstance(data, dict):
+            return {}
+        tr = data.setdefault("traffic", {})
+        if not isinstance(tr, dict):
+            tr = {}
+            data["traffic"] = tr
+        api = tr.setdefault("api", {})
+        if not isinstance(api, dict):
+            api = {}
+            tr["api"] = api
+        return api
+
+    def _trails(self) -> dict:
+        data = getattr(self.ctx.cfg, "data", None)
+        if not isinstance(data, dict):
+            return {}
         t = data.setdefault("aircraft_trails", {})
+        if not isinstance(t, dict):
+            t = {}
+            data["aircraft_trails"] = t
+        return t
+
+    def _toggle_trails(self) -> None:
+        t = self._trails()
         t["enabled"] = not bool(t.get("enabled", True))
         self.ctx.rerender()
+
+    def _adj_trail_len(self, d: float) -> None:
+        t = self._trails()
+        cur = float(t.get("duration_s", 60.0) or 60.0)
+        t["duration_s"] = round(max(5.0, min(600.0, cur + d)), 1)
+        self.ctx.rerender()
+
+    def _live_source(self):
+        get_traffic = self.ctx.get_traffic
+        return get_traffic() if get_traffic else None
+
+    def _adj_interval(self, d: float) -> None:
+        """Store the wish, and push it at the running source.
+
+        The poll loop re-reads `interval_s` each cycle, so this lands on the next
+        one without a reconnect.
+        """
+        api = self._api()
+        cur = float(api.get("interval_s", 5.0) or 5.0)
+        want = round(max(0.5, min(10.0, cur + d)), 1)
+        api["interval_s"] = want
+        src = self._live_source()
+        if src is not None and hasattr(src, "set_interval"):
+            eff = src.set_interval(want)
+            if eff > want:
+                self.ctx.state.set_info(
+                    f"Update {want:.1f}s → provider min {eff:.1f}s")
+        self._save()
+        self.ctx.refresh()
+
+    def _adj_radius(self, d: float) -> None:
+        api = self._api()
+        cur = float(api.get("radius_nm", 100.0) or 100.0)
+        want = float(max(25.0, min(250.0, cur + d)))
+        api["radius_nm"] = want
+        src = self._live_source()
+        if src is not None and hasattr(src, "set_radius"):
+            src.set_radius(want)
+        self._save()
+        self.ctx.refresh()
+
+    def _save(self) -> None:
+        try:
+            self.ctx.cfg.save()
+        except Exception:
+            pass
 
     def build(self, width: int) -> None:
         ac = self._ac()
@@ -81,6 +162,30 @@ class AdsbWidget(Widget):
         state = "● CONNECTED" if stt.connected else "○ OFFLINE"
         self.add_kv("Status", state, width)
         self.add_kv("Source", f"{stt.name}  {stt.msgs_per_sec:.0f}/s", width)
+        self._build_rate(width, traffic)
+
+    def _build_rate(self, width: int, traffic) -> None:
+        """Poll rate + radius, for sources that poll.
+
+        A receiver feeding SBS-1 pushes messages as they arrive, so there is no
+        interval to set -- saying "streaming" is more honest than showing a knob
+        that does nothing.
+        """
+        if not hasattr(traffic, "set_interval"):
+            self.add_kv("Update", "streaming", width)
+            return
+
+        want = float(self._api().get("interval_s", 5.0))
+        floor = float(getattr(traffic, "min_interval_s", 0.0))
+        shown = f"{want:.1f}s"
+        self.add_adjust("Update", shown, width,
+                        lambda: self._adj_interval(-0.5),
+                        lambda: self._adj_interval(+0.5))
+        if want < floor:
+            self.add_dim(f"provider min {floor:.1f}s — polling at {floor:.1f}s", width)
+
+        self.add_adjust("Radius", f"{float(self._api().get('radius_nm', 100.0)):.0f} nm",
+                        width, lambda: self._adj_radius(-25), lambda: self._adj_radius(+25))
 
     def _build_selected(self, width, registry, sel_icao) -> None:
         ac = registry.get(sel_icao) if (registry and sel_icao) else None
@@ -128,18 +233,28 @@ class AdsbWidget(Widget):
         self.add_button("Deselect", width, self._deselect)
 
     def _build_display(self, width, ac) -> None:
-        self.add_section("Display", width)
+        if not self.add_fold("Display", width, self._display_open,
+                             self._toggle_display,
+                             summary=f"{ac.get('marker_style', 'arrow')}"
+                                     f" · {ac.get('marker_size', 'normal')}"):
+            return
         self.add_kv("Labels", str(ac.get("label_mode", "smart")), width,
                     action=lambda: self._cycle("label_mode", _LABEL_MODES, "smart"))
         self.add_kv("Markers", str(ac.get("marker_style", "arrow")), width,
                     action=lambda: self._cycle("marker_style", _MARKER_STYLES, "arrow"))
+        self.add_kv("Size", str(ac.get("marker_size", "normal")), width,
+                    action=lambda: self._cycle("marker_size", _MARKER_SIZES, "normal"))
         self.add_kv("Alt colours", _on(ac.get("altitude_colors", True)), width,
                     action=lambda: self._toggle("altitude_colors"))
         self.add_kv("Legend", _on(ac.get("legend", True)), width,
                     action=lambda: self._toggle("legend"))
-        trails = self.ctx.cfg.data.get("aircraft_trails", {})
+        trails = self._trails()
         self.add_kv("Trails", _on(trails.get("enabled", True)), width,
                     action=self._toggle_trails)
+        if trails.get("enabled", True):
+            self.add_adjust("  length", f"{float(trails.get('duration_s', 60.0)):.0f}s",
+                            width, lambda: self._adj_trail_len(-15),
+                            lambda: self._adj_trail_len(+15))
         self.add_kv("Predicted", _on(ac.get("predict_track", True)), width,
                     action=lambda: self._toggle("predict_track"))
         self.add_kv("Motion (DR)", _on(ac.get("dead_reckoning", True)), width,
@@ -148,8 +263,11 @@ class AdsbWidget(Widget):
                     action=lambda: self._toggle("highlight_interesting"))
 
     def _build_density(self, width, ac) -> None:
-        self.add_section("Declutter", width)
         mx = int(ac.get("max_shown", 150) or 0)
+        if not self.add_fold("Declutter", width, self._declutter_open,
+                             self._toggle_declutter,
+                             summary=("all" if mx == 0 else str(mx))):
+            return
         self.add_kv("Max shown", "all" if mx == 0 else str(mx), width,
                     action=lambda: self._cycle("max_shown", _DENSITY_STEPS, 150))
         self.add_kv("Ground", "hidden" if ac.get("hide_ground") else "shown", width,

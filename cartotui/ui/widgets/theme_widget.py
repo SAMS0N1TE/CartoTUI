@@ -32,6 +32,7 @@ class ThemeWidget(Widget):
         super().__init__(ctx)
         self._cache_name: Optional[str] = None
         self._cache_data: Dict = {}
+        self._tone_open = False
 
     def _current(self) -> str:
         return getattr(self.ctx.state, "theme", None) or self.ctx.cfg["ui"].get("theme", "amber")
@@ -98,20 +99,30 @@ class ThemeWidget(Widget):
 
         self.add_section("Preset (live)", width)
         st = self.ctx.state
-        self._num_row("Brightness", f"{st.brightness:+.2f}", width,
-                      lambda: self._adj_brightness(-0.1), lambda: self._adj_brightness(0.1))
-        self._num_row("Contrast", f"{st.contrast:+.2f}", width,
-                      lambda: self._adj_contrast(-0.1), lambda: self._adj_contrast(0.1))
+        if self.add_fold("Tone", width, self._tone_open, self._toggle_tone,
+                         summary=f"{st.brightness:.2f}/{st.contrast:.2f}"):
+            for label, knob, step in (
+                ("Brightness", "brightness", 0.1),
+                ("Contrast", "contrast", 0.1),
+                ("Gamma", "gamma", 0.1),
+                ("Saturation", "saturation", 0.1),
+                ("Black pt", "black_point", 0.02),
+                ("White pt", "white_point", 0.02),
+            ):
+                self.add_adjust(label, f"{getattr(st, knob):.2f}", width,
+                                (lambda k=knob, s=step: self._adj_tone(k, -s)),
+                                (lambda k=knob, s=step: self._adj_tone(k, +s)))
+            self.add_button("Reset tone", width, self._reset_tone)
         self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
         self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
         self.add_kv("View", st.render_mode, width, action=self._cycle_view)
         r = self.ctx.cfg["render"]
-        self._num_row("Road width", f"{float(r.get('road_thickness', 1.0)):.2f}x", width,
-                      lambda: self._adj_road(-0.1), lambda: self._adj_road(0.1))
+        self.add_adjust("Road width", f"{float(r.get('road_thickness', 1.0)):.2f}x", width,
+                        lambda: self._adj_road(-0.1), lambda: self._adj_road(0.1))
         _mode = st.render_mode
         _bm = r.get("road_thickness_by_mode") or {}
-        self._num_row(f"  in {_mode}", f"{float(_bm.get(_mode, 1.0)):.2f}x", width,
-                      lambda: self._adj_road_mode(-0.1), lambda: self._adj_road_mode(0.1))
+        self.add_adjust(f"  in {_mode}", f"{float(_bm.get(_mode, 1.0)):.2f}x", width,
+                        lambda: self._adj_road_mode(-0.1), lambda: self._adj_road_mode(0.1))
         self.add_kv("Roads", "highlight" if r.get("road_highlight") else "normal",
                     width, action=self._toggle_roads)
         self.add_kv("Raster", "tint" if r.get("raster_tint") == "theme" else "real",
@@ -127,32 +138,16 @@ class ThemeWidget(Widget):
             self.add_button("Delete this theme", width, self._reset_current)
         self.add_dim(f"folder: {userdir}", width)
 
-    def _num_row(self, label, value, width, on_minus, on_plus) -> None:
-        minus, plus = "[-]", "[+]"
-        lbl = " " + label
-        right = len(minus) + 1 + len(value) + 1 + len(plus)
-        gap = max(1, width - len(lbl) - right)
-        y = len(self._lines)
-        self._lines.append([
-            ("class:panel.label", lbl),
-            ("class:panel", " " * gap),
-            ("class:panel.button", minus),
-            ("class:panel", " "),
-            ("class:panel.value", value),
-            ("class:panel", " "),
-            ("class:panel.button", plus),
-        ])
-        x = len(lbl) + gap
-        self._hits.append((y, x, x + len(minus), on_minus))
-        xp0 = x + len(minus) + 1 + len(value) + 1
-        self._hits.append((y, xp0, xp0 + len(plus), on_plus))
+    def _toggle_tone(self) -> None:
+        self._tone_open = not self._tone_open
+        self.ctx.refresh()
 
-    def _adj_brightness(self, d) -> None:
-        self.ctx.state.adjust_brightness(d)
+    def _adj_tone(self, knob: str, d: float) -> None:
+        getattr(self.ctx.state, f"adjust_{knob}")(d)
         self.ctx.rerender()
 
-    def _adj_contrast(self, d) -> None:
-        self.ctx.state.adjust_contrast(d)
+    def _reset_tone(self) -> None:
+        self.ctx.state.reset_image_adjust()
         self.ctx.rerender()
 
     def _cycle_dither(self) -> None:
@@ -209,6 +204,10 @@ class ThemeWidget(Widget):
         return {
             "brightness": round(st.brightness, 2),
             "contrast": round(st.contrast, 2),
+            "gamma": round(st.gamma, 2),
+            "saturation": round(st.saturation, 2),
+            "black_point": round(st.black_point, 2),
+            "white_point": round(st.white_point, 2),
             "dither": st.dither,
             "palette": st.palette,
             "view": st.render_mode,

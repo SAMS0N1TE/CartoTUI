@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
@@ -10,6 +11,8 @@ __all__ = [
     "compute_binary_fill",
     "estimate_orientation",
 ]
+
+_OVERLAY_FLOOR = 0.35
 
 @dataclass(frozen=True)
 class _ModeParams:
@@ -29,10 +32,18 @@ def _params_for(mode: str) -> _ModeParams:
     return _ModeParams(False, 8.0, 96.0, False)
 
 def estimate_orientation(lum: np.ndarray) -> str:
+    """Guess whether a frame is light-on-dark ("dark") or ink-on-paper ("bright").
+
+    Only a fallback. Guessing from the frame mean means any tone knob that drags
+    the mean across the threshold flips the glyph ramp and visibly inverts the
+    map mid-adjustment, so callers that know the polarity should say so.
+    """
     return "dark" if float(lum.mean()) < 0.4 else "bright"
 
-def _orient_signal(lum: np.ndarray) -> np.ndarray:
-    if estimate_orientation(lum) == "dark":
+def _orient_signal(lum: np.ndarray, orientation: Optional[str] = None) -> np.ndarray:
+    if orientation not in ("dark", "bright"):
+        orientation = estimate_orientation(lum)
+    if orientation == "dark":
         return lum.astype(np.float32, copy=False)
     return (1.0 - lum).astype(np.float32, copy=False)
 
@@ -124,6 +135,34 @@ def _sobel_magnitude(lum: np.ndarray) -> np.ndarray:
     mag = np.sqrt(gx * gx + gy * gy, dtype=np.float32)
     return np.clip(mag * (1.0 / 4.0), 0.0, 1.0)
 
+def _blend_overlay(
+    signal: np.ndarray,
+    overlay_lum: np.ndarray,
+    overlay_alpha: np.ndarray,
+) -> np.ndarray:
+    """Lay a translucent overlay onto an already-normalised map signal.
+
+    The overlay is stretched across its *own* intensity range instead of the
+    map's, so light-vs-heavy precipitation stays legible even in mono where the
+    glyph carries all the information. Blending by alpha keeps partial coverage
+    and the overlay's soft edges intact.
+    """
+    a = np.clip(overlay_alpha.astype(np.float32, copy=False), 0.0, 1.0)
+    covered = a > 0.0
+    if not covered.any():
+        return signal
+
+    vals = overlay_lum[covered]
+    lo = float(np.percentile(vals, 5.0))
+    hi = float(np.percentile(vals, 95.0))
+    if hi - lo < 1e-3:
+        own = np.ones_like(overlay_lum, dtype=np.float32)
+    else:
+        own = np.clip((overlay_lum - lo) / (hi - lo), 0.0, 1.0)
+
+    band = _OVERLAY_FLOOR + own * (1.0 - _OVERLAY_FLOOR)
+    return np.clip(signal * (1.0 - a) + band * a, 0.0, 1.0).astype(np.float32)
+
 def _tone_curve(signal: np.ndarray, gamma: float) -> np.ndarray:
     g = max(0.05, float(gamma))
     return np.power(np.clip(signal, 0.0, 1.0), g, dtype=np.float32)
@@ -143,10 +182,23 @@ def compute_fill_levels(
     tile_grid: int = 4,
     signal_floor: float = 0.06,
     signal_gamma: float = _DEFAULT_GAMMA,
+    overlay_lum: Optional[np.ndarray] = None,
+    overlay_alpha: Optional[np.ndarray] = None,
+    orientation: Optional[str] = None,
 ) -> np.ndarray:
+    """Quantise `lum` to `levels` fill steps.
+
+    `lum` must be the base map only. Translucent overlays go through
+    `overlay_lum`/`overlay_alpha` so their brightness never enters the map's
+    percentiles -- a radar cell over the ocean would otherwise redefine the
+    white point and crush the whole viewport toward black.
+
+    `orientation` pins the ink polarity ("dark"/"bright"); left to guess, a
+    tone-adjusted frame can flip it and come out inverted.
+    """
     levels = max(2, int(levels))
 
-    sig = _orient_signal(lum)
+    sig = _orient_signal(lum, orientation)
 
     if threshold_mode == "edge":
         edges = _sobel_magnitude(lum)
@@ -166,6 +218,9 @@ def compute_fill_levels(
             white_pct = float(np.clip(40.0 + percentile, 80.0, 99.0))
         sig = _global_stretch(sig, p.black_pct, white_pct)
 
+    if overlay_alpha is not None and overlay_lum is not None:
+        sig = _blend_overlay(sig, overlay_lum, overlay_alpha)
+
     sig = _tone_curve(sig, signal_gamma)
 
     return _quantise(sig, levels)
@@ -176,14 +231,22 @@ def compute_binary_fill(
     percentile: float = 55.0,
     tile_grid: int = 4,
     signal_floor: float = 0.06,
+    overlay_lum: Optional[np.ndarray] = None,
+    overlay_alpha: Optional[np.ndarray] = None,
+    orientation: Optional[str] = None,
 ) -> np.ndarray:
+    """As `compute_fill_levels`, but a single on/off decision per pixel."""
     if threshold_mode == "edge":
         edges = _sobel_magnitude(lum)
         cutoff = float(np.percentile(edges, max(50.0, 100.0 - percentile / 2.0)))
         cutoff = max(cutoff, 0.04)
-        return (edges > cutoff).astype(np.uint8)
+        out = (edges > cutoff).astype(np.float32)
+        if overlay_alpha is not None and overlay_lum is not None:
+            out = _blend_overlay(out, overlay_lum, overlay_alpha)
+            return (out > 0.5).astype(np.uint8)
+        return out.astype(np.uint8)
 
-    sig = _orient_signal(lum)
+    sig = _orient_signal(lum, orientation)
     p = _params_for(threshold_mode)
 
     if p.use_local_stretch:
@@ -197,5 +260,8 @@ def compute_binary_fill(
         if threshold_mode == "percentile":
             white_pct = float(np.clip(40.0 + percentile, 80.0, 99.0))
         sig = _global_stretch(sig, p.black_pct, white_pct)
+
+    if overlay_alpha is not None and overlay_lum is not None:
+        sig = _blend_overlay(sig, overlay_lum, overlay_alpha)
 
     return (sig > 0.5).astype(np.uint8)

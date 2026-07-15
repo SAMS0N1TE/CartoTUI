@@ -14,6 +14,8 @@ class RenderWidget(Widget):
     default_left = 30
     default_visible = False
 
+    _tone_open = False
+
     def build(self, width: int) -> None:
         st = self.ctx.state
         r = self.ctx.cfg["render"]
@@ -49,8 +51,31 @@ class RenderWidget(Widget):
 
         self.add_section("Image", width)
         self.add_kv("Color", "on" if st.color else "off", width, action=self._toggle_color)
+        self.add_kv("Labels", "on" if st.labels else "off", width, action=self._toggle_labels)
         self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
         self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
+
+        if self.add_fold("Tone", width, self._tone_open, self._toggle_tone,
+                         summary=f"{st.brightness:.2f}/{st.contrast:.2f}"):
+            self.add_adjust("Brightness", f"{st.brightness:.2f}", width,
+                            lambda: self._adj("brightness", -0.1),
+                            lambda: self._adj("brightness", +0.1))
+            self.add_adjust("Contrast", f"{st.contrast:.2f}", width,
+                            lambda: self._adj("contrast", -0.1),
+                            lambda: self._adj("contrast", +0.1))
+            self.add_adjust("Gamma", f"{st.gamma:.2f}", width,
+                            lambda: self._adj("gamma", -0.1),
+                            lambda: self._adj("gamma", +0.1))
+            self.add_adjust("Saturation", f"{st.saturation:.2f}", width,
+                            lambda: self._adj("saturation", -0.1),
+                            lambda: self._adj("saturation", +0.1))
+            self.add_adjust("Black pt", f"{st.black_point:.2f}", width,
+                            lambda: self._adj("black_point", -0.02),
+                            lambda: self._adj("black_point", +0.02))
+            self.add_adjust("White pt", f"{st.white_point:.2f}", width,
+                            lambda: self._adj("white_point", -0.02),
+                            lambda: self._adj("white_point", +0.02))
+            self.add_button("Reset tone", width, self._reset_tone)
 
     def _apply(self, patch: dict) -> None:
         self.ctx.cfg.update(patch)
@@ -124,6 +149,22 @@ class RenderWidget(Widget):
 
     def _toggle_color(self) -> None:
         self.ctx.state.toggle_color()
+        self.ctx.rerender()
+
+    def _toggle_labels(self) -> None:
+        self.ctx.state.toggle_labels()
+        self.ctx.rerender()
+
+    def _toggle_tone(self) -> None:
+        self._tone_open = not self._tone_open
+        self.ctx.refresh()
+
+    def _adj(self, knob: str, delta: float) -> None:
+        getattr(self.ctx.state, f"adjust_{knob}")(delta)
+        self.ctx.rerender()
+
+    def _reset_tone(self) -> None:
+        self.ctx.state.reset_image_adjust()
         self.ctx.rerender()
 
     def _cycle_palette(self) -> None:

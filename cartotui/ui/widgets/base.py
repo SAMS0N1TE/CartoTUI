@@ -137,6 +137,33 @@ class Widget:
         if action is not None:
             self._hits.append((y, 0, width, action))
 
+    def add_fold(self, label: str, width: int, open_: bool,
+                 on_toggle: Callable[[], None], summary: str = "") -> bool:
+        """A section header that folds its rows away. Returns `open_`.
+
+        Panels don't scroll: `Panel.create_content` renders only as many rows as
+        the panel is tall and drops the rest, click targets included. A block
+        long enough to push a panel past the terminal therefore has to be
+        foldable rather than merely long, or its tail silently stops working.
+        """
+        arrow = "▾" if open_ else "▸"
+        lbl = " " + label
+        tail = " " + arrow
+        val = "" if open_ else str(summary)
+        gap = width - len(lbl) - len(val) - len(tail)
+        if gap < 1:
+            keep = max(0, width - len(lbl) - len(tail) - 1)
+            val = val[:keep]
+            gap = max(1, width - len(lbl) - len(val) - len(tail))
+        y = len(self._lines)
+        runs: Line = [("class:panel.section", lbl), ("class:panel", " " * gap)]
+        if val:
+            runs.append(("class:panel.dim", val))
+        runs.append(("class:panel.hotkey", tail))
+        self._lines.append(runs)
+        self._hits.append((y, 0, width, on_toggle))
+        return open_
+
     def add_adjust(self, label: str, value: str, width: int,
                    on_minus: Callable[[], None],
                    on_plus: Callable[[], None]) -> None:
