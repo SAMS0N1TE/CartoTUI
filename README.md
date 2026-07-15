@@ -14,9 +14,81 @@ macOS / Linux:
     ./setup.sh
 
 This makes a `venv`, installs CartoTUI, and builds the native renderer if a C
-compiler is present (otherwise the Python renderer is used). Then run:
+compiler is present (otherwise the Python renderer is used). It then offers to
+set up the ADS-B connection; skip that step with `-SkipAdsb` (or `--skip-adsb`).
+Then run:
 
     python -m cartotui --mvt-url "https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}" --lat 43.2081 --lon -71.5376 --zoom 14
+
+## ADS-B live traffic
+
+CartoTUI can overlay live aircraft on the map. Pick and test a source:
+
+    .\configure.ps1 adsb      # Windows
+    ./configure.sh adsb
+
+### No hardware
+
+The quickest path — a free public feed, no receiver required:
+
+    ./configure.sh adsb --source api
+
+It follows the map centre as you pan. Providers: `airplanes.live` (default),
+`adsb.lol`, `adsb.fi`.
+
+### Your own receiver
+
+| Source | What it is |
+| --- | --- |
+| `api` | Free public feed over the internet. No hardware |
+| `sbs1` | dump1090 / readsb / PiAware, local or on the network (SBS-1, TCP 30003) |
+| `lakeshark` | LakeShark receiver on a USB serial port |
+| `lakeshark_tui` | LakeShark receiver, ESP_LOG console format |
+| `replay` | Play back a recorded `.jsonl` capture |
+
+The wizard probes whatever you pick, so you know it works before launching the
+TUI. It can also be driven non-interactively:
+
+    ./configure.sh adsb --source sbs1 --host 192.168.1.50 --port 30003
+    ./configure.sh adsb --source api --provider adsb.lol --radius 150
+    ./configure.sh adsb --test          # re-probe the saved source
+    ./configure.sh adsb --list-ports    # show serial ports
+    ./configure.sh adsb --disable
+
+`--test` exits non-zero when the feed is unreachable, so it works in a health check.
+
+### Setting up a receiver server
+
+CartoTUI only reads ADS-B — something has to decode 1090MHz off an SDR and serve
+it. To see what this machine has, and what it could install:
+
+    ./configure.sh adsb --server-status
+    ./configure.sh adsb --install-server              # shows the plan only
+    ./configure.sh adsb --install-server --yes        # actually runs it
+
+Backends are probed at runtime (`apt-cache policy`) rather than assumed, because
+availability varies:
+
+| Host | Backend |
+| --- | --- |
+| Raspberry Pi (ARM Debian: bullseye/bookworm/trixie) | `dump1090-fa` from the FlightAware repo. Serves SBS on 30003 out of the box |
+| Debian/Ubuntu amd64 | `dump1090-mutability`, where the distro still ships it |
+| Anything else Linux | `readsb` via the wiedehopf install script |
+| Windows | Guided only — see below |
+
+FlightAware builds `dump1090-fa` for **armhf/arm64 Debian only**, so it is not
+offered on amd64 or Ubuntu, where apt could not resolve it.
+
+`--install-server` prints the exact commands and does nothing without `--yes`.
+The `readsb` route runs a third-party script as root and is never automated —
+the plan pipes it through `less` so you read it first.
+
+On **Windows** there is no packaged ADS-B server, and the SDR's driver must be
+replaced with WinUSB via [Zadig](https://zadig.akeo.ie/) — an admin GUI step no
+script can safely drive. `--install-server` prints the steps instead. Once
+`dump1090.exe --net --net-sbs-port 30003` is running, point CartoTUI at it:
+
+    .\configure.ps1 adsb --source sbs1 --host localhost --port 30003
 
 ## Settings
 
