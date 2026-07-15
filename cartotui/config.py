@@ -394,7 +394,8 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     tr = c["traffic"]
     tr["enabled"] = _coerce_bool(tr.get("enabled"), DEFAULT_CONFIG["traffic"]["enabled"])
     tr["source"] = _coerce_choice(tr.get("source"),
-                                   ("disabled", "lakeshark", "sbs1", "api", "replay"),
+                                   ("disabled", "lakeshark", "lakeshark_tui", "sbs1",
+                                    "api", "replay"),
                                    DEFAULT_CONFIG["traffic"]["source"])
     tr["stale_timeout_s"] = _coerce_num(tr.get("stale_timeout_s"), 60.0, (1.0, 3600.0))
     ls = tr.get("lakeshark")

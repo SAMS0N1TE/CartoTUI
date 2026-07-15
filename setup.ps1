@@ -8,6 +8,7 @@ C compiler is available. Run from a normal PowerShell window:
 [CmdletBinding()]
 param(
     [switch]$SkipDll,
+    [switch]$SkipAdsb,
     [switch]$Recreate
 )
 
@@ -83,6 +84,25 @@ if (-not $SkipDll) {
     }
 }
 
+$interactive = -not [Console]::IsInputRedirected
+if (-not $SkipAdsb -and $interactive) {
+    Write-Host ""
+    Write-Host "ADS-B live traffic" -ForegroundColor Cyan
+    Write-Host "CartoTUI can overlay live aircraft on the map."
+    Write-Host "  - No hardware? A free public feed works straight away."
+    Write-Host "  - Got an SDR? setup can walk you through a local receiver."
+    $ans = Read-Host "Set up ADS-B now? (Y/n)"
+    if ($ans -eq "" -or $ans -match "^[Yy]") {
+        & $venvPy -m cartotui.configure adsb
+    } else {
+        Write-Host "Skipped. Set it up later with:  .\configure.ps1 adsb"
+    }
+} elseif (-not $SkipAdsb) {
+    Write-Host ""
+    Write-Host "Skipping ADS-B setup (non-interactive shell)."
+    Write-Host "Set it up later with:  .\configure.ps1 adsb"
+}
+
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host "Run CartoTUI:" -ForegroundColor Cyan
@@ -92,3 +112,10 @@ Write-Host ""
 Write-Host "Edit settings:" -ForegroundColor Cyan
 Write-Host "    .\configure.ps1 set ui.theme dark"
 Write-Host "    .\configure.ps1 themes"
+Write-Host ""
+Write-Host "ADS-B traffic:" -ForegroundColor Cyan
+Write-Host "    .\configure.ps1 adsb                  # pick and test a source"
+Write-Host "    .\configure.ps1 adsb --source api     # no hardware needed"
+Write-Host "    .\configure.ps1 adsb --server-status  # local receiver + SDR status"
+Write-Host "    .\configure.ps1 adsb --install-server # guided local receiver setup"
+Write-Host "    .\configure.ps1 adsb --test           # re-test the saved source"

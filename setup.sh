@@ -10,10 +10,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 SKIP_DLL=0
+SKIP_ADSB=0
 RECREATE=0
 for arg in "$@"; do
     case "$arg" in
         --skip-dll) SKIP_DLL=1 ;;
+        --skip-adsb) SKIP_ADSB=1 ;;
         --recreate) RECREATE=1 ;;
     esac
 done
@@ -72,6 +74,26 @@ if [ "$SKIP_DLL" = "0" ]; then
     fi
 fi
 
+if [ "$SKIP_ADSB" = "0" ]; then
+    if [ -t 0 ]; then
+        echo ""
+        echo "ADS-B live traffic"
+        echo "CartoTUI can overlay live aircraft on the map."
+        echo "  - No hardware? A free public feed works straight away."
+        echo "  - Got an SDR? setup can install a receiver server (dump1090/readsb)."
+        printf "Set up ADS-B now? (Y/n) "
+        read -r ans || ans=""
+        case "$ans" in
+            ""|[Yy]*) "$VENV_PY" -m cartotui.configure adsb ;;
+            *) echo "Skipped. Set it up later with:  ./configure.sh adsb" ;;
+        esac
+    else
+        echo ""
+        echo "Skipping ADS-B setup (non-interactive shell)."
+        echo "Set it up later with:  ./configure.sh adsb"
+    fi
+fi
+
 echo ""
 echo "Done."
 echo "Run CartoTUI:"
@@ -80,3 +102,10 @@ echo "    python -m cartotui --mvt-url 'https://tiles.versatiles.org/tiles/osm/{
 echo ""
 echo "Edit settings:"
 echo "    ./configure.sh set ui.theme dark"
+echo ""
+echo "ADS-B traffic:"
+echo "    ./configure.sh adsb                  # pick and test a source"
+echo "    ./configure.sh adsb --source api     # no hardware needed"
+echo "    ./configure.sh adsb --server-status  # local receiver + SDR status"
+echo "    ./configure.sh adsb --install-server # install dump1090/readsb here"
+echo "    ./configure.sh adsb --test           # re-test the saved source"
