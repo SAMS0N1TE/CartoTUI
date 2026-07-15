@@ -39,11 +39,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_composite_px": 1400,
     },
     "vector": {
-        "source": "pmtiles_url",
+        "source": "mvt_url",
+        "mvt_url": "https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}",
         "pmtiles_url": "https://protomaps.github.io/PMTiles/protomaps(vector)ODbL_firenze.pmtiles",
         "protomaps_api_key": "",
         "protomaps_api_url": "https://api.protomaps.com/tiles/v4/{z}/{x}/{y}.mvt",
-        "mvt_url": "",
         "style": "auto",
     },
     "network": {
@@ -79,6 +79,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vector_scale": 6,
         "vector_render_mode": "quadrant",
         "raster_render_mode": "ascii",
+        "boundary_style": "dots",
+        "road_thickness": 1.0,
+        "road_thickness_by_mode": {
+            "ascii": 0.6,
+            "half": 1.0,
+            "quadrant": 1.0,
+            "braille": 1.0,
+        },
         "road_highlight": False,
         "raster_tint": "none",
         "dynamic_quality": True,
@@ -97,6 +105,21 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "pan_step_cells": 6,
         "panels": [],
         "max_fps": 30,
+    },
+    "aircraft": {
+        "altitude_colors": True,
+        "legend": True,
+        "dead_reckoning": True,
+        "predict_track": True,
+        "predict_seconds": 60.0,
+        "highlight_interesting": True,
+        "max_shown": 150,
+        "label_mode": "smart",
+        "marker_style": "arrow",
+        "hide_ground": False,
+        "min_altitude": 0.0,
+        "max_altitude": 0.0,
+        "follow_selected": False,
     },
     "aircraft_trails": {
         "enabled": True,
@@ -120,6 +143,25 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sbs1": {
             "host": "localhost",
             "port": 30003,
+        },
+        "api": {
+            "provider": "airplanes.live",
+            "radius_nm": 100.0,
+            "interval_s": 5.0,
+            "follow_map": True,
+            "follow_zoom": True,
+            "lat": 0.0,
+            "lon": 0.0,
+        },
+        "replay": {
+            "path": "",
+            "speed": 1.0,
+            "loop": True,
+        },
+        "record": {
+            "enabled": False,
+            "path": "",
+            "interval_s": 1.0,
         },
     },
     "theme": {
@@ -275,7 +317,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     v["pmtiles_url"] = str(v.get("pmtiles_url") or DEFAULT_CONFIG["vector"]["pmtiles_url"])
     v["protomaps_api_key"] = str(v.get("protomaps_api_key") or "")
     v["protomaps_api_url"] = str(v.get("protomaps_api_url") or DEFAULT_CONFIG["vector"]["protomaps_api_url"])
-    v["mvt_url"] = str(v.get("mvt_url") or "")
+    v["mvt_url"] = str(v.get("mvt_url") or DEFAULT_CONFIG["vector"]["mvt_url"])
     v["style"] = _coerce_choice(v.get("style"), ("auto", "nav", "minimal", "full"),
                                  DEFAULT_CONFIG["vector"]["style"])
 
@@ -319,6 +361,15 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                              ("ascii", "quadrant", "braille", "half"), "quadrant")
     r["raster_render_mode"] = _coerce_choice(r.get("raster_render_mode"),
                                              ("ascii", "quadrant", "braille", "half"), "ascii")
+    r["boundary_style"] = _coerce_choice(r.get("boundary_style"),
+                                         ("dots", "line", "dashed"), "dots")
+    r["road_thickness"] = _coerce_num(r.get("road_thickness"), 1.0, (0.2, 4.0))
+    rtm = r.get("road_thickness_by_mode")
+    if not isinstance(rtm, dict):
+        rtm = dict(DEFAULT_CONFIG["render"]["road_thickness_by_mode"])
+        r["road_thickness_by_mode"] = rtm
+    for _m, _d in DEFAULT_CONFIG["render"]["road_thickness_by_mode"].items():
+        rtm[_m] = _coerce_num(rtm.get(_m), _d, (0.2, 4.0))
     r["road_highlight"] = _coerce_bool(r.get("road_highlight"), False)
     r["raster_tint"] = _coerce_choice(r.get("raster_tint"), ("none", "theme"), "none")
     r["dynamic_quality"] = _coerce_bool(r.get("dynamic_quality"), True)
@@ -342,7 +393,8 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     tr = c["traffic"]
     tr["enabled"] = _coerce_bool(tr.get("enabled"), DEFAULT_CONFIG["traffic"]["enabled"])
-    tr["source"] = _coerce_choice(tr.get("source"), ("disabled", "lakeshark", "sbs1"),
+    tr["source"] = _coerce_choice(tr.get("source"),
+                                   ("disabled", "lakeshark", "sbs1", "api", "replay"),
                                    DEFAULT_CONFIG["traffic"]["source"])
     tr["stale_timeout_s"] = _coerce_num(tr.get("stale_timeout_s"), 60.0, (1.0, 3600.0))
     ls = tr.get("lakeshark")
@@ -358,6 +410,33 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
         tr["sbs1"] = sb
     sb["host"] = str(sb.get("host") or "localhost")
     sb["port"] = _coerce_int(sb.get("port"), 30003, (1, 65535))
+    ap = tr.get("api")
+    if not isinstance(ap, dict):
+        ap = dict(DEFAULT_CONFIG["traffic"]["api"])
+        tr["api"] = ap
+    ap["provider"] = _coerce_choice(ap.get("provider"),
+                                    ("airplanes.live", "adsb.lol", "adsb.fi"),
+                                    DEFAULT_CONFIG["traffic"]["api"]["provider"])
+    ap["radius_nm"] = _coerce_num(ap.get("radius_nm"), 100.0, (1.0, 250.0))
+    ap["interval_s"] = _coerce_num(ap.get("interval_s"), 5.0, (1.0, 3600.0))
+    ap["follow_map"] = _coerce_bool(ap.get("follow_map"), True)
+    ap["follow_zoom"] = _coerce_bool(ap.get("follow_zoom"), True)
+    ap["lat"] = _coerce_num(ap.get("lat"), 0.0, (-90.0, 90.0))
+    ap["lon"] = _coerce_num(ap.get("lon"), 0.0, (-180.0, 180.0))
+    rp = tr.get("replay")
+    if not isinstance(rp, dict):
+        rp = dict(DEFAULT_CONFIG["traffic"]["replay"])
+        tr["replay"] = rp
+    rp["path"] = str(rp.get("path") or "")
+    rp["speed"] = _coerce_num(rp.get("speed"), 1.0, (0.1, 60.0))
+    rp["loop"] = _coerce_bool(rp.get("loop"), True)
+    rc = tr.get("record")
+    if not isinstance(rc, dict):
+        rc = dict(DEFAULT_CONFIG["traffic"]["record"])
+        tr["record"] = rc
+    rc["enabled"] = _coerce_bool(rc.get("enabled"), False)
+    rc["path"] = str(rc.get("path") or "")
+    rc["interval_s"] = _coerce_num(rc.get("interval_s"), 1.0, (0.2, 60.0))
 
     ov = c["overlays"]
     rd = ov.get("radar")

@@ -72,7 +72,22 @@ class CartoTUIApp:
         self.aircraft_registry = AircraftRegistry(
             stale_timeout_s=float(traffic_cfg.get("stale_timeout_s", 60.0)),
         )
-        self.traffic_source = build_traffic_source(traffic_cfg, self.aircraft_registry)
+        self.traffic_source = build_traffic_source(
+            traffic_cfg, self.aircraft_registry,
+            get_center=lambda: (self.state.lat, self.state.lon),
+            get_zoom=lambda: self.state.z,
+            user_agent=ncfg["user_agent"],
+        )
+
+        self.traffic_recorder = None
+        rec_cfg = traffic_cfg.get("record", {}) if isinstance(traffic_cfg, dict) else {}
+        if rec_cfg.get("enabled") and rec_cfg.get("path"):
+            from cartotui.traffic import AircraftRecorder
+            self.traffic_recorder = AircraftRecorder(
+                self.aircraft_registry,
+                path=str(rec_cfg["path"]),
+                interval_s=float(rec_cfg.get("interval_s", 1.0)),
+            )
 
         self.map_control = MapControl(
             self.cfg, self.state, self.renderer, self.cache,
@@ -194,6 +209,8 @@ class CartoTUIApp:
         try:
             log.info("Starting CartoTUI %s", os.environ.get("USER", ""))
             self.traffic_source.start()
+            if self.traffic_recorder is not None:
+                self.traffic_recorder.start()
             threading.Thread(target=self._radar_loop, daemon=True, name="radar").start()
             self.app.run()
         finally:
@@ -202,6 +219,11 @@ class CartoTUIApp:
                 self.traffic_source.stop(timeout_s=2.0)
             except Exception:
                 pass
+            if self.traffic_recorder is not None:
+                try:
+                    self.traffic_recorder.stop(timeout_s=2.0)
+                except Exception:
+                    pass
             self.map_control.shutdown()
 
     def _radar_loop(self) -> None:
@@ -366,6 +388,49 @@ class CartoTUIApp:
         self.map_control.request_render()
         self.app.invalidate()
 
+    def _ac_cfg(self) -> dict:
+        ac = self.cfg.data.setdefault("aircraft", {})
+        if not isinstance(ac, dict):
+            ac = {}
+            self.cfg.data["aircraft"] = ac
+        return ac
+
+    def _cycle_label_mode(self) -> None:
+        order = ["smart", "all", "selected", "none"]
+        ac = self._ac_cfg()
+        cur = str(ac.get("label_mode", "smart"))
+        ac["label_mode"] = order[(order.index(cur) + 1) % len(order)
+                                 if cur in order else 0]
+        self.state.set_info(f"Aircraft labels → {ac['label_mode']}")
+        self.map_control.request_render(force=True)
+
+    def _cycle_density(self) -> None:
+        steps = [50, 150, 500, 0]
+        ac = self._ac_cfg()
+        cur = int(ac.get("max_shown", 150) or 0)
+        nxt = steps[(steps.index(cur) + 1) % len(steps)] if cur in steps else 150
+        ac["max_shown"] = nxt
+        label = "all" if nxt == 0 else str(nxt)
+        self.state.set_info(f"Max aircraft shown → {label}")
+        self.map_control.request_render(force=True)
+
+    def _toggle_hide_ground(self) -> None:
+        ac = self._ac_cfg()
+        ac["hide_ground"] = not bool(ac.get("hide_ground", False))
+        self.state.set_info(
+            f"Ground traffic {'hidden' if ac['hide_ground'] else 'shown'}")
+        self.map_control.request_render(force=True)
+
+    def _toggle_follow_selected(self) -> None:
+        ac = self._ac_cfg()
+        if not self.state.selected_aircraft_icao:
+            self.state.set_info("Follow: select an aircraft first")
+            return
+        ac["follow_selected"] = not bool(ac.get("follow_selected", False))
+        self.state.set_info(
+            f"Follow selected {'on' if ac['follow_selected'] else 'off'}")
+        self.map_control.request_render(force=True)
+
     def _on_search_submit(self, text: str) -> None:
         from cartotui.ui.goto import _parse
         text = (text or "").strip()
@@ -452,7 +517,8 @@ class CartoTUIApp:
             st.set_render_mode(rp["view"])
         patch = {}
         for k in ("road_highlight", "raster_tint", "vector_engine",
-                  "vector_scale", "vector_render_mode"):
+                  "vector_scale", "vector_render_mode",
+                  "road_thickness", "road_thickness_by_mode"):
             if k in rp:
                 patch[k] = rp[k]
         if patch:
@@ -737,6 +803,22 @@ class CartoTUIApp:
                 float(self.cfg["map"]["center_lon"]),
                 int(self.cfg["map"]["zoom"]),
             )
+
+        @kb.add("a", filter=map_active)
+        def _(event):
+            self._cycle_label_mode()
+
+        @kb.add("n", filter=map_active)
+        def _(event):
+            self._cycle_density()
+
+        @kb.add("G", filter=map_active)
+        def _(event):
+            self._toggle_hide_ground()
+
+        @kb.add("f", filter=map_active)
+        def _(event):
+            self._toggle_follow_selected()
 
         from prompt_toolkit.key_binding import merge_key_bindings
 

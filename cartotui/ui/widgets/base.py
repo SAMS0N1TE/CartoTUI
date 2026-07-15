@@ -7,7 +7,6 @@ Run = Tuple[str, str]
 Line = List[Run]
 Hit = Tuple[int, int, int, Callable[[], None]]
 
-
 @dataclass
 class WidgetContext:
     state: Any = None
@@ -30,7 +29,6 @@ class WidgetContext:
         if self.request_render is not None:
             self.request_render()
         self.refresh()
-
 
 class Widget:
     name: str = "widget"
@@ -138,6 +136,28 @@ class Widget:
         self._lines.append(runs)
         if action is not None:
             self._hits.append((y, 0, width, action))
+
+    def add_adjust(self, label: str, value: str, width: int,
+                   on_minus: Callable[[], None],
+                   on_plus: Callable[[], None]) -> None:
+        minus, plus = "[-]", "[+]"
+        lbl = " " + label
+        right = len(minus) + 1 + len(value) + 1 + len(plus)
+        gap = max(1, width - len(lbl) - right)
+        y = len(self._lines)
+        self._lines.append([
+            ("class:panel.label", lbl),
+            ("class:panel", " " * gap),
+            ("class:panel.button", minus),
+            ("class:panel", " "),
+            ("class:panel.value", value),
+            ("class:panel", " "),
+            ("class:panel.button", plus),
+        ])
+        x = len(lbl) + gap
+        self._hits.append((y, x, x + len(minus), on_minus))
+        xp0 = x + len(minus) + 1 + len(value) + 1
+        self._hits.append((y, xp0, xp0 + len(plus), on_plus))
 
     def add_row(self, runs: Line, width: int,
                 action: Optional[Callable[[], None]] = None) -> None:

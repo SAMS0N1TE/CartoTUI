@@ -107,6 +107,8 @@ def rasterise_view(
     pmap_max_zoom: int = 15,
     aircraft_overlay: Optional[Iterable] = None,
     selected_icao: Optional[str] = None,
+    supersample: float = 1.0,
+    road_thickness: float = 1.0,
 ) -> Image.Image:
 
     style = style or default_style()
@@ -175,8 +177,12 @@ def rasterise_view(
             ", ".join(f"{k}={v}" for k, v in sorted(layer_summary.items())),
         )
 
+    road_scale = min(0.55, max(0.125, 0.125 + (z - 9) * 0.0625))
+    road_scale *= max(1.0, float(supersample))
+    road_scale *= max(0.05, float(road_thickness))
+    min_road_prio = min(10, max(1, 18 - z))
     _draw_water_and_landuse(draw, tiles, style)
-    _draw_roads(draw, tiles, style)
+    _draw_roads(draw, tiles, style, road_scale, min_road_prio)
     if style.draw_labels:
         _draw_labels(draw, tiles, style, width_px, height_px)
     if aircraft_overlay:
@@ -282,12 +288,17 @@ def _bbox_extent_diag(coords) -> Tuple[float, float]:
         return (0.0, 0.0)
     return (max_x - min_x, max_y - min_y)
 
-_WATER_LAYER_NAMES = {"water", "ocean", "rivers", "lakes"}
-_LANDUSE_LAYER_NAMES = {"landuse", "landcover", "natural"}
-_PARK_KINDS = {"park", "wood", "forest", "grass", "playground", "garden", "nature_reserve"}
-_BUILDING_LAYER = "buildings"
-_ROAD_LAYERS = {"roads", "transportation"}
-_PLACE_LAYERS = {"places"}
+_WATER_LAYER_NAMES = {"water", "ocean", "rivers", "lakes",
+                      "water_polygons", "water_lines"}
+_LANDUSE_LAYER_NAMES = {"landuse", "landcover", "natural",
+                        "land", "sites"}
+_PARK_KINDS = {"park", "wood", "forest", "grass", "playground", "garden",
+               "nature_reserve", "meadow", "recreation_ground", "cemetery",
+               "allotments", "golf_course", "pitch", "village_green"}
+_BUILDING_LAYERS = {"buildings", "building"}
+_ROAD_LAYERS = {"roads", "transportation",
+                "streets", "bridges"}
+_PLACE_LAYERS = {"places", "place_labels"}
 
 def _draw_water_and_landuse(draw, tiles, style):
     skipped_bldg = 0
@@ -342,8 +353,10 @@ def _draw_water_and_landuse(draw, tiles, style):
                         except Exception:
                             pass
 
-        layer = tile.layers.get(_BUILDING_LAYER)
-        if layer:
+        for layer_name in _BUILDING_LAYERS:
+            layer = tile.layers.get(layer_name)
+            if not layer:
+                continue
             for feat in layer.get("features", []):
                 geom = feat.get("geometry") or {}
                 if geom.get("type") not in ("Polygon", "MultiPolygon"):
@@ -368,7 +381,8 @@ def _draw_water_and_landuse(draw, tiles, style):
             drawn_bldg, skipped_bldg,
         )
 
-def _draw_roads(draw, tiles, style):
+def _draw_roads(draw, tiles, style, road_scale: float = 1.0,
+                min_road_prio: int = 1):
     items: List[Tuple[int, float, float, float, dict, dict]] = []
     skipped = 0
     for tile, sx, sy, px_per_ext in tiles:
@@ -392,7 +406,10 @@ def _draw_roads(draw, tiles, style):
                 cls = (props.get("class") or props.get("kind") or
                        props.get("pmap:kind") or "other").lower()
                 priority = ROAD_CLASS_PRIORITY.get(cls, 1)
-                width = style.road_widths.get(priority, 1)
+                if priority < min_road_prio:
+                    skipped += 1
+                    continue
+                width = max(1, int(round(style.road_widths.get(priority, 1) * road_scale)))
                 if check_size:
                     per_class_thresh = max(_MIN_LINE_PX, width * 0.5) / px_per_ext
                     ew, eh = _bbox_extent_diag(geom["coordinates"])
@@ -404,7 +421,7 @@ def _draw_roads(draw, tiles, style):
     items.sort(key=lambda t: t[0])
 
     for priority, sx, sy, px_per_ext, geom, _props in items:
-        width = style.road_widths.get(priority, 1)
+        width = max(1, int(round(style.road_widths.get(priority, 1) * road_scale)))
         color = style.color_for_priority(priority)
         xformed = _xform_geom(geom["coordinates"], sx, sy, px_per_ext)
         for line in _flatten_lines(xformed):

@@ -15,6 +15,7 @@ void carto_mvt_render_category(carto_framebuffer *fb, const carto_style *style,
                               const uint8_t *tile, size_t len,
                               carto_layer_kind category,
                               double ox, double oy, double tile_px,
+                              int zoom,
                               carto_ipt *scratch, int scratch_cap);
 
 #ifdef __cplusplus

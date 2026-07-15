@@ -41,7 +41,6 @@ def default_palettes() -> Dict[str, str]:
 def _rgb_to_style(r: int, g: int, b: int) -> str:
     return f"fg:#{r:02x}{g:02x}{b:02x}"
 
-
 def _resample(img: Image.Image, tw: int, th: int) -> Image.Image:
     w, h = img.width, img.height
     if w == tw and h == th:
@@ -87,7 +86,6 @@ def _emit_row(glyphs: List[str], styles: List[str]) -> LineFrag:
 _FG_CACHE: Dict[int, str] = {}
 _HB_CACHE: Dict[int, str] = {}
 
-
 def _fg_style(v: int) -> str:
     s = _FG_CACHE.get(v)
     if s is None:
@@ -95,7 +93,6 @@ def _fg_style(v: int) -> str:
         if len(_FG_CACHE) < 65536:
             _FG_CACHE[v] = s
     return s
-
 
 def _emit_row_color_fast(
     glyphs: np.ndarray,
@@ -397,7 +394,6 @@ def _emit_halfblock_row(top: np.ndarray, bot: np.ndarray) -> LineFrag:
         out.append((style, "▀" * (e - s)))
     return out
 
-
 class HalfBlockBackend:
     name = "half"
 
@@ -431,7 +427,6 @@ class HalfBlockBackend:
         for y in range(n):
             frame.append(_emit_halfblock_row(top[y], bot[y]))
         return frame
-
 
 @dataclass
 class Renderer:
@@ -497,7 +492,7 @@ class Renderer:
 
     def cell_pixel_size(self, mode: str) -> Tuple[int, int]:
         if mode == "quadrant":
-            return 2, 2
+            return 2, 4
         if mode == "braille":
             return 2, 4
         if mode == "half":

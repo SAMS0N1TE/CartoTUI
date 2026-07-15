@@ -43,38 +43,74 @@
     "ring_radius": 1
   },
   "render": {
-    "brightness": 1.0,
     "color": true,
-    "contrast": 1.05,
     "dither": "none",
-    "edge_boost": false,
+    "contrast": 1.05,
+    "brightness": 1.0,
     "gamma": 1.0,
-    "invert": false,
-    "shaded_blocks": false,
     "sharpen_percent": 150,
     "sharpen_radius": 1.5,
     "sharpen_threshold": 3,
-    "subpixel_percentile": 55,
+    "edge_boost": false,
+    "invert": false,
     "subpixel_threshold": "adaptive",
-    "vector_overlay": true
+    "subpixel_percentile": 55,
+    "shaded_blocks": false,
+    "vector_overlay": true,
+    "boundaries": true,
+    "vector_engine": "libcarto",
+    "vector_scale": 6,
+    "vector_render_mode": "quadrant",
+    "raster_render_mode": "ascii",
+    "boundary_style": "dots",
+    "road_thickness": 1.0,
+    "road_thickness_by_mode": {
+      "ascii": 0.6,
+      "half": 1.0,
+      "quadrant": 1.0,
+      "braille": 1.0
+    },
+    "road_highlight": false,
+    "raster_tint": "none",
+    "dynamic_quality": true,
+    "color_depth": "truecolor"
   },
   "theme": {
     "chrome": {},
     "road_colors": {}
   },
   "traffic": {
-    "enabled": true,
+    "enabled": false,
+    "source": "disabled",
+    "stale_timeout_s": 60.0,
     "lakeshark": {
+      "port": "",
       "baudrate": 115200,
-      "format": "auto",
-      "port": "COM29"
+      "format": "auto"
     },
     "sbs1": {
       "host": "localhost",
       "port": 30003
     },
-    "source": "lakeshark",
-    "stale_timeout_s": 60.0
+    "api": {
+      "provider": "airplanes.live",
+      "radius_nm": 100.0,
+      "interval_s": 5.0,
+      "follow_map": true,
+      "follow_zoom": true,
+      "lat": 0.0,
+      "lon": 0.0
+    },
+    "replay": {
+      "path": "",
+      "speed": 1.0,
+      "loop": true
+    },
+    "record": {
+      "enabled": false,
+      "path": "",
+      "interval_s": 1.0
+    }
   },
   "ui": {
     "border_style": "heavy",
@@ -84,11 +120,11 @@
     "theme": "amber"
   },
   "vector": {
-    "mvt_url": "",
+    "source": "mvt_url",
+    "mvt_url": "https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}",
     "pmtiles_url": "https://protomaps.github.io/PMTiles/protomaps(vector)ODbL_firenze.pmtiles",
     "protomaps_api_key": "",
     "protomaps_api_url": "https://api.protomaps.com/tiles/v4/{z}/{x}/{y}.mvt",
-    "source": "pmtiles_url",
     "style": "auto"
   },
   "viewport": {
@@ -101,5 +137,20 @@
     "show_titlebar": true,
     "show_toolbar": true,
     "sidebar_width": 36
+  },
+  "aircraft": {
+    "altitude_colors": true,
+    "legend": true,
+    "dead_reckoning": true,
+    "predict_track": true,
+    "predict_seconds": 60.0,
+    "highlight_interesting": true,
+    "max_shown": 150,
+    "label_mode": "smart",
+    "marker_style": "arrow",
+    "hide_ground": false,
+    "min_altitude": 0.0,
+    "max_altitude": 0.0,
+    "follow_selected": false
   }
 }

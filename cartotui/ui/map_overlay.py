@@ -6,6 +6,7 @@ import math
 from collections import OrderedDict
 from typing import List, Optional, Tuple
 
+from cartotui.admin1 import TILE_ADMIN1_MIN_Z, admin1_lines
 from cartotui.geodesy import latlon_to_tile_xy
 
 log = logging.getLogger("cartotui.overlay")
@@ -24,15 +25,29 @@ _ADMIN_LABEL_LAYERS = {"boundary_labels", "admin_labels", "place_labels_admin"}
 
 _BOUNDARY_LAYERS = {"boundaries", "boundary", "admin", "admin_boundaries"}
 _BOUNDARY_LEVELS = {
-    2: ("═", 2),
-    3: ("─", 5),
-    4: ("╌", 5),
+    2: 2,
+    3: 4,
+    4: 4,
 }
+
+def _boundary_glyph(x0: int, y0: int, x1: int, y1: int,
+                    level: int, mode: str) -> str:
+    if mode == "dots":
+        return "•" if level == 2 else "·"
+    if mode == "dashed":
+        return "═" if level == 2 else ("─" if level == 3 else "╌")
+    dx = x1 - x0
+    dy = y1 - y0
+    heavy = (level == 2)
+    if abs(dx) >= 2 * abs(dy):
+        return "═" if heavy else "─"
+    if abs(dy) >= 2 * abs(dx):
+        return "║" if heavy else "│"
+    return "╲" if (dx > 0) == (dy > 0) else "╱"
 _CLASS_TO_ADMIN_LEVEL = {
     "country": 2, "nation": 2,
     "state": 4, "region": 4, "province": 4, "territory": 4,
 }
-
 
 def _admin_level(props: dict) -> Optional[int]:
     raw = props.get("admin_level")
@@ -44,7 +59,6 @@ def _admin_level(props: dict) -> Optional[int]:
         return int(raw)
     except (TypeError, ValueError):
         return None
-
 
 def _iter_line_coords(coords):
     """Yield each LineString as a flat list of (x, y) from a (Multi)LineString."""
@@ -191,7 +205,6 @@ def _line_cells(x0: int, y0: int, x1: int, y1: int):
             y += sy
     return cells
 
-
 def draw_boundary_lines(
     rows: FrameFrag,
     vector_source,
@@ -206,9 +219,10 @@ def draw_boundary_lines(
     style,
     pmap_min_zoom: int = 0,
     pmap_max_zoom: int = 15,
-    max_cells: int = 6000,
+    max_cells: int = 12000,
+    boundary_style: str = "dots",
+    admin1_fallback: bool = True,
 ) -> int:
-    """Draw dashed country/state boundaries onto the finished terminal grid."""
     if vector_source is None:
         return 0
 
@@ -261,10 +275,9 @@ def draw_boundary_lines(
                     if props.get("maritime"):
                         continue
                     level = _admin_level(props)
-                    spec = _BOUNDARY_LEVELS.get(level)
-                    if spec is None:
+                    min_z = _BOUNDARY_LEVELS.get(level)
+                    if min_z is None:
                         continue
-                    glyph, min_z = spec
                     if z < min_z:
                         continue
                     geom = feat.get("geometry") or {}
@@ -276,9 +289,12 @@ def draw_boundary_lines(
                             cx = int(round(origin_cx + ex * cells_per_ext_x))
                             cy = int(round(origin_cy + ey * cells_per_ext_y))
                             if prev is not None:
-                                for (gx, gy) in _line_cells(prev[0], prev[1], cx, cy):
+                                glyph = _boundary_glyph(prev[0], prev[1],
+                                                        cx, cy, level, boundary_style)
+                                for i, (gx, gy) in enumerate(
+                                        _line_cells(prev[0], prev[1], cx, cy)):
                                     dash += 1
-                                    if dash % 2 == 0:
+                                    if boundary_style == "dashed" and dash % 2 == 0:
                                         continue
                                     if 0 <= gx < term_w and 0 <= gy < term_h:
                                         stamps.append((gx, gy, glyph, base_style))
@@ -286,11 +302,47 @@ def draw_boundary_lines(
                         if len(stamps) > max_cells:
                             break
 
+    if admin1_fallback and z < TILE_ADMIN1_MIN_Z:
+        stamps.extend(_admin1_stamps(
+            z=z, term_w=term_w, term_h=term_h,
+            canvas_left=canvas_left, canvas_top=canvas_top,
+            px_per_cell_x=px_per_cell_x, px_per_cell_y=px_per_cell_y,
+            base_style=base_style, boundary_style=boundary_style,
+        ))
+
     if not stamps:
         return 0
     _stamp_cells_batch(rows, term_w, stamps[:max_cells])
     return len(stamps[:max_cells])
 
+def _admin1_stamps(*, z, term_w, term_h, canvas_left, canvas_top,
+                   px_per_cell_x, px_per_cell_y, base_style, boundary_style):
+    out: List[Tuple[int, int, str, str]] = []
+    margin = 4
+    for min_zoom, line in admin1_lines():
+        if z < min_zoom:
+            continue
+        prev = None
+        prev_vis = False
+        for lon, lat in line:
+            try:
+                tx, ty = latlon_to_tile_xy(lat, lon, z)
+            except (ValueError, ZeroDivisionError):
+                prev = None
+                continue
+            cx = int(round((tx * 256.0 - canvas_left) / px_per_cell_x))
+            cy = int(round((ty * 256.0 - canvas_top) / px_per_cell_y))
+            vis = (-margin <= cx <= term_w + margin
+                   and -margin <= cy <= term_h + margin)
+            if prev is not None and (vis or prev_vis):
+                glyph = _boundary_glyph(prev[0], prev[1], cx, cy, 4,
+                                        boundary_style)
+                for gx, gy in _line_cells(prev[0], prev[1], cx, cy):
+                    if 0 <= gx < term_w and 0 <= gy < term_h:
+                        out.append((gx, gy, glyph, base_style))
+            prev = (cx, cy)
+            prev_vis = vis
+    return out
 
 def apply_vector_overlay(
     rows: FrameFrag,
@@ -309,6 +361,7 @@ def apply_vector_overlay(
     max_labels: int = 64,
     label_bg: bool = True,
     draw_boundaries: bool = False,
+    boundary_style: str = "dots",
 ) -> int:
     if vector_source is None:
         return 0
@@ -322,6 +375,7 @@ def apply_vector_overlay(
                 canvas_px_w=canvas_px_w, canvas_px_h=canvas_px_h,
                 style=style, pmap_min_zoom=pmap_min_zoom,
                 pmap_max_zoom=pmap_max_zoom,
+                boundary_style=boundary_style,
             )
         except Exception:
             pass

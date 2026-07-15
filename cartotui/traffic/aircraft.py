@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
@@ -10,12 +11,27 @@ from typing import Deque, Dict, Iterator, List, Optional, Tuple
 TRAIL_MAX_SAMPLES = 256
 TRAIL_DEFAULT_DURATION_S = 60.0
 
+def project_forward(lat: float, lon: float, track_deg: float,
+                    gs_kt: float, seconds: float) -> Tuple[float, float]:
+    dist_nm = gs_kt * (seconds / 3600.0)
+    dlat = (dist_nm / 60.0) * math.cos(math.radians(track_deg))
+    coslat = math.cos(math.radians(lat))
+    if abs(coslat) < 1e-6:
+        coslat = 1e-6
+    dlon = (dist_nm / 60.0) * math.sin(math.radians(track_deg)) / coslat
+    return lat + dlat, lon + dlon
+
 @dataclass
 class Aircraft:
 
     icao: str
     callsign: Optional[str] = None
     registration: Optional[str] = None
+
+    type_code: Optional[str] = None
+    type_desc: Optional[str] = None
+    operator: Optional[str] = None
+    category: Optional[str] = None
 
     lat: Optional[float] = None
     lon: Optional[float] = None
@@ -70,6 +86,31 @@ class Aircraft:
 
     def has_position(self) -> bool:
         return self.lat is not None and self.lon is not None
+
+    def _can_extrapolate(self) -> bool:
+        return (self.lat is not None and self.lon is not None
+                and self.track_deg is not None
+                and self.ground_speed_kt is not None
+                and self.ground_speed_kt > 0
+                and not self.on_ground)
+
+    def projected_position(self, now: Optional[float] = None,
+                           max_dt_s: float = 30.0) -> Optional[Tuple[float, float]]:
+        if self.lat is None or self.lon is None:
+            return None
+        if not self._can_extrapolate():
+            return (self.lat, self.lon)
+        dt = (now if now is not None else time.time()) - self.last_seen
+        if dt <= 0 or dt > max_dt_s:
+            return (self.lat, self.lon)
+        return project_forward(self.lat, self.lon, self.track_deg,
+                               self.ground_speed_kt, dt)
+
+    def position_ahead(self, seconds: float) -> Optional[Tuple[float, float]]:
+        if not self._can_extrapolate():
+            return None
+        return project_forward(self.lat, self.lon, self.track_deg,
+                               self.ground_speed_kt, seconds)
 
     def display_label(self) -> str:
         if self.callsign:

@@ -42,10 +42,8 @@ _ROAD_CLASS_PRIORITY = {
 _lock = threading.RLock()
 _cache: Optional[Dict[str, dict]] = None
 
-
 def builtin_theme_dir() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes")
-
 
 def _config_home() -> str:
     if platform.system() == "Windows":
@@ -55,10 +53,8 @@ def _config_home() -> str:
         return os.path.join(os.path.expanduser("~/Library/Application Support"), "CartoTUI")
     return os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "cartotui")
 
-
 def user_theme_dir() -> str:
     return os.path.join(_config_home(), "themes")
-
 
 def _hex_to_rgb(s: str) -> Tuple[int, int, int]:
     s = str(s).strip().lstrip("#")
@@ -71,11 +67,9 @@ def _hex_to_rgb(s: str) -> Tuple[int, int, int]:
     except ValueError:
         return (128, 128, 128)
 
-
 def _rgb_to_hex(rgb) -> str:
     r, g, b = (max(0, min(255, int(round(v)))) for v in rgb)
     return f"#{r:02x}{g:02x}{b:02x}"
-
 
 def _shade(hexstr: str, pct: float) -> str:
     r, g, b = _hex_to_rgb(hexstr)
@@ -91,17 +85,14 @@ def _shade(hexstr: str, pct: float) -> str:
         b *= f
     return _rgb_to_hex((r, g, b))
 
-
 def _blend(a: str, b: str, t: float) -> str:
     ar, ag, ab = _hex_to_rgb(a)
     br, bg, bb = _hex_to_rgb(b)
     return _rgb_to_hex((ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t))
 
-
 def _lum(hexstr: str) -> float:
     r, g, b = _hex_to_rgb(hexstr)
     return (0.2126 * r + 0.7152 * g + 0.0722 * b)
-
 
 def _derive_ui(ui: dict) -> dict:
     u = dict(ui or {})
@@ -136,11 +127,9 @@ def _derive_ui(ui: dict) -> dict:
     out["input_focus_fg"] = d("input_focus_fg", out["sel_fg"])
     return out
 
-
 def _s(bg: str, fg: str, extra: str = "") -> str:
     e = (" " + extra) if extra else ""
     return f"bg:{bg} {fg}{e}"
-
 
 CHROME_CLASSES = [
     "titlebar", "titlebar.dim", "titlebar.hotkey", "toolbar", "toolbar.key", "toolbar.dim",
@@ -156,7 +145,6 @@ CHROME_CLASSES = [
     "panel.button", "panel.section", "panel.label", "panel.value",
     "panel.dim", "panel.warn", "panel.ok", "panel.hotkey",
 ]
-
 
 def _gen_chrome(u: dict) -> Dict[str, str]:
     bg = u["bg"]; fg = u["fg"]; dim = u["dim"]; border = u["border"]
@@ -213,7 +201,7 @@ def _gen_chrome(u: dict) -> Dict[str, str]:
         "panel.border": _s(panel_bg, border),
         "panel.title": _s(title_bg, title_fg, "bold"),
         "panel.title.active": _s(sel_bg, sel_fg, "bold"),
-        "panel.button": _s(title_bg, accent, "bold"),
+        "panel.button": _s(btn_bg, accent, "bold"),
         "panel.section": _s(panel_bg, section, "bold"),
         "panel.label": _s(panel_bg, dim),
         "panel.value": _s(panel_bg, fg),
@@ -222,7 +210,6 @@ def _gen_chrome(u: dict) -> Dict[str, str]:
         "panel.ok": _s(panel_bg, ok, "bold"),
         "panel.hotkey": _s(panel_bg, key),
     }
-
 
 def _read_dir(path: str) -> Dict[str, dict]:
     out: Dict[str, dict] = {}
@@ -248,7 +235,6 @@ def _read_dir(path: str) -> Dict[str, dict]:
         out[name] = data
     return out
 
-
 def _load_all() -> Dict[str, dict]:
     global _cache
     with _lock:
@@ -260,12 +246,10 @@ def _load_all() -> Dict[str, dict]:
         _cache = merged
         return merged
 
-
 def reload_themes() -> None:
     global _cache
     with _lock:
         _cache = None
-
 
 def _deep_merge(a: dict, b: dict) -> dict:
     out = dict(a)
@@ -275,7 +259,6 @@ def _deep_merge(a: dict, b: dict) -> dict:
         else:
             out[k] = v
     return out
-
 
 def _resolve_raw(name: str, seen: Optional[set] = None) -> dict:
     themes = _load_all()
@@ -291,13 +274,11 @@ def _resolve_raw(name: str, seen: Optional[set] = None) -> dict:
                                   if k not in ("extends", "_path", "_builtin")})
     return dict(raw)
 
-
 def available_theme_names() -> Tuple[str, ...]:
     themes = _load_all()
     ordered = [n for n in _BUILTIN_ORDER if n in themes]
     extra = sorted(n for n in themes if n not in _BUILTIN_ORDER)
     return tuple(ordered + extra)
-
 
 def resolve_theme(name: str) -> dict:
     raw = _resolve_raw(str(name).lower())
@@ -312,7 +293,6 @@ def resolve_theme(name: str) -> dict:
         "path": raw.get("_path"),
     }
 
-
 def chrome_style_map(name: str, extra_overrides: Optional[dict] = None) -> Dict[str, str]:
     t = resolve_theme(name)
     base = _gen_chrome(t["ui"])
@@ -324,7 +304,6 @@ def chrome_style_map(name: str, extra_overrides: Optional[dict] = None) -> Dict[
             if isinstance(k, str) and isinstance(v, str):
                 base[k] = v
     return base
-
 
 def vector_style_kwargs(name: str) -> dict:
     t = resolve_theme(name)
@@ -338,7 +317,7 @@ def vector_style_kwargs(name: str) -> dict:
 
     road_colors: Dict[int, Tuple[int, int, int]] = {}
     for p in range(1, 11):
-        t_mix = 0.32 * (10 - p) / 9.0
+        t_mix = 0.72 * ((10 - p) / 9.0)
         road_colors[p] = _hex_to_rgb(_blend(road, bg, t_mix))
     roads = m.get("roads", {})
     if isinstance(roads, dict):
@@ -370,20 +349,16 @@ def vector_style_kwargs(name: str) -> dict:
         "draw_labels": bool(m.get("draw_labels", False)),
     }
 
-
 def theme_border_pref(name: str) -> str:
     return str(resolve_theme(name).get("border", "auto"))
-
 
 def theme_render(name: str) -> dict:
     raw = _resolve_raw(str(name).lower())
     r = raw.get("render")
     return dict(r) if isinstance(r, dict) else {}
 
-
 def theme_source_path(name: str) -> Optional[str]:
     return resolve_theme(name).get("path")
-
 
 def save_user_theme(name: str, data: dict) -> str:
     d = user_theme_dir()
@@ -401,7 +376,6 @@ def save_user_theme(name: str, data: dict) -> str:
     os.replace(tmp, path)
     reload_themes()
     return path
-
 
 def delete_user_theme(name: str) -> bool:
     path = os.path.join(user_theme_dir(), str(name).lower() + ".json")

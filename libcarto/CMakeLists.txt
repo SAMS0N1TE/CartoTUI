@@ -16,7 +16,8 @@ set(CARTO_SOURCES
     src/carto.c
 )
 
-add_library(carto STATIC ${CARTO_SOURCES})
+add_library(carto SHARED ${CARTO_SOURCES})
+set_target_properties(carto PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(carto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(CARTO_WERROR)
