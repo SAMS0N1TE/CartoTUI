@@ -8,7 +8,6 @@ from cartotui.ui.map_overlay import (
     draw_boundary_lines,
 )
 
-
 def test_admin_level_from_number_and_class():
     assert _admin_level({"admin_level": 2}) == 2
     assert _admin_level({"admin_level": "4"}) == 4
@@ -17,7 +16,6 @@ def test_admin_level_from_number_and_class():
     assert _admin_level({"class": "county"}) is None
     assert _admin_level({}) is None
 
-
 def test_line_cells_is_continuous():
     cells = _line_cells(0, 0, 5, 2)
     assert cells[0] == (0, 0)
@@ -25,20 +23,17 @@ def test_line_cells_is_continuous():
     for (ax, ay), (bx, by) in zip(cells, cells[1:]):
         assert abs(bx - ax) <= 1 and abs(by - ay) <= 1
 
-
 def test_iter_line_coords_handles_multi():
     single = [[0, 0], [10, 10]]
     assert list(_iter_line_coords(single)) == [[[0, 0], [10, 10]]]
     multi = [[[0, 0], [1, 1]], [[2, 2], [3, 3]]]
     assert len(list(_iter_line_coords(multi))) == 2
 
-
 class _FakeTile:
     extent = 4096
 
     def __init__(self, layers):
         self.layers = layers
-
 
 class _FakeSource:
     """Returns the same boundary tile for any tile coordinate in view."""
@@ -49,10 +44,8 @@ class _FakeSource:
     def get_tile(self, z, x, y):
         return _FakeTile(self._layers)
 
-
 def _blank(term_w, term_h):
     return [[("", " " * term_w)] for _ in range(term_h)]
-
 
 def _boundary_layers(admin_level=2, maritime=False):
     return {
@@ -65,8 +58,7 @@ def _boundary_layers(admin_level=2, maritime=False):
         }
     }
 
-
-def _draw(layers, z=6):
+def _draw(layers, z=6, boundary_style="dots", admin1_fallback=False):
     term_w, term_h = 40, 20
     rows = _blank(term_w, term_h)
     style = SimpleNamespace(label_color=(200, 120, 255))
@@ -75,29 +67,58 @@ def _draw(layers, z=6):
         center_lat=40.0, center_lon=-100.0, z=z,
         term_w=term_w, term_h=term_h,
         canvas_px_w=term_w * 8, canvas_px_h=term_h * 16,
-        style=style,
+        style=style, boundary_style=boundary_style,
+        admin1_fallback=admin1_fallback,
     )
     text = "".join(t for row in rows for _, t in row)
     return n, text
 
-
 def test_country_boundary_is_drawn():
     n, text = _draw(_boundary_layers(admin_level=2))
     assert n > 0
-    assert "═" in text
+    assert "•" in text
 
+def test_country_boundary_line_style():
+    n, text = _draw(_boundary_layers(admin_level=2), boundary_style="line")
+    assert n > 0
+    assert "═" in text
 
 def test_maritime_boundaries_are_skipped():
     n, _ = _draw(_boundary_layers(admin_level=2, maritime=True))
     assert n == 0
 
-
 def test_state_boundary_hidden_below_min_zoom():
-    # State lines appear from z5; hidden at z4 and below.
-    assert _draw(_boundary_layers(admin_level=4), z=4)[0] == 0
     assert _draw(_boundary_layers(admin_level=4), z=3)[0] == 0
+    assert _draw(_boundary_layers(admin_level=4), z=4)[0] > 0
     assert _draw(_boundary_layers(admin_level=4), z=5)[0] > 0
 
+def test_admin1_fallback_draws_states_when_tiles_lack_them():
+    term_w, term_h = 80, 30
+
+    class _NoTiles:
+        def get_tile(self, z, x, y):
+            return None
+
+    for z in (3, 4, 5, 6):
+        rows = _blank(term_w, term_h)
+        n = draw_boundary_lines(
+            rows, _NoTiles(),
+            center_lat=40.0, center_lon=-96.0, z=z,
+            term_w=term_w, term_h=term_h,
+            canvas_px_w=term_w * 8, canvas_px_h=term_h * 16,
+            style=SimpleNamespace(label_color=(255, 120, 120)),
+            admin1_fallback=True,
+        )
+        assert n > 0, f"expected bundled state lines at z{z}"
+
+    rows = _blank(term_w, term_h)
+    assert draw_boundary_lines(
+        rows, _NoTiles(), center_lat=40.0, center_lon=-96.0, z=4,
+        term_w=term_w, term_h=term_h,
+        canvas_px_w=term_w * 8, canvas_px_h=term_h * 16,
+        style=SimpleNamespace(label_color=(255, 120, 120)),
+        admin1_fallback=False,
+    ) == 0
 
 def test_none_source_is_safe():
     rows = _blank(10, 5)

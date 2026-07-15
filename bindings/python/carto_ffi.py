@@ -1,6 +1,7 @@
 import ctypes
 import math
 import os
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from ctypes import (
@@ -20,16 +21,30 @@ from ctypes import (
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_DLL = os.path.normpath(os.path.join(_HERE, "..", "..", "libcarto", "build", "carto.dll"))
+_BUILD_DIR = os.path.normpath(os.path.join(_HERE, "..", "..", "libcarto", "build"))
+
+if sys.platform == "win32":
+    _LIB_NAMES = ("carto.dll", "libcarto.dll")
+elif sys.platform == "darwin":
+    _LIB_NAMES = ("libcarto.dylib", "carto.dylib")
+else:
+    _LIB_NAMES = ("libcarto.so", "carto.so")
+
+def _find_default_lib():
+    for name in _LIB_NAMES:
+        cand = os.path.join(_BUILD_DIR, name)
+        if os.path.exists(cand):
+            return cand
+    return os.path.join(_BUILD_DIR, _LIB_NAMES[0])
+
+_DEFAULT_DLL = _find_default_lib()
 
 CARTO_FMT_RGB565 = 2
 _ROAD_PRIO_MAX = 10
 
-
 class CartoRGB(Structure):
     _pack_ = 1
     _fields_ = [("r", c_uint8), ("g", c_uint8), ("b", c_uint8)]
-
 
 class CartoStyle(Structure):
     _pack_ = 1
@@ -45,27 +60,22 @@ class CartoStyle(Structure):
         ("draw_labels", c_bool),
     ]
 
-
 class CartoArena(Structure):
     _fields_ = [("base", c_void_p), ("size", c_size_t), ("used", c_size_t), ("peak", c_size_t)]
-
 
 class CartoFB(Structure):
     _fields_ = [("width", c_int), ("height", c_int), ("format", c_int), ("stride", c_int),
                 ("pixels", c_void_p), ("cell_color", c_void_p), ("cell_cols", c_int), ("cell_rows", c_int)]
 
-
 class CartoViewport(Structure):
     _fields_ = [("lat", c_double), ("lon", c_double), ("zoom", c_int), ("fb_w", c_int), ("fb_h", c_int),
                 ("tile_px", c_int), ("scale", c_int32), ("origin_x", c_int32), ("origin_y", c_int32)]
-
 
 def tile_center(x, y, z):
     n = 2.0 ** z
     lon = (x + 0.5) / n * 360.0 - 180.0
     lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * (y + 0.5) / n))))
     return lat, lon
-
 
 class Renderer:
     def __init__(self, dll_path=None):
@@ -93,7 +103,7 @@ class Renderer:
         self._tile_cache_max = 512
         self._cache_lock = threading.Lock()
 
-    def set_vector_style(self, vs) -> None:
+    def set_vector_style(self, vs, road_width_scale: float = 1.0) -> None:
         if vs is None:
             return
         with self._style_lock:
@@ -126,7 +136,8 @@ class Renderer:
                     cc.r = int(rgb[0]) & 0xFF
                     cc.g = int(rgb[1]) & 0xFF
                     cc.b = int(rgb[2]) & 0xFF
-                    s.road_width[p] = max(1, min(255, int(road_widths.get(p, 3))))
+                    s.road_width[p] = max(1, min(255, int(round(
+                        road_widths.get(p, 3) * road_width_scale))))
                 s.draw_labels = False
             except Exception:
                 pass

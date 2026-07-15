@@ -18,8 +18,29 @@ from cartotui.themes import (
     tab_strip_slot_ranges,
 )
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
+from cartotui.traffic.interest import classify
 from cartotui.traffic.source import TrafficSource
 from cartotui.ui.state import MapState
+
+def _distance_bearing_nm(lat1: float, lon1: float,
+                         lat2: float, lon2: float) -> Tuple[float, float]:
+    import math
+    r_nm = 3440.065
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = (math.sin(dphi / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2)
+    dist = 2 * r_nm * math.asin(min(1.0, math.sqrt(a)))
+    y = math.sin(dlmb) * math.cos(p2)
+    x = (math.cos(p1) * math.sin(p2)
+         - math.sin(p1) * math.cos(p2) * math.cos(dlmb))
+    brg = (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+    return dist, brg
+
+def _compass_point(bearing: float) -> str:
+    dirs = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+    return dirs[int((bearing + 22.5) % 360 / 45)]
 
 SIDEBAR_TABS: Tuple[str, ...] = ("Settings", "Search", "Controls", "Integration", "Performance")
 _TAB_ABBREV: Tuple[str, ...] = ("Set", "Sch", "Ctl", "Int", "Prf")
@@ -366,7 +387,14 @@ class SidebarControl(UIControl):
         registry = self.get_registry()
         v = bc["v"]
 
-        lines.append(self._section("LakeShark Link", w, bc))
+        _link_titles = {
+            "api": "ADS-B API Link", "sbs1": "SBS-1 Link",
+            "lakeshark": "LakeShark Link", "disabled": "Traffic Link",
+        }
+        link_title = "Traffic Link"
+        if traffic is not None:
+            link_title = _link_titles.get(traffic.status().name, "Traffic Link")
+        lines.append(self._section(link_title, w, bc))
         if traffic is None:
             lines.append([("class:sidebar.dim", (v + " not configured").ljust(w - 1) + v)])
             lines.append(self._section_end(w, bc))
@@ -424,9 +452,15 @@ class SidebarControl(UIControl):
             lines.append(self._section_end(w, bc))
             return lines
 
+        clat, clon = self.state.lat, self.state.lon
+
+        def _proximity(a):
+            if not a.has_position():
+                return (1, 0.0)
+            return (0, (a.lat - clat) ** 2 + (a.lon - clon) ** 2)
+
         ac_list = registry.snapshot()
-        ac_list.sort(key=lambda a: (not a.has_position(),
-                                    (a.callsign or a.icao).strip()))
+        ac_list.sort(key=_proximity)
         if not ac_list:
             lines.append([("class:sidebar.dim", (v + " (none yet)").ljust(w - 1) + v)])
         else:
@@ -443,9 +477,23 @@ class SidebarControl(UIControl):
                 lines.append(self._kv("ICAO",     ac.icao, w, bc))
                 if ac.callsign:
                     lines.append(self._kv("Callsign", ac.callsign, w, bc))
+                if ac.registration:
+                    lines.append(self._kv("Reg", ac.registration, w, bc))
+                if ac.type_code or ac.type_desc:
+                    tval = ac.type_code or ""
+                    if ac.type_desc:
+                        tval = (tval + " " + ac.type_desc).strip()
+                    lines.append(self._kv("Type", tval, w, bc))
+                if ac.operator:
+                    lines.append(self._kv("Operator", ac.operator, w, bc))
                 if ac.lat is not None and ac.lon is not None:
                     lines.append(self._kv("Lat", f"{ac.lat:+.4f}", w, bc))
                     lines.append(self._kv("Lon", f"{ac.lon:+.4f}", w, bc))
+                    dist, brg = _distance_bearing_nm(
+                        self.state.lat, self.state.lon, ac.lat, ac.lon)
+                    lines.append(self._kv(
+                        "Range", f"{dist:.1f} nm {_compass_point(brg)} {brg:.0f}°",
+                        w, bc))
                 if ac.altitude_ft is not None:
                     lines.append(self._kv("Altitude", f"{ac.altitude_ft:,.0f} ft", w, bc))
                 if ac.ground_speed_kt is not None:
@@ -458,9 +506,12 @@ class SidebarControl(UIControl):
                     lines.append(self._kv("VS", f"{arrow} {ac.vertical_rate_fpm:+.0f} fpm", w, bc))
                 if ac.squawk:
                     lines.append(self._kv("Squawk", ac.squawk, w, bc))
-                if ac.emergency:
-                    lines.append([("class:sidebar.warn",
-                                   (v + " EMERGENCY").ljust(w - 1) + v)])
+                interest = classify(ac)
+                if interest:
+                    tag_cls = ("class:sidebar.warn" if interest.is_alert
+                               else "class:sidebar.dim")
+                    tag_text = " " + " ".join(interest.tags)
+                    lines.append([(tag_cls, tag_text.ljust(w - 1) + v)])
                 lines.append(self._kv("Msgs", str(ac.msg_count), w, bc))
         lines.append(self._section_end(w, bc))
         return lines

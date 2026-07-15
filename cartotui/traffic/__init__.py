@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from cartotui.traffic.adsb_api import ADSBApiSource
 from cartotui.traffic.aircraft import Aircraft, AircraftRegistry
 from cartotui.traffic.lakeshark import (
     DEFAULT_TX_PIN,
@@ -41,6 +42,7 @@ from cartotui.traffic.lakeshark import (
     split_frames,
 )
 from cartotui.traffic.lakeshark_tui import LakeSharkTUISource
+from cartotui.traffic.record import AircraftRecorder, JSONLReplaySource
 from cartotui.traffic.sbs1 import SBS1TCPSource
 from cartotui.traffic.source import LinkStatus, NullTrafficSource, TrafficSource
 
@@ -56,6 +58,9 @@ __all__ = [
     "LakeSharkReplaySource",
     "LakeSharkTUISource",
     "SBS1TCPSource",
+    "ADSBApiSource",
+    "AircraftRecorder",
+    "JSONLReplaySource",
     "build_source",
     "looks_like_jsonl",
     "parse_frame",
@@ -64,8 +69,9 @@ __all__ = [
     "event_to_status_update",
 ]
 
-
-def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
+def build_source(cfg: dict, registry: AircraftRegistry,
+                 get_center=None, get_zoom=None,
+                 user_agent: str = "CartoTUI") -> TrafficSource:
     """Build the configured traffic source.
 
     ``cfg`` is the ``traffic`` block from the app config. ``registry``
@@ -115,12 +121,38 @@ def build_source(cfg: dict, registry: AircraftRegistry) -> TrafficSource:
             port=int(s1.get("port", 30003)),
         )
 
+    if source == "api":
+        api = cfg.get("api", {})
+        return ADSBApiSource(
+            registry,
+            provider=str(api.get("provider", "airplanes.live")),
+            radius_nm=float(api.get("radius_nm", 100.0)),
+            interval_s=float(api.get("interval_s", 5.0)),
+            follow_map=bool(api.get("follow_map", True)),
+            follow_zoom=bool(api.get("follow_zoom", True)),
+            lat=float(api.get("lat", 0.0)),
+            lon=float(api.get("lon", 0.0)),
+            get_center=get_center,
+            get_zoom=get_zoom,
+            user_agent=user_agent,
+        )
+
+    if source == "replay":
+        rp = cfg.get("replay", {})
+        return JSONLReplaySource(
+            registry,
+            path=str(rp.get("path", "")),
+            speed=float(rp.get("speed", 1.0)),
+            loop=bool(rp.get("loop", True)),
+        )
+
     if source == "disabled":
         return NullTrafficSource(registry)
 
     log.warning(
         "Unrecognised traffic.source = %r; expected one of "
-        "'lakeshark', 'lakeshark_tui', 'sbs1', 'disabled'.", source,
+        "'lakeshark', 'lakeshark_tui', 'sbs1', 'api', 'replay', 'disabled'.",
+        source,
     )
     null = NullTrafficSource(registry)
     null._set_status(detail=f"unknown source: {source!r}")

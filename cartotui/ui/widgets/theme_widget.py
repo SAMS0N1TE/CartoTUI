@@ -19,7 +19,6 @@ _EDIT_FIELDS = [
     ("Labels", "label"),
 ]
 
-
 @register_widget
 class ThemeWidget(Widget):
     name = "theme"
@@ -107,6 +106,12 @@ class ThemeWidget(Widget):
         self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
         self.add_kv("View", st.render_mode, width, action=self._cycle_view)
         r = self.ctx.cfg["render"]
+        self._num_row("Road width", f"{float(r.get('road_thickness', 1.0)):.2f}x", width,
+                      lambda: self._adj_road(-0.1), lambda: self._adj_road(0.1))
+        _mode = st.render_mode
+        _bm = r.get("road_thickness_by_mode") or {}
+        self._num_row(f"  in {_mode}", f"{float(_bm.get(_mode, 1.0)):.2f}x", width,
+                      lambda: self._adj_road_mode(-0.1), lambda: self._adj_road_mode(0.1))
         self.add_kv("Roads", "highlight" if r.get("road_highlight") else "normal",
                     width, action=self._toggle_roads)
         self.add_kv("Raster", "tint" if r.get("raster_tint") == "theme" else "real",
@@ -163,6 +168,23 @@ class ThemeWidget(Widget):
         self.ctx.state.cycle_render_mode()
         self.ctx.rerender()
 
+    def _adj_road(self, d) -> None:
+        cur = float(self.ctx.cfg["render"].get("road_thickness", 1.0) or 1.0)
+        self.ctx.cfg.update({"render": {
+            "road_thickness": round(max(0.2, min(4.0, cur + d)), 2)}})
+        self._save_cfg()
+        self.ctx.rerender()
+
+    def _adj_road_mode(self, d) -> None:
+        r = self.ctx.cfg["render"]
+        mode = self.ctx.state.render_mode
+        by_mode = dict(r.get("road_thickness_by_mode") or {})
+        cur = float(by_mode.get(mode, 1.0) or 1.0)
+        by_mode[mode] = round(max(0.2, min(4.0, cur + d)), 2)
+        self.ctx.cfg.update({"render": {"road_thickness_by_mode": by_mode}})
+        self._save_cfg()
+        self.ctx.rerender()
+
     def _toggle_roads(self) -> None:
         cur = bool(self.ctx.cfg["render"].get("road_highlight", False))
         self.ctx.cfg.update({"render": {"road_highlight": not cur}})
@@ -192,6 +214,8 @@ class ThemeWidget(Widget):
             "view": st.render_mode,
             "road_highlight": bool(r.get("road_highlight", False)),
             "raster_tint": r.get("raster_tint", "none"),
+            "road_thickness": float(r.get("road_thickness", 1.0)),
+            "road_thickness_by_mode": dict(r.get("road_thickness_by_mode") or {}),
         }
 
     def _save_preset(self) -> None:

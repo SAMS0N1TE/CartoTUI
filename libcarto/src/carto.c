@@ -60,7 +60,8 @@ int carto_render_tile(carto_ctx *ctx, const uint8_t *mvt, size_t len,
     };
     for (int i = 0; i < 5; ++i) {
         carto_mvt_render_category(ctx->fb, ctx->style, mvt, len, order[i],
-                                  ox, oy, ctx->tile_px, ctx->scratch, ctx->scratch_cap);
+                                  ox, oy, ctx->tile_px, ctx->zoom,
+                                  ctx->scratch, ctx->scratch_cap);
     }
     return 0;
 }

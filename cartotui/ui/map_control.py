@@ -33,6 +33,7 @@ class _Frame:
     height: int
     rows: List[List[Tuple[str, str]]]
     snapshot_key: Tuple
+    hitboxes: Optional[List[Tuple[str, int, int, int, int]]] = None
 
 class MapControl(UIControl):
 
@@ -72,6 +73,7 @@ class MapControl(UIControl):
         self._last_w = 1
         self._last_h = 1
         self._last_frame: Optional[_Frame] = None
+        self._ac_hitboxes: List[Tuple[str, int, int, int, int]] = []
         self._window = None
 
         self._dedup_lock = threading.Lock()
@@ -150,6 +152,26 @@ class MapControl(UIControl):
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
         return max_available_height
 
+    def _apply_follow(self) -> None:
+        try:
+            ac_cfg = self.cfg.get("aircraft", {})
+            if not ac_cfg.get("follow_selected"):
+                return
+            if self.aircraft_registry is None:
+                return
+            sel = self.state.selected_aircraft_icao
+            if not sel:
+                return
+            ac = self.aircraft_registry.get(sel)
+            if ac is None or not ac.has_position():
+                return
+            lat, lon = ac.projected_position() or (ac.lat, ac.lon)
+            if (abs(lat - self.state.lat) > 5e-4
+                    or abs(lon - self.state.lon) > 5e-4):
+                self.state.set_center(lat, lon)
+        except Exception:
+            pass
+
     def create_content(self, width: int, height: int) -> UIContent:
         width = max(1, int(width))
         height = max(1, int(height))
@@ -160,6 +182,9 @@ class MapControl(UIControl):
         latest = self._drain_results()
         if latest is not None:
             self._last_frame = latest
+            self._ac_hitboxes = latest.hitboxes or []
+
+        self._apply_follow()
 
         snap = self.state.snapshot()
         ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
@@ -258,6 +283,14 @@ class MapControl(UIControl):
     def _click_to_aircraft(self, cell_x: int, cell_y: int) -> bool:
         if self.aircraft_registry is None or self.on_select_aircraft is None:
             return False
+
+        hit = self._pick_hitbox(cell_x, cell_y)
+        if hit is not None:
+            cur = self.state.selected_aircraft_icao
+            new = None if (cur and cur.upper() == hit.upper()) else hit
+            self.on_select_aircraft(new)
+            return True
+
         positioned = self.aircraft_registry.with_position()
         if not positioned:
             return False
@@ -291,6 +324,17 @@ class MapControl(UIControl):
         new = None if (cur and cur.upper() == best.icao.upper()) else best.icao
         self.on_select_aircraft(new)
         return True
+
+    def _pick_hitbox(self, cell_x: int, cell_y: int, pad: int = 1) -> Optional[str]:
+        best_icao = None
+        best_d = 1e18
+        for icao, x0, y0, x1, y1 in self._ac_hitboxes:
+            if (x0 - pad) <= cell_x <= (x1 + pad) and (y0 - pad) <= cell_y <= (y1 + pad):
+                d = (cell_x - x0) ** 2 + (cell_y - y0) ** 2
+                if d < best_d:
+                    best_d = d
+                    best_icao = icao
+        return best_icao
 
     def _click_to_center(self, cell_x: int, cell_y: int) -> None:
         cw, ch = self._last_w, self._last_h
@@ -425,6 +469,21 @@ class MapControl(UIControl):
             sel_icao = self.state.selected_aircraft_icao
             if self.aircraft_registry is not None:
                 ac_overlay = self.aircraft_registry.with_position()
+                ac_cfg = self.cfg.get("aircraft", {})
+                try:
+                    from cartotui.ui.aircraft_overlay import select_visible
+                    ac_overlay = select_visible(
+                        ac_overlay, lat, lon,
+                        max_shown=int(ac_cfg.get("max_shown", 0) or 0),
+                        hide_ground=bool(ac_cfg.get("hide_ground", False)),
+                        min_altitude=float(ac_cfg.get("min_altitude", 0.0) or 0.0),
+                        max_altitude=float(ac_cfg.get("max_altitude", 0.0) or 0.0),
+                        keep_icao=sel_icao,
+                        highlight_interesting=bool(
+                            ac_cfg.get("highlight_interesting", True)),
+                    )
+                except Exception as e:
+                    log.debug("aircraft filter failed: %s", e)
 
             try:
                 theme_overrides = self.cfg.data.get("theme", {})
@@ -434,6 +493,12 @@ class MapControl(UIControl):
             if bool(self.cfg["render"].get("road_highlight", False)):
                 from cartotui.themes import apply_road_highlight
                 apply_road_highlight(style)
+
+            _rc = self.cfg["render"]
+            road_thickness = float(_rc.get("road_thickness", 1.0) or 1.0)
+            road_thickness *= float(
+                (_rc.get("road_thickness_by_mode") or {}).get(render_mode, 1.0) or 1.0)
+            supersample = px_w / max(1, w * cell_w_px)
 
             if source == "vector" and self.vector_source is not None:
                 engine = self.cfg["render"].get("vector_engine", "libcarto")
@@ -445,6 +510,8 @@ class MapControl(UIControl):
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
                             preload=pf_enable and not panning,
                             cached_only=panning,
+                            supersample=supersample,
+                            road_thickness=road_thickness,
                         )
                         if panning:
                             try:
@@ -466,6 +533,8 @@ class MapControl(UIControl):
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
                             aircraft_overlay=None,
                             selected_icao=None,
+                            supersample=supersample,
+                            road_thickness=road_thickness,
                         )
                     except Exception as e:
                         log.warning("Vector rasterise failed: %s", e)
@@ -550,16 +619,19 @@ class MapControl(UIControl):
                         style=style,
                         max_labels=64 if vector_overlay_enabled else 0,
                         draw_boundaries=boundaries_enabled,
+                        boundary_style=str(r_cfg.get("boundary_style", "dots")),
                     )
                 except Exception as e:
                     log.debug("Vector overlay failed: %s", e)
 
+            ac_hitboxes: List[Tuple[str, int, int, int, int]] = []
             if ac_overlay:
                 try:
                     trails_cfg = self.cfg.get("aircraft_trails", {})
                     trails_enabled = bool(trails_cfg.get("enabled", True))
                     trails_duration = float(trails_cfg.get("duration_s", 60.0))
-                    apply_aircraft_overlay(
+                    ac_cfg = self.cfg.get("aircraft", {})
+                    ac_hitboxes = apply_aircraft_overlay(
                         rows, ac_overlay,
                         center_lat=lat, center_lon=lon, z=z,
                         term_w=w, term_h=h,
@@ -568,6 +640,14 @@ class MapControl(UIControl):
                         selected_icao=sel_icao,
                         show_trails=trails_enabled,
                         trail_duration_s=trails_duration,
+                        altitude_colors=bool(ac_cfg.get("altitude_colors", True)),
+                        show_legend=bool(ac_cfg.get("legend", True)),
+                        label_mode=str(ac_cfg.get("label_mode", "smart")),
+                        dead_reckoning=bool(ac_cfg.get("dead_reckoning", True)),
+                        predict_track=bool(ac_cfg.get("predict_track", True)),
+                        predict_seconds=float(ac_cfg.get("predict_seconds", 60.0)),
+                        highlight_interesting=bool(ac_cfg.get("highlight_interesting", True)),
+                        marker_style=str(ac_cfg.get("marker_style", "arrow")),
                     )
                 except Exception as e:
                     log.debug("Aircraft post-render overlay failed: %s", e)
@@ -577,6 +657,7 @@ class MapControl(UIControl):
             frame = _Frame(
                 w, h, rows,
                 snap_key,
+                hitboxes=ac_hitboxes,
             )
             with self._res_q.mutex:
                 self._res_q.queue.clear()

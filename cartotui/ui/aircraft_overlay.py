@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+from cartotui.aircraft_colors import LEGEND_BANDS, altitude_color
 from cartotui.geodesy import latlon_to_tile_xy
+from cartotui.traffic.aircraft import project_forward
+from cartotui.traffic.interest import classify
 
 StyleRun = Tuple[str, str]
 LineFrag = List[StyleRun]
@@ -33,6 +36,60 @@ def _glyph_for_track(track_deg: Optional[float]) -> str:
         return "●"
     idx = int(round(track_deg / 22.5)) % 16
     return _HEADING_GLYPHS[idx]
+
+_DOT_GLYPHS = {"small": "·", "normal": "•", "large": "●"}
+
+def _marker_glyph(track_deg: Optional[float], marker_style: str) -> str:
+    if marker_style == "dot":
+        return "•"
+    if marker_style == "large":
+        return "●"
+    if marker_style == "plane":
+        return "✈"
+    if marker_style == "square":
+        return "■"
+    return _glyph_for_track(track_deg)
+
+def select_visible(
+    aircraft: List,
+    center_lat: float,
+    center_lon: float,
+    *,
+    max_shown: int = 0,
+    hide_ground: bool = False,
+    min_altitude: float = 0.0,
+    max_altitude: float = 0.0,
+    keep_icao: Optional[str] = None,
+    highlight_interesting: bool = True,
+) -> List:
+    keep_icao = keep_icao.upper() if keep_icao else None
+
+    def passes(ac) -> bool:
+        if hide_ground and ac.on_ground:
+            return False
+        alt = ac.altitude_ft
+        if min_altitude > 0 and (alt is None or alt < min_altitude):
+            return False
+        if max_altitude > 0 and (alt is None or alt > max_altitude):
+            return False
+        return True
+
+    forced, normal = [], []
+    for ac in aircraft:
+        is_kept = keep_icao is not None and ac.icao.upper() == keep_icao
+        is_alert = highlight_interesting and classify(ac).is_alert
+        if is_kept or is_alert:
+            forced.append(ac)
+        elif passes(ac):
+            normal.append(ac)
+
+    if max_shown and max_shown > 0:
+        slots = max(0, max_shown - len(forced))
+        if len(normal) > slots:
+            normal.sort(key=lambda a: ((a.lat - center_lat) ** 2
+                                       + (a.lon - center_lon) ** 2))
+            normal = normal[:slots]
+    return forced + normal
 
 def _project_lat_lon_to_cell(
     ac_lat: float,
@@ -84,6 +141,20 @@ def _chars_to_row(styles: Sequence[str], chars: Sequence[str]) -> LineFrag:
     out.append((cur_style, "".join(buf)))
     return out
 
+def _bg_of(style: str) -> str:
+    if not style:
+        return ""
+    for tok in style.split():
+        if tok.startswith("bg:#"):
+            return tok
+    return ""
+
+def _with_bg(fg_style: str, under_style: str) -> str:
+    if "bg:" in fg_style:
+        return fg_style
+    bg = _bg_of(under_style)
+    return f"{fg_style} {bg}" if bg else fg_style
+
 def _stamp_cell(
     rows: FrameFrag,
     width: int,
@@ -97,7 +168,7 @@ def _stamp_cell(
     if cell_x < 0 or cell_x >= width:
         return False
     styles, chars = _row_to_chars(rows[cell_y], width)
-    styles[cell_x] = style
+    styles[cell_x] = _with_bg(style, styles[cell_x])
     chars[cell_x] = glyph
     rows[cell_y] = _chars_to_row(styles, chars)
     return True
@@ -120,7 +191,7 @@ def _stamp_cells_batch(
     for y, mods in by_row.items():
         styles, chars = _row_to_chars(rows[y], width)
         for cx, glyph, style in mods:
-            styles[cx] = style
+            styles[cx] = _with_bg(style, styles[cx])
             chars[cx] = glyph
         rows[y] = _chars_to_row(styles, chars)
 
@@ -141,7 +212,7 @@ def _stamp_label(
             break
         if cx < 0:
             continue
-        styles[cx] = style
+        styles[cx] = _with_bg(style, styles[cx])
         chars[cx] = ch
     rows[cell_y] = _chars_to_row(styles, chars)
 
@@ -164,8 +235,17 @@ def apply_aircraft_overlay(
     style,
     selected_icao: Optional[str] = None,
     show_labels: bool = True,
+    label_mode: str = "smart",
     show_trails: bool = True,
     trail_duration_s: float = 60.0,
+    altitude_colors: bool = True,
+    show_legend: bool = True,
+    dead_reckoning: bool = True,
+    predict_track: bool = True,
+    predict_seconds: float = 60.0,
+    highlight_interesting: bool = True,
+    show_banner: bool = True,
+    marker_style: str = "arrow",
     now: Optional[float] = None,
 ) -> List[Tuple[str, int, int, int, int]]:
     import time as _time
@@ -175,12 +255,18 @@ def apply_aircraft_overlay(
     hitboxes: List[Tuple[str, int, int, int, int]] = []
 
     items: List[Tuple] = []
+    alert_items: List[Tuple] = []
     sel_item: Optional[Tuple] = None
     for ac in aircraft_iter:
         if not ac.has_position():
             continue
+        if dead_reckoning:
+            proj = ac.projected_position(now=now)
+            ac_lat, ac_lon = proj if proj is not None else (ac.lat, ac.lon)
+        else:
+            ac_lat, ac_lon = ac.lat, ac.lon
         cx_f, cy_f = _project_lat_lon_to_cell(
-            ac.lat, ac.lon, center_lat, center_lon, z,
+            ac_lat, ac_lon, center_lat, center_lon, z,
             term_w, term_h, canvas_px_w, canvas_px_h,
         )
         cx, cy = int(round(cx_f)), int(round(cy_f))
@@ -195,38 +281,64 @@ def apply_aircraft_overlay(
 
         is_sel = (selected_icao is not None
                   and ac.icao.upper() == selected_icao.upper())
-        if ac.emergency:
+
+        interest = classify(ac) if highlight_interesting else None
+        is_alert = bool(interest) and interest.is_alert
+
+        if is_alert or ac.emergency:
             color = style.aircraft_emergency_color
         elif is_sel:
             color = style.aircraft_selected_color
+        elif altitude_colors:
+            color = altitude_color(ac.altitude_ft, bool(ac.on_ground))
         else:
             color = style.aircraft_color
 
-        glyph = "✈" if is_sel else _glyph_for_track(ac.track_deg)
-        marker_style = _rgb_to_style(color, bold=True)
+        if is_sel:
+            glyph = "✈"
+        elif is_alert:
+            glyph = "⚠"
+        else:
+            glyph = _marker_glyph(ac.track_deg, marker_style)
+        marker_cell_style = _rgb_to_style(color, bold=True)
+
+        if label_mode == "all":
+            want_label = True
+        elif label_mode == "selected":
+            want_label = is_sel or is_alert
+        elif label_mode == "none":
+            want_label = is_alert
+        else:
+            want_label = is_sel or bool(interest)
 
         label = ""
-        if show_labels:
+        if want_label:
             try:
-                label = ac.display_label() or ""
+                base = ac.display_label() or ""
             except Exception:
-                label = ac.icao or ""
-            if label:
-                label = " " + label
+                base = ac.icao or ""
+            if interest and interest.label:
+                base = f"{interest.label} {base}".strip()
+            if base:
+                label = " " + base
 
-        label_style = _rgb_to_style(style.aircraft_label_color, bold=is_sel)
+        label_style = _rgb_to_style(color, bold=is_sel or is_alert)
 
-        entry = (ac, cx, cy, glyph, marker_style, label, label_style, is_sel, color)
+        entry = (ac, cx, cy, glyph, marker_cell_style, label, label_style,
+                 is_sel, color, is_alert)
         if is_sel:
             sel_item = entry
+        elif is_alert:
+            alert_items.append(entry)
         else:
             items.append(entry)
 
+    items.extend(alert_items)
     if sel_item is not None:
         items.append(sel_item)
 
     if show_trails:
-        for ac, cx, cy, _g, _ms, _lbl, _ls, _is_sel, color in items:
+        for ac, cx, cy, _g, _ms, _lbl, _ls, _is_sel, color, _ia in items:
             _stamp_trail(
                 rows, ac, color,
                 center_lat=center_lat, center_lon=center_lon, z=z,
@@ -236,19 +348,132 @@ def apply_aircraft_overlay(
                 now=now,
             )
 
-    for ac, cx, cy, glyph, m_style, label, l_style, is_sel, _c in items:
+    if predict_track and sel_item is not None and predict_seconds > 0:
+        _stamp_predicted_track(
+            rows, sel_item[0], sel_item[8],
+            center_lat=center_lat, center_lon=center_lon, z=z,
+            term_w=term_w, term_h=term_h,
+            canvas_px_w=canvas_px_w, canvas_px_h=canvas_px_h,
+            predict_seconds=predict_seconds,
+            dead_reckoning=dead_reckoning, now=now,
+        )
+
+    occupied_labels: set = set()
+    for ac, cx, cy, glyph, m_style, label, l_style, is_sel, _c, is_alert in items:
         _stamp_cell(rows, term_w, cx, cy, glyph, m_style)
+
+        drew_label = False
         if label:
-            _stamp_label(rows, term_w, cx + 1, cy, label, l_style)
+            protected = is_sel or is_alert
+            span = range(cx + 1, cx + 1 + len(label))
+            collides = any((x, cy) in occupied_labels for x in span)
+            if protected or not collides:
+                _stamp_label(rows, term_w, cx + 1, cy, label, l_style)
+                for x in span:
+                    occupied_labels.add((x, cy))
+                drew_label = True
 
         x0 = max(0, cx)
         y0 = max(0, cy)
-        x1 = min(term_w - 1, cx + len(label))
+        x1 = min(term_w - 1, cx + (len(label) if drew_label else 0))
         y1 = min(term_h - 1, cy)
         if x1 >= x0 and y1 >= y0:
             hitboxes.append((ac.icao, x0, y0, x1, y1))
 
+    if show_legend and altitude_colors and items:
+        _stamp_altitude_legend(rows, term_w, term_h)
+
+    if show_banner and highlight_interesting and alert_items:
+        _stamp_alert_banner(rows, term_w, alert_items, style)
+
     return hitboxes
+
+def _stamp_alert_banner(rows: FrameFrag, term_w: int,
+                        alert_items: List[Tuple], style) -> None:
+    if not rows or term_w < 20:
+        return
+    n = len(alert_items)
+    parts: List[str] = []
+    for ac, *_rest in alert_items[:3]:
+        cs = ""
+        try:
+            cs = ac.display_label()
+        except Exception:
+            cs = ac.icao
+        sq = f" sq{ac.squawk}" if ac.squawk else ""
+        parts.append(f"{cs}{sq}")
+    more = f" +{n - 3} more" if n > 3 else ""
+    text = f" ⚠ ALERT x{n}: " + "  ".join(parts) + more + " "
+    if len(text) > term_w:
+        text = text[:term_w]
+    st = _rgb_to_style(style.aircraft_emergency_color, bold=True)
+    cells = [(x, 0, ch, st) for x, ch in enumerate(text)]
+    _stamp_cells_batch(rows, term_w, cells)
+
+def _stamp_altitude_legend(rows: FrameFrag, term_w: int, term_h: int) -> None:
+    if term_h < 2 or term_w < 20:
+        return
+    y = term_h - 1
+    cells: List[Tuple[int, int, str, str]] = []
+    x = 1
+    for label, rgb in LEGEND_BANDS:
+        st = _rgb_to_style(rgb, bold=True)
+        cells.append((x, y, "█", st))
+        x += 1
+        for ch in label:
+            if x >= term_w - 1:
+                break
+            cells.append((x, y, ch, st))
+            x += 1
+        x += 1
+        if x >= term_w - 1:
+            break
+    _stamp_cells_batch(rows, term_w, cells)
+
+def _stamp_predicted_track(
+    rows: FrameFrag,
+    ac,
+    color: Tuple[int, int, int],
+    *,
+    center_lat: float,
+    center_lon: float,
+    z: int,
+    term_w: int,
+    term_h: int,
+    canvas_px_w: int,
+    canvas_px_h: int,
+    predict_seconds: float,
+    dead_reckoning: bool,
+    now: Optional[float],
+) -> None:
+    if ac.track_deg is None or ac.ground_speed_kt is None or ac.ground_speed_kt <= 0:
+        return
+    if dead_reckoning:
+        start = ac.projected_position(now=now) or (ac.lat, ac.lon)
+    else:
+        start = (ac.lat, ac.lon)
+    end = project_forward(start[0], start[1], ac.track_deg,
+                          ac.ground_speed_kt, predict_seconds)
+
+    sx_f, sy_f = _project_lat_lon_to_cell(
+        start[0], start[1], center_lat, center_lon, z,
+        term_w, term_h, canvas_px_w, canvas_px_h)
+    ex_f, ey_f = _project_lat_lon_to_cell(
+        end[0], end[1], center_lat, center_lon, z,
+        term_w, term_h, canvas_px_w, canvas_px_h)
+    sx, sy = int(round(sx_f)), int(round(sy_f))
+    ex, ey = int(round(ex_f)), int(round(ey_f))
+
+    dim = _dim_color(color, 0.7)
+    style = _rgb_to_style(dim, bold=False)
+    pts = _bresenham(sx, sy, ex, ey)
+    for i, (lx, ly) in enumerate(pts):
+        if (lx, ly) == (sx, sy):
+            continue
+        if i % 2 == 0:
+            continue
+        if 0 <= lx < term_w and 0 <= ly < term_h:
+            _stamp_cell(rows, term_w, lx, ly, "·", style)
 
 _TRAIL_GLYPHS = (".", "·", "•", "○")
 
