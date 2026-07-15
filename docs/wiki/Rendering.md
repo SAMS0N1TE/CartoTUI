@@ -56,9 +56,9 @@ luminance maps onto fill levels.
 | `fixed` | No stretch at all. Takes the image as it is |
 
 Ink polarity, meaning whether ink lands on the dark parts or the light parts, is
-taken from the theme's map background for vector maps. It does not shift when
-you change brightness or levels. Raster imagery has no theme polarity, so it is
-still guessed from the frame.
+taken from the theme's map background on vector maps, so the image adjust knobs
+never flip it. Raster imagery has no theme behind it, so polarity is read from
+the frame.
 
 ## Looks
 
@@ -84,7 +84,7 @@ Change anything a Look set and the sidebar shows "Custom".
 
 ## Overlays drawn as cells
 
-Place labels and aircraft are stamped onto the terminal cells after the image is
-rendered, not drawn into the image. That keeps them crisp at any map scale. It
-also means a plain PNG export does not include them, which is what the `labels`
-and `aircraft` options in [Snapshots](Snapshots.md) exist to solve.
+Place labels and aircraft are drawn onto the terminal cells rather than into the
+map image, which keeps them sharp at any map scale. A `map` PNG export is the
+image, so it does not carry them unless you ask for them. See
+[Snapshots](Snapshots.md).

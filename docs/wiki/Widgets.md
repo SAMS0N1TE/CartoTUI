@@ -20,13 +20,11 @@ you left them.
 
 ## Folded sections
 
-Some panels fold a section away behind a `▸`. Click the header to open it. The
-header shows a summary of what is inside while it is closed.
+Some panels fold a section away behind a `▸`. Click the header to open it. While
+it is closed the header shows a summary of what is inside.
 
-This is not decoration. Panels do not scroll. A panel taller than the terminal
-loses its bottom rows, and those rows stop being clickable, so long settings
-blocks fold rather than run off the edge. The ADS-B widget folds Display and
-Declutter, and the Render and Themes widgets fold Tone.
+The ADS-B widget folds Display and Declutter. The Render and Themes widgets fold
+Tone.
 
 ## Rows you can click
 

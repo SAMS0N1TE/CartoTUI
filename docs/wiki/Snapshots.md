@@ -24,14 +24,12 @@ as terminal cells rather than into the image. Turn them on if you want them:
 | Aircraft | `snapshot.png_aircraft` | Markers and callsigns, same declutter rules as the map |
 | Radar | `snapshot.png_radar` | On by default |
 
-Labels and markers scale with the export, so a 4096px PNG gets text sized for it
-rather than a speck.
+Labels and markers scale with the export, so a 4096px PNG gets text sized to
+match rather than a speck.
 
-Turning on labels or aircraft switches the export to the Python renderer, which
-is slower. That is not a preference, it is what can draw them: `libcarto` has no
-text rendering at all. Its whole drawing surface is put_px, fill_rect, draw_line,
-polyline, fill_polygon and fill_triangle. There is no font in it. With labels and
-aircraft off, the export uses `libcarto` like the live map does.
+Either option makes the export use the Python renderer, since the native one
+cannot draw text. Expect it to take longer. With both off, the export uses the
+same renderer as the live map.
 
 ### ascii
 

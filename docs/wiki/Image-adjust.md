@@ -4,9 +4,8 @@ Six knobs that shape the map image before it becomes terminal cells. They live
 on keys, in the Render widget under Tone, and in the Themes widget so a theme can
 carry them as a preset.
 
-All of them work on luminance and then put the colour back by scaling the
-channels. Nothing is ever blended toward grey, so pulling contrast down flattens
-tone without draining colour out of the map.
+They all keep the colour where they find it. Pulling contrast down flattens the
+tone without washing the map out to grey.
 
 | Knob | Keys | Range | Default |
 | --- | --- | --- | --- |
@@ -21,54 +20,40 @@ tone without draining colour out of the map.
 
 ## Which knob for which problem
 
-**This theme is too dark.** Raise the black point. It sets a floor on the
-rendered range, so nothing sits at pure black any more. On the night theme
-`black_point 0.25` moves mean luminance from 0.16 to 0.37 with the colour intact
-and nothing clipped.
+**This theme is too dark.** Raise the black point. It lifts the floor of the
+rendered range, so the darkest parts of the map sit at a grey instead of black.
+Colour is kept and nothing clips.
 
-Brightness is the wrong tool here. It is a multiply, and multiplying near-black
-by anything is still near-black, which is why it barely moves a dark theme until
-it suddenly blows out.
+Reach for this before brightness. Brightness scales what is there, and scaling
+near-black leaves it near-black, so it does little on a dark theme until it
+suddenly washes out.
 
-**This theme is too bright.** Lower the white point. It sets a ceiling. On the
-paper theme `white_point 0.6` takes mean luminance from 0.69 to 0.41, again with
-colour intact and no clipping.
+**This theme is too bright.** Lower the white point. It drops the ceiling, so
+nothing reaches full white. Again the colour is kept and nothing clips.
 
-Brightness is wrong here too. Brightening something already near white can only
-push it to white, and white has no colour in it.
+Brightness will not help here either. Pushing an already light theme up can only
+take it to white, and white holds no colour.
 
-**The colour is washed out or too loud.** Saturation. It scales chroma and leaves
+**The colour is washed out or too loud.** Saturation. It scales colour and leaves
 tone alone.
 
 **The midtones sit wrong.** Gamma.
 
-**The image is flat, or too harsh.** Contrast. It pivots on the frame's own mean,
-so it spreads the histogram in place rather than dragging the whole map darker.
+**The image is flat, or too harsh.** Contrast. It pivots on the frame's own
+average, so it spreads the range in place rather than dragging the whole map
+darker or lighter.
 
 ## Black point and white point
 
-These are output levels, not input levels. Black point is the darkest the map is
-allowed to be, white point is the brightest. Compressing a range cannot clip, so
-these two are the safe way to move a theme's overall level.
+Black point is the darkest the map is allowed to be. White point is the
+brightest. They set the range the map occupies, rather than stretching what is
+already in it, so they cannot clip. That makes them the safe way to move a
+theme's overall level.
 
-They cannot cross. Pushing the floor up stops 0.05 below the ceiling.
+They cannot cross. Pushing the floor up stops just below the ceiling.
 
-A pure black pixel has no colour to scale, so a raised black point gives it a
-grey outright. That is what lets the floor lift themes with a `#000000`
-background, night and hicon and ega among them.
-
-## Why brightness does not clip any more
-
-Brightness gain runs into a soft shoulder that bends toward white instead of
-hitting it. Where a colour still lands outside the gamut, the pixel is
-desaturated just enough to fit while its luminance is kept. That reads as a
-highlight rolling off rather than a channel slamming into its limit, and hue
-survives: a saturated red at brightness 2.5 comes out pale, but still red rather
-than orange.
-
-There is a limit to this. Brightening a light theme toward white will always lose
-saturation, because at that luminance the gamut has nowhere to put it. Use the
-white point instead.
+Both work on themes with a pure black background, night and hicon and ega
+included.
 
 ## Themes can carry these
 
@@ -78,6 +63,6 @@ with the theme. Looks set them too.
 
 ## Cost
 
-The tone pass costs roughly 9ms on a 640x384 image. Neutral settings skip the
-whole thing. The default config ships `contrast: 1.05`, so it does run on a
-normal frame.
+Leave all six at their neutral values and the pass is skipped. The default config
+ships `contrast` at 1.05, so it does run on a normal frame. `\` sets everything
+neutral, which is worth a few ms a frame if you are chasing speed.
