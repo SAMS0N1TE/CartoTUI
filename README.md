@@ -29,7 +29,7 @@ CartoTUI can overlay live aircraft on the map. Pick and test a source:
 
 ### No hardware
 
-The quickest path — a free public feed, no receiver required:
+The quickest path is a free public feed, no receiver required:
 
     ./configure.sh adsb --source api
 
@@ -59,7 +59,7 @@ TUI. It can also be driven non-interactively:
 
 ### Setting up a receiver server
 
-CartoTUI only reads ADS-B — something has to decode 1090MHz off an SDR and serve
+CartoTUI only reads ADS-B, something has to decode 1090MHz off an SDR and serve
 it. To see what this machine has, and what it could install:
 
     ./configure.sh adsb --server-status
@@ -74,17 +74,17 @@ availability varies:
 | Raspberry Pi (ARM Debian: bullseye/bookworm/trixie) | `dump1090-fa` from the FlightAware repo. Serves SBS on 30003 out of the box |
 | Debian/Ubuntu amd64 | `dump1090-mutability`, where the distro still ships it |
 | Anything else Linux | `readsb` via the wiedehopf install script |
-| Windows | Guided only — see below |
+| Windows | Guided only - see below |
 
 FlightAware builds `dump1090-fa` for **armhf/arm64 Debian only**, so it is not
 offered on amd64 or Ubuntu, where apt could not resolve it.
 
 `--install-server` prints the exact commands and does nothing without `--yes`.
-The `readsb` route runs a third-party script as root and is never automated —
+The `readsb` route runs a third-party script as root and is never automated,
 the plan pipes it through `less` so you read it first.
 
 On **Windows** there is no packaged ADS-B server, and the SDR's driver must be
-replaced with WinUSB via [Zadig](https://zadig.akeo.ie/) — an admin GUI step no
+replaced with WinUSB via [Zadig](https://zadig.akeo.ie/), an admin GUI step no
 script can safely drive. `--install-server` prints the steps instead. Once
 `dump1090.exe --net --net-sbs-port 30003` is running, point CartoTUI at it:
 
