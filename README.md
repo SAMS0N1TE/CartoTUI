@@ -46,16 +46,11 @@ It follows the map centre as you pan. Providers: `airplanes.live` (default),
 | `lakeshark_tui` | LakeShark receiver, ESP_LOG console format |
 | `replay` | Play back a recorded `.jsonl` capture |
 
-The wizard probes whatever you pick, so you know it works before launching the
-TUI. It can also be driven non-interactively:
-
     ./configure.sh adsb --source sbs1 --host 192.168.1.50 --port 30003
     ./configure.sh adsb --source api --provider adsb.lol --radius 150
     ./configure.sh adsb --test          # re-probe the saved source
     ./configure.sh adsb --list-ports    # show serial ports
     ./configure.sh adsb --disable
-
-`--test` exits non-zero when the feed is unreachable, so it works in a health check.
 
 ### Setting up a receiver server
 
@@ -65,9 +60,6 @@ it. To see what this machine has, and what it could install:
     ./configure.sh adsb --server-status
     ./configure.sh adsb --install-server              # shows the plan only
     ./configure.sh adsb --install-server --yes        # actually runs it
-
-Backends are probed at runtime (`apt-cache policy`) rather than assumed, because
-availability varies:
 
 | Host | Backend |
 | --- | --- |
@@ -80,8 +72,6 @@ FlightAware builds `dump1090-fa` for **armhf/arm64 Debian only**, so it is not
 offered on amd64 or Ubuntu, where apt could not resolve it.
 
 `--install-server` prints the exact commands and does nothing without `--yes`.
-The `readsb` route runs a third-party script as root and is never automated,
-the plan pipes it through `less` so you read it first.
 
 On **Windows** there is no packaged ADS-B server, and the SDR's driver must be
 replaced with WinUSB via [Zadig](https://zadig.akeo.ie/), an admin GUI step no
