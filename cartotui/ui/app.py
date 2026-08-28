@@ -207,6 +207,32 @@ class CartoTUIApp:
             refresh_interval=0.5,
         )
 
+    def _install_direct_paint(self) -> None:
+        """Swap in a renderer that paints the map itself.
+
+        `Application.renderer` is a plain attribute, so this needs no patching;
+        if anything about it does not fit, the stock renderer stays.
+        """
+        try:
+            from cartotui.ui.direct_paint import DirectPaintRenderer
+            old = self.app.renderer
+            r = DirectPaintRenderer(
+                style=old.style,
+                output=old.output,
+                full_screen=old.full_screen,
+                mouse_support=old.mouse_support,
+                cpr_not_supported_callback=old.cpr_not_supported_callback,
+            )
+            r.map_source = self.map_control
+            r.map_window = self.map_window
+            self.app.renderer = r
+            self.map_control.direct_paint = True
+            log.info("direct paint enabled: the map is drawn around prompt_toolkit")
+        except Exception as e:
+            log.warning("could not enable direct paint (%s); using the "
+                        "standard renderer", e)
+            self.map_control.direct_paint = False
+
     def run(self) -> None:
         raised_timer = False
         if self.cfg["ui"].get("high_resolution_timer", True):
@@ -218,6 +244,8 @@ class CartoTUIApp:
             # trigger.
             if self.cfg["ui"].get("mouse_motion", "drag") != "all":
                 winperf.use_button_only_mouse(self.app.output)
+            if bool(self.cfg["render"].get("direct_paint", False)):
+                self._install_direct_paint()
             self.traffic_source.start()
             if self.traffic_recorder is not None:
                 self.traffic_recorder.start()

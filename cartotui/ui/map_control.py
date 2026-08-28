@@ -102,6 +102,10 @@ class MapControl(UIControl):
         self._pan_until = 0.0
         self._last_render_panning = False
 
+        self.direct_paint = False
+        self._paint_rows = None
+        self._paint_size = (0, 0)
+
     def _mark_panning(self) -> None:
         self._pan_until = time.monotonic() + 0.16
 
@@ -224,11 +228,32 @@ class MapControl(UIControl):
                 return cross_row
             return rows[i] if 0 <= i < height else [("", " " * width)]
 
+        if self.direct_paint:
+            # prompt_toolkit gets a blank region and composites the floats over
+            # it as usual; DirectPaintRenderer draws these rows underneath them
+            # afterwards. Keeping the real cells out of its Screen is the whole
+            # point -- diffing them is what costs.
+            self._paint_rows = [get_line(i) for i in range(height)]
+            self._paint_size = (width, height)
+            blank = [("", " " * width)]
+            return UIContent(
+                get_line=lambda i: blank,
+                line_count=height,
+                cursor_position=Point(x=chx, y=chy),
+            )
+
         return UIContent(
             get_line=get_line,
             line_count=height,
             cursor_position=Point(x=chx, y=chy),
         )
+
+    def direct_paint_rows(self, width: int, height: int):
+        """The rows DirectPaintRenderer should draw, or None if not ready."""
+        rows = self._paint_rows
+        if not rows or self._paint_size != (width, height):
+            return None
+        return rows
 
     def mouse_handler(self, mouse_event: MouseEvent):
         if not self.cfg["ui"].get("mouse", True):
