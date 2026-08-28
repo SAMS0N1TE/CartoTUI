@@ -81,8 +81,8 @@ def _adaptive_local_stretch(
             block = signal[ys[ti]:ys[ti + 1], xs[tj]:xs[tj + 1]]
             if block.size == 0:
                 continue
-            lo = float(np.percentile(block, black_pct))
-            hi = float(np.percentile(block, white_pct))
+            lo, hi = (float(v) for v in
+                      np.percentile(block, (black_pct, white_pct)))
             if (hi - lo) < uniform_floor:
                 tile_uniform[ti, tj] = True
                 tile_lo[ti, tj] = 0.0
@@ -108,22 +108,41 @@ def _adaptive_local_stretch(
     wy = wy[:, None]
     wx = wx[None, :]
 
-    def under(ti, tj):
-        lo = tile_lo[ti, tj]
-        hi = tile_hi[ti, tj]
-        uni = tile_uniform[ti, tj]
-        spread = np.maximum(hi - lo, 1e-3)
-        stretched = np.clip((signal - lo) / spread, 0.0, 1.0)
-        return np.where(uni, signal, stretched)
+    signal = np.asarray(signal, dtype=np.float32)
+    tile_inv = (1.0 / np.maximum(tile_hi - tile_lo, 1e-3)).astype(np.float32)
 
-    a = under(iy, ix)
-    b = under(iy, ix + 1)
-    c = under(iy + 1, ix)
-    d = under(iy + 1, ix + 1)
-    top = a * (1 - wx) + b * wx
-    bot = c * (1 - wx) + d * wx
-    out = top * (1 - wy) + bot * wy
-    return np.clip(out.astype(np.float32), 0.0, 1.0)
+    def under(ti, tj, out):
+        """clip((signal - lo) / spread) for each pixel's tile, in place."""
+        np.subtract(signal, tile_lo[ti, tj], out=out)
+        out *= tile_inv[ti, tj]
+        np.clip(out, 0.0, 1.0, out=out)
+        uni = tile_uniform[ti, tj]
+        if uni.any():
+            np.copyto(out, signal, where=uni)
+        return out
+
+    # Bilinear blend of the four corner mappings, held to three buffers:
+    # top = a + (b - a) * wx, bot = c + (d - c) * wx, out = top + (bot - top) * wy.
+    top = np.empty_like(signal)
+    bot = np.empty_like(signal)
+    scratch = np.empty_like(signal)
+
+    under(iy, ix, top)
+    under(iy, ix + 1, scratch)
+    scratch -= top
+    scratch *= wx
+    top += scratch
+
+    under(iy + 1, ix, bot)
+    under(iy + 1, ix + 1, scratch)
+    scratch -= bot
+    scratch *= wx
+    bot += scratch
+
+    bot -= top
+    bot *= wy
+    top += bot
+    return np.clip(top, 0.0, 1.0, out=top)
 
 def _sobel_magnitude(lum: np.ndarray) -> np.ndarray:
     p = np.pad(lum.astype(np.float32, copy=False), 1, mode="edge")

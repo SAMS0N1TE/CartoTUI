@@ -122,31 +122,62 @@ def _emit_row(glyphs: List[str], styles: List[str]) -> LineFrag:
 _FG_CACHE: Dict[int, str] = {}
 _HB_CACHE: Dict[int, str] = {}
 
+_FG_CACHE_MAX = 65536
+_HB_CACHE_MAX = 200000
+
 def _fg_style(v: int) -> str:
     s = _FG_CACHE.get(v)
     if s is None:
         s = f"fg:#{v:06x}"
-        if len(_FG_CACHE) < 65536:
-            _FG_CACHE[v] = s
+        if len(_FG_CACHE) >= _FG_CACHE_MAX:
+            _FG_CACHE.clear()
+        _FG_CACHE[v] = s
     return s
 
+def _glyph_text(codes: np.ndarray) -> str:
+    """Flatten codepoints or single-char cells to one str, at C speed.
+
+    `codes` is either an integer array of codepoints or a numpy "<U1" array.
+    Both are UCS-4 under the hood, so a single tobytes/decode replaces a
+    per-character chr() loop -- which at 240x67 is 16k Python calls per frame.
+    """
+    if codes.dtype.kind == "U":
+        buf = np.ascontiguousarray(codes)
+    else:
+        buf = np.ascontiguousarray(codes, dtype="<u4")
+    return buf.tobytes().decode("utf-32-le")
+
+def _pack_rgb(rgb: np.ndarray) -> np.ndarray:
+    return ((rgb[:, 0].astype(np.int32) << 16)
+            | (rgb[:, 1].astype(np.int32) << 8)
+            | rgb[:, 2])
+
 def _emit_row_color_fast(
-    glyphs: np.ndarray,
+    row: str,
     rgb: np.ndarray,
 ) -> LineFrag:
     w = rgb.shape[0]
     if w == 0:
         return [("", "")]
-    packed = (rgb[:, 0].astype(np.int32) << 16) | (rgb[:, 1].astype(np.int32) << 8) | rgb[:, 2].astype(np.int32)
+    packed = _pack_rgb(rgb)
     diff = np.empty(w, dtype=bool)
     diff[0] = True
-    diff[1:] = packed[1:] != packed[:-1]
+    np.not_equal(packed[1:], packed[:-1], out=diff[1:])
     starts = np.flatnonzero(diff)
-    ends = np.concatenate([starts[1:], np.array([w], dtype=np.intp)])
+    # Gather run keys in one vectorised hop: indexing `packed` inside the loop
+    # would build a numpy scalar per run, which costs more than the rest of it.
+    keys = packed[starts].tolist()
+    s_list = starts.tolist()
+    e_list = s_list[1:]
+    e_list.append(w)
+    get = _FG_CACHE.get
     out: LineFrag = []
-    glyph_list = glyphs.tolist() if isinstance(glyphs, np.ndarray) else list(glyphs)
-    for s, e in zip(starts.tolist(), ends.tolist()):
-        out.append((_fg_style(int(packed[s])), "".join(glyph_list[s:e])))
+    ap = out.append
+    for k, s, e in zip(keys, s_list, e_list):
+        st = get(k)
+        if st is None:
+            st = _fg_style(k)
+        ap((st, row[s:e]))
     return out
 
 class AsciiBackend:
@@ -205,14 +236,17 @@ class AsciiBackend:
             arr = ov.over(arr)
         glyphs_arr = np.array(glyph_chars)
 
+        text = _glyph_text(glyphs_arr[idx])
         frame: FrameFrag = []
         if use_color:
             for y in range(term_h):
-                row_glyphs = glyphs_arr[idx[y]]
-                frame.append(_emit_row_color_fast(row_glyphs, arr[y]))
+                off = y * term_w
+                frame.append(
+                    _emit_row_color_fast(text[off:off + term_w], arr[y]))
         else:
             for y in range(term_h):
-                frame.append([("", "".join(glyphs_arr[idx[y]].tolist()))])
+                off = y * term_w
+                frame.append([("", text[off:off + term_w])])
         return frame
 
 _QUAD_GLYPHS = [
@@ -317,12 +351,15 @@ class QuadrantBackend:
                  + arr[1::2, 0::2, 2] + arr[1::2, 1::2, 2]) // 4
             cell_rgb = np.stack([r, g, b], axis=-1).astype(np.uint8)
 
+        text = _glyph_text(cell_glyphs)
         frame: FrameFrag = []
         for y in range(term_h):
+            off = y * term_w
+            row = text[off:off + term_w]
             if use_color:
-                frame.append(_emit_row_color_fast(cell_glyphs[y], cell_rgb[y]))
+                frame.append(_emit_row_color_fast(row, cell_rgb[y]))
             else:
-                frame.append([("", "".join(cell_glyphs[y].tolist()))])
+                frame.append([("", row)])
         return frame
 
 _BRAILLE_BITS = np.array(
@@ -415,22 +452,30 @@ class BrailleBackend:
             cnt = fr.sum(axis=(1, 3))
             inv = 1.0 / np.maximum(cnt, 1.0)
 
+            lit_mask = cnt > 0
+
             def _cell_color(ch: int) -> np.ndarray:
                 c = arr[..., ch].astype(np.float32).reshape(term_h, 4, term_w, 2)
                 lit = (c * fr).sum(axis=(1, 3)) * inv
                 whole = c.mean(axis=(1, 3))
-                return np.where(cnt > 0, lit, whole)
+                return np.where(lit_mask, lit, whole)
 
             cell_rgb = np.stack(
                 [_cell_color(0), _cell_color(1), _cell_color(2)], axis=-1
             ).clip(0, 255).astype(np.uint8)
+            text = _glyph_text(glyphs_int)
             for y in range(term_h):
-                row_glyphs = np.array([chr(int(c)) for c in glyphs_int[y]])
-                frame.append(_emit_row_color_fast(row_glyphs, cell_rgb[y]))
+                off = y * term_w
+                frame.append(
+                    _emit_row_color_fast(text[off:off + term_w], cell_rgb[y]))
         else:
+            text = _glyph_text(glyphs_int)
             for y in range(term_h):
-                frame.append([("", "".join(chr(int(c)) for c in glyphs_int[y]))])
+                off = y * term_w
+                frame.append([("", text[off:off + term_w])])
         return frame
+
+_UPPER_HALF = "▀"
 
 def _emit_halfblock_row(top: np.ndarray, bot: np.ndarray) -> LineFrag:
     w = top.shape[0]
@@ -441,20 +486,23 @@ def _emit_halfblock_row(top: np.ndarray, bot: np.ndarray) -> LineFrag:
     key = (tp << 24) | bp
     diff = np.empty(w, dtype=bool)
     diff[0] = True
-    diff[1:] = key[1:] != key[:-1]
+    np.not_equal(key[1:], key[:-1], out=diff[1:])
     starts = np.flatnonzero(diff)
-    ends = np.concatenate([starts[1:], np.array([w], dtype=np.intp)])
+    keys = key[starts].tolist()
+    s_list = starts.tolist()
+    e_list = s_list[1:]
+    e_list.append(w)
+    get = _HB_CACHE.get
     out: LineFrag = []
-    for s, e in zip(starts.tolist(), ends.tolist()):
-        t = int(tp[s])
-        b = int(bp[s])
-        hk = (t << 24) | b
-        style = _HB_CACHE.get(hk)
+    ap = out.append
+    for hk, s, e in zip(keys, s_list, e_list):
+        style = get(hk)
         if style is None:
-            style = f"fg:#{t:06x} bg:#{b:06x}"
-            if len(_HB_CACHE) < 200000:
-                _HB_CACHE[hk] = style
-        out.append((style, "▀" * (e - s)))
+            style = f"fg:#{hk >> 24:06x} bg:#{hk & 0xFFFFFF:06x}"
+            if len(_HB_CACHE) >= _HB_CACHE_MAX:
+                _HB_CACHE.clear()
+            _HB_CACHE[hk] = style
+        ap((style, _UPPER_HALF * (e - s)))
     return out
 
 class HalfBlockBackend:
