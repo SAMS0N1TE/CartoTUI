@@ -17,13 +17,15 @@ set(CARTO_SOURCES
 )
 
 add_library(carto SHARED ${CARTO_SOURCES})
-set_target_properties(carto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(carto PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON)
 target_include_directories(carto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if(CARTO_WERROR)
-    target_compile_options(carto PRIVATE -Wall -Wextra -Werror)
+if(MSVC)
+    target_compile_options(carto PRIVATE /W3 $<$<BOOL:${CARTO_WERROR}>:/WX>)
 else()
-    target_compile_options(carto PRIVATE -Wall -Wextra)
+    target_compile_options(carto PRIVATE -Wall -Wextra $<$<BOOL:${CARTO_WERROR}>:-Werror>)
 endif()
 
 find_library(CARTO_M m)

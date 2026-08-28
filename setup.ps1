@@ -52,35 +52,126 @@ Write-Host "Installing dependencies..." -ForegroundColor Cyan
 & $venvPy -m pip install -r (Join-Path $root "requirements.txt")
 & $venvPy -m pip install -e $root
 
+function Find-VsInstall {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { return $null }
+    $path = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath 2>$null | Select-Object -First 1
+    if ($path -and (Test-Path $path)) { return $path }
+    return $null
+}
+
+function Find-CMake {
+    $c = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    # Visual Studio ships its own CMake with the C++ workload.
+    $vs = Find-VsInstall
+    if ($vs) {
+        $bundled = Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+        if (Test-Path $bundled) { return $bundled }
+    }
+    return $null
+}
+
+function Find-Gcc {
+    foreach ($name in @("clang", "gcc", "cc")) {
+        $c = Get-Command $name -ErrorAction SilentlyContinue
+        if ($c) { return $c.Source }
+    }
+    # MSYS2 and CLion both ship a usable mingw toolchain; neither is on PATH.
+    foreach ($root in @("C:\msys64\ucrt64\bin", "C:\msys64\mingw64\bin")) {
+        $cand = Join-Path $root "gcc.exe"
+        if (Test-Path $cand) { return $cand }
+    }
+    $jb = "C:\Program Files\JetBrains"
+    if (Test-Path $jb) {
+        $clion = Get-ChildItem $jb -Filter gcc.exe -Recurse -Depth 6 -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+        if ($clion) { return $clion.FullName }
+    }
+    return $null
+}
+
+function Build-Libcarto {
+    param([string]$Root)
+
+    $lib      = Join-Path $Root "libcarto"
+    $build    = Join-Path $lib "build"
+    $out      = Join-Path $build "carto.dll"
+    $srcNames = @("style.c", "framebuffer.c", "raster.c", "geom.c", "mvt.c", "carto.c")
+
+    New-Item -ItemType Directory -Force $build | Out-Null
+    if (Test-Path $out) { Remove-Item -Force $out }
+
+    # 1. CMake covers MSVC, mingw and clang alike, and gets the DLL exports
+    #    right on all three.
+    $cmake = Find-CMake
+    if ($cmake) {
+        Write-Host "  using cmake: $cmake"
+        $cm = Join-Path $build "cmake"
+        & $cmake -S $lib -B $cm -DCARTO_BUILD_TESTS=OFF 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            & $cmake --build $cm --config Release 2>&1 | Out-Null
+            $built = Get-ChildItem $cm -Filter carto.dll -Recurse -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            if ($built) {
+                Copy-Item $built.FullName $out -Force
+                return $out
+            }
+        }
+        Write-Host "  cmake produced no DLL; trying a direct compile."
+    }
+
+    # 2. A gcc-alike, compiled straight. GCC exports every symbol by default.
+    $cc = Find-Gcc
+    if ($cc) {
+        Write-Host "  using $cc"
+        $srcs = $srcNames | ForEach-Object { Join-Path $lib "src\$_" }
+        & $cc -shared -O2 -I (Join-Path $lib "include") @srcs -o $out -lm -static-libgcc
+        if (Test-Path $out) { return $out }
+    }
+
+    # 3. MSVC directly. Unlike gcc, cl.exe exports nothing unless asked, so name
+    #    the entry points the Python binding looks up.
+    $vs = Find-VsInstall
+    if ($vs) {
+        $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+        if (Test-Path $vcvars) {
+            Write-Host "  using MSVC: $vs"
+            $srcs = ($srcNames | ForEach-Object { '"' + (Join-Path $lib "src\$_") + '"' }) -join " "
+            $inc  = Join-Path $lib "include"
+            $exports = (@("carto_fb_init", "carto_style_default", "carto_begin",
+                          "carto_render_tile", "carto_end") |
+                        ForEach-Object { "/EXPORT:$_" }) -join " "
+            $cmd = "call `"$vcvars`" >nul && cl /nologo /LD /O2 /I`"$inc`" $srcs " +
+                   "/Fe:`"$out`" /Fo:`"$build\`" /link $exports"
+            cmd /c $cmd 2>&1 | Out-Null
+            if (Test-Path $out) { return $out }
+        }
+    }
+
+    return $null
+}
+
 if (-not $SkipDll) {
     Write-Host "Building native renderer (libcarto)..." -ForegroundColor Cyan
-    $cc = $null
-    foreach ($name in @("clang","gcc","cc")) {
-        $c = Get-Command $name -ErrorAction SilentlyContinue
-        if ($c) { $cc = $c.Source; break }
+    $dll = $null
+    try {
+        $dll = Build-Libcarto -Root $root
+    } catch {
+        Write-Warning "  native renderer build failed: $_"
     }
-    if (-not $cc) {
-        $clion = Get-ChildItem "C:\Program Files\JetBrains" -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-        if ($clion) { $cc = $clion.FullName }
-    }
-    if ($cc) {
-        $lib = Join-Path $root "libcarto"
-        $build = Join-Path $lib "build"
-        New-Item -ItemType Directory -Force $build | Out-Null
-        $srcs = @("style.c","framebuffer.c","raster.c","geom.c","mvt.c","carto.c") |
-                ForEach-Object { Join-Path $lib "src\$_" }
-        $out = Join-Path $build "carto.dll"
-        Write-Host "  using $cc"
-        & $cc -shared -O2 -I (Join-Path $lib "include") @srcs -o $out -lm -static-libgcc
-        if (Test-Path $out) {
-            Write-Host "  built $out" -ForegroundColor Green
-        } else {
-            Write-Warning "  DLL build failed; CartoTUI will use the slower Python renderer."
-        }
+    if ($dll) {
+        Write-Host "  built $dll" -ForegroundColor Green
     } else {
-        Write-Warning "No C compiler found. Skipping native renderer; the Python renderer will be used."
-        Write-Host  "  (Install LLVM/clang or mingw gcc, then re-run to enable libcarto.)"
+        Write-Warning "No C toolchain found, so CartoTUI falls back to the pure-Python"
+        Write-Warning "renderer, which is several times slower on a busy map."
+        Write-Host   "  Install any one of these, then re-run .\setup.ps1:"
+        Write-Host   "    - Visual Studio Build Tools, C++ workload"
+        Write-Host   "        https://aka.ms/vs/17/release/vs_BuildTools.exe"
+        Write-Host   "    - MSYS2 + mingw-w64-ucrt-x86_64-gcc   https://www.msys2.org"
+        Write-Host   "    - LLVM/clang                          https://releases.llvm.org"
     }
 }
 
