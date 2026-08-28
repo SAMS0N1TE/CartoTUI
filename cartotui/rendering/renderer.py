@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -11,6 +13,8 @@ from cartotui.rendering import dither as dither_mod
 from cartotui.rendering.threshold import (
     compute_fill_levels,
 )
+
+log = logging.getLogger("cartotui.render")
 
 StyleRun = Tuple[str, str]
 LineFrag = List[StyleRun]
@@ -156,10 +160,12 @@ def _emit_row_color_fast(
     row: str,
     rgb: np.ndarray,
 ) -> LineFrag:
-    w = rgb.shape[0]
+    return _emit_row_packed(row, _pack_rgb(rgb))
+
+def _emit_row_packed(row: str, packed: np.ndarray) -> LineFrag:
+    w = packed.shape[0]
     if w == 0:
         return [("", "")]
-    packed = _pack_rgb(rgb)
     diff = np.empty(w, dtype=bool)
     diff[0] = True
     np.not_equal(packed[1:], packed[:-1], out=diff[1:])
@@ -179,6 +185,118 @@ def _emit_row_color_fast(
             st = _fg_style(k)
         ap((st, row[s:e]))
     return out
+
+# --------------------------------------------------------------- native cells
+
+_NATIVE_MODES = {"ascii": 0, "quadrant": 1, "braille": 2, "half": 3}
+_native_state = {"checked": False, "renderer": None}
+
+def _native_renderer():
+    """The libcarto handle, if it is present and new enough to cellify."""
+    st = _native_state
+    if not st["checked"]:
+        st["checked"] = True
+        try:
+            from cartotui.rendering.libcarto_backend import _get_renderer
+            r = _get_renderer()
+            st["renderer"] = r if getattr(r, "has_cells", False) else None
+        except Exception:
+            st["renderer"] = None
+    return st["renderer"]
+
+def _thresh_params(mode: str, percentile: float):
+    """(threshold_mode, black_pct, white_pct), mirroring threshold._params_for.
+
+    Returns None for anything the native path does not implement, which sends
+    the caller back to the Python backends.
+    """
+    if mode == "adaptive":
+        return 0, 8.0, 96.0
+    if mode == "fixed":
+        return 1, 0.0, 100.0
+    if mode == "percentile":
+        return 1, 8.0, float(np.clip(40.0 + percentile, 80.0, 99.0))
+    if mode == "edge":
+        return None          # needs the sobel pass; not worth duplicating
+    return 1, 8.0, 96.0
+
+def _native_cells(img, term_w, term_h, use_color, mode, palette,
+                  orientation, threshold_mode, percentile, shaded):
+    """Reduce an image to cells in C. Returns None if the fast path cannot run."""
+    r = _native_renderer()
+    if r is None:
+        return None
+    params = _thresh_params(threshold_mode, percentile)
+    if params is None:
+        return None
+    thresh, black_pct, white_pct = params
+
+    import carto_ffi
+
+    kind = _NATIVE_MODES[mode]
+    cw, chh = (1, 1) if mode == "ascii" else (
+        (2, 2) if mode == "quadrant" else ((2, 4) if mode == "braille" else (1, 2)))
+    tw, th = term_w * cw, term_h * chh
+
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    if img.width != tw or img.height != th:
+        img = _resample(img, tw, th)
+    arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8))
+    if arr.ndim != 3 or arr.shape[2] != 3:
+        return None
+
+    chars = list(palette) if palette else list(" .") if mode == "ascii" else list(" ░▒▓█")
+    if len(chars) < 2:
+        chars = list(" .")
+    levels = len(chars) if mode == "ascii" else max(2, len(chars))
+    pal = np.array([ord(c) for c in chars[:levels]], dtype=np.uint32)
+
+    orient = {"dark": 0, "bright": 1}.get(orientation, 2)
+    opts = carto_ffi.CartoCellOpts(
+        mode=kind, cols=term_w, rows=term_h,
+        mono=0 if use_color else 1,
+        want_color=1 if (use_color or mode == "half") else 0,
+        orientation=orient, threshold_mode=thresh,
+        black_pct=black_pct, white_pct=white_pct,
+        tile_grid=4, signal_floor=0.06, signal_gamma=1.2,
+        shaded=1 if shaded else 0,
+        palette_len=int(pal.size),
+        palette=pal.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+    )
+
+    n = term_w * term_h
+    glyph = np.empty(n, dtype=np.uint32)
+    want_color = bool(opts.want_color)
+    fg = np.empty(n, dtype=np.uint32) if want_color else None
+    bg = np.empty(n, dtype=np.uint32) if mode == "half" else None
+    try:
+        r.cellify(arr.ctypes.data, tw, th, opts, glyph.ctypes.data,
+                  fg.ctypes.data if fg is not None else 0,
+                  bg.ctypes.data if bg is not None else 0)
+    except Exception as e:
+        log.debug("carto_cellify failed (%s); using the python backend", e)
+        return None
+
+    text = _glyph_text(glyph)
+    frame: FrameFrag = []
+    if mode == "half":
+        fg2 = fg.reshape(term_h, term_w)
+        bg2 = bg.reshape(term_h, term_w)
+        for y in range(term_h):
+            off = y * term_w
+            frame.append(_emit_halfblock_packed(text[off:off + term_w],
+                                                fg2[y], bg2[y]))
+    elif want_color:
+        fg2 = fg.reshape(term_h, term_w).astype(np.int32, copy=False)
+        for y in range(term_h):
+            off = y * term_w
+            frame.append(_emit_row_packed(text[off:off + term_w], fg2[y]))
+    else:
+        for y in range(term_h):
+            off = y * term_w
+            frame.append([("", text[off:off + term_w])])
+    return frame
 
 class AsciiBackend:
     name = "ascii"
@@ -477,6 +595,32 @@ class BrailleBackend:
 
 _UPPER_HALF = "▀"
 
+def _emit_halfblock_packed(row: str, fgp: np.ndarray, bgp: np.ndarray) -> LineFrag:
+    w = fgp.shape[0]
+    if w == 0:
+        return [("", "")]
+    key = (fgp.astype(np.int64) << 24) | bgp
+    diff = np.empty(w, dtype=bool)
+    diff[0] = True
+    np.not_equal(key[1:], key[:-1], out=diff[1:])
+    starts = np.flatnonzero(diff)
+    keys = key[starts].tolist()
+    s_list = starts.tolist()
+    e_list = s_list[1:]
+    e_list.append(w)
+    get = _HB_CACHE.get
+    out: LineFrag = []
+    ap = out.append
+    for hk, s, e in zip(keys, s_list, e_list):
+        style = get(hk)
+        if style is None:
+            style = f"fg:#{hk >> 24:06x} bg:#{hk & 0xFFFFFF:06x}"
+            if len(_HB_CACHE) >= _HB_CACHE_MAX:
+                _HB_CACHE.clear()
+            _HB_CACHE[hk] = style
+        ap((style, row[s:e]))
+    return out
+
 def _emit_halfblock_row(top: np.ndarray, bot: np.ndarray) -> LineFrag:
     w = top.shape[0]
     if w == 0:
@@ -552,6 +696,7 @@ class Renderer:
     subpixel_percentile: float = 55.0
     shaded_blocks: bool = False
     auto_downgrade_braille_on_raster: bool = True
+    use_native_cells: bool = True
     last_effective_mode: str = field(default="ascii", init=False)
 
     def __post_init__(self) -> None:
@@ -649,6 +794,22 @@ class Renderer:
         """
         effective_mode = self._resolve_mode(mode, source_kind)
         self.last_effective_mode = effective_mode
+
+        # libcarto does this whole reduction in one pass when nothing needs the
+        # python-only extras -- a translucent overlay to composite, a dither, or
+        # the edge threshold. Falls through on any miss.
+        if (self.use_native_cells and overlay is None
+                and (not dither or dither == "none")
+                and effective_mode in _NATIVE_MODES):
+            frame = _native_cells(
+                img, term_w, term_h, use_color, effective_mode,
+                self.get_palette(palette_name), orientation,
+                self.subpixel_threshold, self.subpixel_percentile,
+                self.shaded_blocks,
+            )
+            if frame is not None:
+                return frame
+
         backend = self._backends.get(effective_mode) or self._backends["ascii"]
         return backend.render(
             img,

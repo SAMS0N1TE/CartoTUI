@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from ctypes import (
     POINTER,
+    c_float,
     Structure,
     byref,
     c_bool,
@@ -16,6 +17,7 @@ from ctypes import (
     c_size_t,
     c_ubyte,
     c_uint8,
+    c_uint32,
     c_void_p,
     cast,
 )
@@ -81,6 +83,22 @@ class CartoFB(Structure):
     _fields_ = [("width", c_int), ("height", c_int), ("format", c_int), ("stride", c_int),
                 ("pixels", c_void_p), ("cell_color", c_void_p), ("cell_cols", c_int), ("cell_rows", c_int)]
 
+CARTO_CELL_ASCII, CARTO_CELL_QUADRANT, CARTO_CELL_BRAILLE, CARTO_CELL_HALF = 0, 1, 2, 3
+CARTO_THRESH_ADAPTIVE, CARTO_THRESH_GLOBAL, CARTO_THRESH_FIXED = 0, 1, 2
+CARTO_ORIENT_DARK, CARTO_ORIENT_BRIGHT, CARTO_ORIENT_GUESS = 0, 1, 2
+
+class CartoCellOpts(Structure):
+    _fields_ = [
+        ("mode", c_int32), ("cols", c_int32), ("rows", c_int32),
+        ("mono", c_int32), ("want_color", c_int32), ("orientation", c_int32),
+        ("threshold_mode", c_int32),
+        ("black_pct", c_float), ("white_pct", c_float),
+        ("tile_grid", c_int32),
+        ("signal_floor", c_float), ("signal_gamma", c_float),
+        ("shaded", c_int32), ("palette_len", c_int32),
+        ("palette", POINTER(c_uint32)),
+    ]
+
 class CartoViewport(Structure):
     _fields_ = [("lat", c_double), ("lon", c_double), ("zoom", c_int), ("fb_w", c_int), ("fb_h", c_int),
                 ("tile_px", c_int), ("scale", c_int32), ("origin_x", c_int32), ("origin_y", c_int32)]
@@ -121,6 +139,16 @@ class Renderer:
         L.carto_render_tile.restype = c_int
         L.carto_end.argtypes = [c_void_p]
         L.carto_end.restype = None
+
+        self.has_cells = hasattr(L, "carto_cellify")
+        if self.has_cells:
+            L.carto_cellify.argtypes = [c_void_p, c_int32, c_int32,
+                                        POINTER(CartoCellOpts),
+                                        c_void_p, c_void_p, c_void_p]
+            L.carto_cellify.restype = c_int
+            L.carto_cell_geometry.argtypes = [c_int32, POINTER(c_int32),
+                                              POINTER(c_int32)]
+            L.carto_cell_geometry.restype = None
 
         self._arena_buf = (c_char * (8 * 1024 * 1024))()
         self._render_lock = threading.RLock()
@@ -208,6 +236,27 @@ class Renderer:
                         thread_name_prefix=f"carto-{name}")
                     self._pools[name] = pool
         return pool
+
+    def cell_geometry(self, mode):
+        cw, chh = c_int32(0), c_int32(0)
+        self.lib.carto_cell_geometry(int(mode), byref(cw), byref(chh))
+        return cw.value, chh.value
+
+    def cellify(self, rgb_ptr, w, h, opts, glyph_ptr, fg_ptr=0, bg_ptr=0):
+        """Reduce a subcell RGB grid to glyphs and colours.
+
+        Pointers are passed as integers so this stays free of a numpy import;
+        the caller owns the buffers and there is no copy. Unlike the render
+        entry points this touches no shared arena, so it needs no lock.
+        """
+        if not self.has_cells:
+            raise RuntimeError("libcarto has no carto_cellify (rebuild it)")
+        rc = self.lib.carto_cellify(c_void_p(rgb_ptr), int(w), int(h),
+                                    byref(opts), c_void_p(glyph_ptr),
+                                    c_void_p(fg_ptr or None),
+                                    c_void_p(bg_ptr or None))
+        if rc != 0:
+            raise RuntimeError(f"carto_cellify failed ({rc})")
 
     def close(self):
         with self._pool_lock:

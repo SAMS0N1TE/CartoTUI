@@ -14,6 +14,7 @@ set(CARTO_SOURCES
     src/geom.c
     src/mvt.c
     src/carto.c
+    src/cells.c
 )
 
 add_library(carto SHARED ${CARTO_SOURCES})
