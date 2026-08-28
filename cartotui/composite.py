@@ -14,7 +14,8 @@ from cartotui.geodesy import TILE_SIZE, latlon_to_tile_xy
 
 log = logging.getLogger("cartotui.composite")
 
-__all__ = ["composite_from_tiles", "tiles_for_view", "apply_image_adjustments"]
+__all__ = ["composite_from_tiles", "tiles_for_view", "apply_image_adjustments",
+           "tone_active", "tone_colors"]
 
 _LUMA = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
@@ -55,14 +56,22 @@ def _retint(rgb: np.ndarray, lum0: np.ndarray, lum1: np.ndarray) -> np.ndarray:
     than max(axis=-1): reducing a 3-long trailing axis is strided and costs an
     order of magnitude more, enough to dominate the whole frame.
     """
-    ratio = lum1 / np.maximum(lum0, 1e-5)
-    out = rgb * ratio[..., None]
+    ratio = np.maximum(lum0, 1e-5)
+    np.divide(lum1, ratio, out=ratio)
+    # `rgb` is scratch owned by the caller, so scale it where it lies rather
+    # than allocating another full-resolution float image.
+    out = rgb
+    out *= ratio[..., None]
 
     black = lum0 < 1e-4
     if black.any():
-        out[black] = lum1[black][:, None]
+        # A masked broadcast copy. Fancy-indexing this instead builds an index
+        # array over every black pixel, and a dark theme makes that most of the
+        # frame.
+        np.copyto(out, lum1[..., None], where=black[..., None])
 
-    peak = np.maximum(np.maximum(out[..., 0], out[..., 1]), out[..., 2])
+    peak = np.maximum(out[..., 0], out[..., 1])
+    np.maximum(peak, out[..., 2], out=peak)
 
     over = peak > 1.0
     if over.any():
@@ -127,22 +136,75 @@ def _tone(
     """
     if img.mode != "RGB":
         img = img.convert("RGB")
-    rgb = np.asarray(img, dtype=np.float32) / 255.0
+    rgb = np.asarray(img, dtype=np.uint8)
+    pivot = float((rgb.astype(np.float32) / 255.0 @ _LUMA).mean())
+    out = tone_colors(
+        rgb, pivot,
+        brightness=brightness, contrast=contrast, gamma=gamma,
+        saturation=saturation, black_point=black_point, white_point=white_point,
+    )
+    return Image.fromarray(out, "RGB")
+
+
+def tone_active(
+    *,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
+    gamma: float = 1.0,
+    saturation: float = 1.0,
+    black_point: float = 0.0,
+    white_point: float = 1.0,
+) -> bool:
+    """True when the tone knobs are off their defaults and would do work."""
+    return (abs(brightness - 1.0) > 1e-3 or abs(contrast - 1.0) > 1e-3
+            or abs(gamma - 1.0) > 1e-3 or abs(saturation - 1.0) > 1e-3
+            or black_point > 1e-3 or white_point < 1.0 - 1e-3)
+
+
+def tone_colors(
+    rgb_u8: np.ndarray,
+    pivot: float,
+    *,
+    brightness: float,
+    contrast: float,
+    gamma: float,
+    saturation: float,
+    black_point: float,
+    white_point: float,
+) -> np.ndarray:
+    """The tone chain over any uint8 RGB array whose last axis is the channel.
+
+    Takes `pivot` rather than deriving it, so the same maths can be run over a
+    whole frame or over just the palette a frame was drawn from -- see
+    `libcarto_backend`, which folds this into its 65k-entry RGB565 table and so
+    tones 65k colours instead of a million pixels for the same result.
+
+    Every step works in place on one buffer: at a 1400x804 composite each stray
+    temporary is another 13 MB written and read back.
+    """
+    rgb = rgb_u8.astype(np.float32)
+    rgb /= 255.0
     lum = rgb @ _LUMA
 
     curve = _luma_curve(
         brightness=brightness, contrast=contrast, gamma=gamma,
         black_point=black_point, white_point=white_point,
-        pivot=float(lum.mean()),
+        pivot=pivot,
     )
-    target = curve[np.clip(lum * 255.0 + 0.5, 0, 255).astype(np.uint8)]
+    idx = lum * 255.0
+    idx += 0.5
+    np.clip(idx, 0.0, 255.0, out=idx)
+    target = curve[idx.astype(np.uint8)]
+    del idx
     rgb = _retint(rgb, lum, target)
 
     if abs(saturation - 1.0) > 1e-3:
         grey = target[..., None]
         rgb = np.clip(grey + (rgb - grey) * max(0.0, saturation), 0.0, 1.0)
 
-    return Image.fromarray((rgb * 255.0 + 0.5).astype(np.uint8), "RGB")
+    rgb *= 255.0
+    rgb += 0.5
+    return rgb.astype(np.uint8)
 
 
 def apply_image_adjustments(

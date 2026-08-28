@@ -514,19 +514,32 @@ class MapControl(UIControl):
                 (_rc.get("road_thickness_by_mode") or {}).get(render_mode, 1.0) or 1.0)
             supersample = px_w / max(1, w * cell_w_px)
 
+            from cartotui.composite import tone_active
+            v_gamma = 1.0 if panning else float(gamma)
+            tone = dict(brightness=brightness, contrast=contrast, gamma=v_gamma,
+                        saturation=saturation, black_point=black_point,
+                        white_point=white_point)
+            if not tone_active(**tone):
+                tone = None
+            tone_done = False
+
             if source == "vector" and self.vector_source is not None:
                 engine = self.cfg["render"].get("vector_engine", "libcarto")
                 if engine == "libcarto":
                     try:
                         from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
                         pf_enable = bool(self.cfg["prefetch"].get("enable", True))
+                        # libcarto folds the tone into its colour table, which is
+                        # the same result for a fraction of the work.
                         img = rasterise_view_libcarto(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
                             preload=pf_enable and not panning,
                             cached_only=panning,
                             supersample=supersample,
                             road_thickness=road_thickness,
+                            tone=tone,
                         )
+                        tone_done = img is not None and tone is not None
                         if panning:
                             try:
                                 self.vector_source.prefetch_viewport(lat, lon, z, px_w, px_h)
@@ -553,17 +566,9 @@ class MapControl(UIControl):
                     except Exception as e:
                         log.warning("Vector rasterise failed: %s", e)
                         img = None
-                if img is not None:
-                    v_gamma = 1.0 if panning else float(gamma)
-                    if (abs(brightness - 1.0) > 1e-3 or abs(contrast - 1.0) > 1e-3
-                            or abs(v_gamma - 1.0) > 1e-3
-                            or abs(saturation - 1.0) > 1e-3
-                            or black_point > 1e-3 or white_point < 1.0 - 1e-3):
-                        from cartotui.composite import apply_image_adjustments
-                        img = apply_image_adjustments(
-                            img, brightness=brightness, contrast=contrast,
-                            gamma=v_gamma, saturation=saturation,
-                            black_point=black_point, white_point=white_point)
+                if img is not None and tone is not None and not tone_done:
+                    from cartotui.composite import apply_image_adjustments
+                    img = apply_image_adjustments(img, **tone)
 
             if img is None:
                 cfg_sharpen = int(r.get("sharpen_percent", 150))

@@ -63,16 +63,77 @@ def _rgb565_lut():
         _RGB565_LUT = np.stack([r, g, b], axis=1)
     return _RGB565_LUT
 
-def _rgb565_to_image(rgb565: bytes, w: int, h: int):
+_LUM565 = None
+
+def _lum565():
+    """Luminance of every RGB565 colour, matching composite's _LUMA weights."""
+    global _LUM565
+    if _LUM565 is None:
+        import numpy as np
+        from cartotui.composite import _LUMA
+        _LUM565 = (_rgb565_lut().astype(np.float32) / 255.0) @ _LUMA
+    return _LUM565
+
+def _toned_lut(pivot: float, tone: dict):
+    """The RGB565 table with the tone chain already applied.
+
+    libcarto hands back RGB565, so a frame holds at most 65536 distinct colours
+    however many pixels it has. Toning the table and then looking up is the same
+    arithmetic on the same values as toning every pixel, for a twentieth of the
+    work -- and it costs nothing extra at lookup time, because the frame is
+    gathered through this table either way.
+    """
+    from cartotui.composite import tone_colors
+    return tone_colors(_rgb565_lut(), pivot, **tone)
+
+def _pack_lut32(lut):
+    """Pack an (N,3) uint8 table into little-endian RGBA words.
+
+    Gathering one 4-byte word per pixel is several times quicker than gathering
+    a 3-byte row, and the result reads straight back as an RGBA buffer.
+    """
+    import numpy as np
+    return ((lut[:, 0].astype(np.uint32)
+             | (lut[:, 1].astype(np.uint32) << 8)
+             | (lut[:, 2].astype(np.uint32) << 16)
+             | np.uint32(0xFF000000)).astype("<u4"))
+
+_BASE_LUT32 = None
+_TONED_LUT32 = None  # (cache key, packed lut)
+
+def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
+    global _BASE_LUT32, _TONED_LUT32
     import numpy as np
     from PIL import Image
+
     v = np.frombuffer(rgb565, dtype="<u2").reshape(h, w)
-    rgb = _rgb565_lut()[v]
-    return Image.fromarray(rgb, "RGB")
+    lut32 = None
+    if tone:
+        # The pivot is the frame's mean luminance, taken off a 65536-bin
+        # histogram of the colour indices rather than off the pixels: the same
+        # sum, without materialising a float image to reduce.
+        counts = np.bincount(v.ravel(), minlength=65536)
+        total = int(counts.sum())
+        if total:
+            pivot = float((counts * _lum565()).sum() / total)
+            key = (pivot, tuple(sorted(tone.items())))
+            cached = _TONED_LUT32
+            if cached is not None and cached[0] == key:
+                lut32 = cached[1]
+            else:
+                lut32 = _pack_lut32(_toned_lut(pivot, tone))
+                _TONED_LUT32 = (key, lut32)
+    if lut32 is None:
+        if _BASE_LUT32 is None:
+            _BASE_LUT32 = _pack_lut32(_rgb565_lut())
+        lut32 = _BASE_LUT32
+
+    out32 = lut32[v]
+    return Image.frombuffer("RGBA", (w, h), out32, "raw", "RGBA", 0, 1).convert("RGB")
 
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
-                            road_thickness=1.0):
+                            road_thickness=1.0, tone=None):
     renderer = _get_renderer()
 
     def base_fetch(zz, xx, yy):
@@ -104,4 +165,4 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
         renderer.prefetch_ring(lat, lon, z, px_w, px_h, base_fetch, ring=1)
     if drawn == 0:
         return None
-    return _rgb565_to_image(rgb565, px_w, px_h)
+    return _rgb565_to_image(rgb565, px_w, px_h, tone)
