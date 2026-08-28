@@ -35,32 +35,67 @@ _SAVE = "\x1b7"
 _RESTORE = "\x1b8"
 _RESET = "\x1b[0m"
 
-_SGR_CACHE: Dict[str, str] = {}
-_SGR_CACHE_MAX = 200000
+# Distinct from None, which is a legitimate colour meaning "terminal default".
+_UNSET = object()
+
+_COLOR_CACHE: Dict[tuple, tuple] = {}
+_COLOR_CACHE_MAX = 200000
 
 
-def sgr_for(style: str) -> str:
-    """Turn a CartoTUI style string into the escape that sets it."""
-    seq = _SGR_CACHE.get(style)
-    if seq is not None:
-        return seq
+def colors_for(style: str, base_fg: Optional[str], base_bg: Optional[str]):
+    """The (fg, bg) a cell ends up with, as 6-digit hex or None.
+
+    prompt_toolkit merges the *window's* style underneath the cell's, so a map
+    cell written as just "fg:#c8a068" still takes its background from
+    `class:map`. Painting only what the cell string carries leaves the
+    background as whatever escape happened to be in effect -- which is why the
+    modes that set no background picked up bands of the chrome's colour, and
+    half-block, which always sets one, did not.
+    """
+    key = (style, base_fg, base_bg)
+    hit = _COLOR_CACHE.get(key)
+    if hit is not None:
+        return hit
     fg = bg = None
     for part in style.split():
         if part.startswith("fg:#") and len(part) >= 10:
             fg = part[4:10]
         elif part.startswith("bg:#") and len(part) >= 10:
             bg = part[4:10]
-    out = []
-    if fg:
-        out.append("\x1b[38;2;%d;%d;%dm"
-                   % (int(fg[0:2], 16), int(fg[2:4], 16), int(fg[4:6], 16)))
-    if bg:
-        out.append("\x1b[48;2;%d;%d;%dm"
-                   % (int(bg[0:2], 16), int(bg[2:4], 16), int(bg[4:6], 16)))
-    seq = "".join(out) if out else _RESET
-    if len(_SGR_CACHE) >= _SGR_CACHE_MAX:
-        _SGR_CACHE.clear()
-    _SGR_CACHE[style] = seq
+    out = (fg or base_fg, bg or base_bg)
+    if len(_COLOR_CACHE) >= _COLOR_CACHE_MAX:
+        _COLOR_CACHE.clear()
+    _COLOR_CACHE[key] = out
+    return out
+
+
+# Memoised: these are hit once per fragment, ~9.5k times a frame, and parsing
+# three hex bytes and formatting them each time costs more than the rest of the
+# paint put together.
+_FG_SEQ: Dict[Optional[str], str] = {None: "\x1b[39m"}
+_BG_SEQ: Dict[Optional[str], str] = {None: "\x1b[49m"}
+_SEQ_CACHE_MAX = 200000
+
+
+def _fg_seq(h: Optional[str]) -> str:
+    seq = _FG_SEQ.get(h)
+    if seq is None:
+        seq = "\x1b[38;2;%d;%d;%dm" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        if len(_FG_SEQ) >= _SEQ_CACHE_MAX:
+            _FG_SEQ.clear()
+            _FG_SEQ[None] = "\x1b[39m"
+        _FG_SEQ[h] = seq
+    return seq
+
+
+def _bg_seq(h: Optional[str]) -> str:
+    seq = _BG_SEQ.get(h)
+    if seq is None:
+        seq = "\x1b[48;2;%d;%d;%dm" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        if len(_BG_SEQ) >= _SEQ_CACHE_MAX:
+            _BG_SEQ.clear()
+            _BG_SEQ[None] = "\x1b[49m"
+        _BG_SEQ[h] = seq
     return seq
 
 
@@ -87,12 +122,22 @@ def _uncovered_spans(x0: int, width: int,
 
 
 def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int,
-               blocked: Sequence[Tuple[int, int, int, int]]) -> str:
+               blocked: Sequence[Tuple[int, int, int, int]],
+               base_fg: Optional[str] = None,
+               base_bg: Optional[str] = None) -> str:
     """The escape stream that draws `rows` at (x, y), skipping blocked rects.
 
     `blocked` is a sequence of (x0, y0, x1, y1) in screen coordinates.
+    `base_fg`/`base_bg` are the window's own colours, used wherever a cell
+    does not name its own.
+
+    Foreground and background are tracked separately and emitted only on
+    change, so a mode whose cells all share one background pays for it once
+    per frame rather than per run. Both start unknown, so the first run always
+    states both and nothing is inherited from whatever came before.
     """
     out: List[str] = [_SAVE]
+    cur_fg = cur_bg = _UNSET
     n = min(height, len(rows))
     for ry in range(n):
         sy = y + ry
@@ -115,7 +160,6 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
                 break
         for s0, s1 in spans:
             out.append("\x1b[%d;%dH" % (sy + 1, s0 + 1))
-            last_style = None
             for p0, p1, style, text in pieces:
                 if p1 <= s0 or p0 >= s1:
                     continue
@@ -123,9 +167,13 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
                 b = min(p1, s1) - p0
                 if b <= a:
                     continue
-                if style != last_style:
-                    out.append(sgr_for(style))
-                    last_style = style
+                fg, bg = colors_for(style, base_fg, base_bg)
+                if fg != cur_fg:
+                    out.append(_fg_seq(fg))
+                    cur_fg = fg
+                if bg != cur_bg:
+                    out.append(_bg_seq(bg))
+                    cur_bg = bg
                 out.append(text[a:b])
     out.append(_RESET)
     out.append(_RESTORE)
@@ -169,6 +217,7 @@ class DirectPaintRenderer(_PTRenderer):
         rows = self.map_source.direct_paint_rows(wp.width, wp.height)
         if not rows:
             return None
+        base_fg, base_bg = self._window_colors()
 
         mx0, my0 = wp.xpos, wp.ypos
         mx1, my1 = mx0 + wp.width, my0 + wp.height
@@ -181,4 +230,20 @@ class DirectPaintRenderer(_PTRenderer):
             if ox1 <= mx0 or ox0 >= mx1 or oy1 <= my0 or oy0 >= my1:
                 continue
             blocked.append((ox0, oy0, ox1, oy1))
-        return paint_rows(rows, mx0, my0, wp.width, wp.height, blocked)
+        return paint_rows(rows, mx0, my0, wp.width, wp.height, blocked,
+                          base_fg=base_fg, base_bg=base_bg)
+
+    def _window_colors(self):
+        """The map window's own colours, the way prompt_toolkit resolves them.
+
+        Its style sits under every cell's, so painting without it leaves the
+        background to whatever escape was last in effect.
+        """
+        try:
+            style = self.map_window.style
+            if callable(style):
+                style = style()
+            attrs = self._attrs_for_style[style or ""]
+            return attrs.color or None, attrs.bgcolor or None
+        except Exception:
+            return None, None
