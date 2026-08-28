@@ -200,11 +200,19 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
                             road_thickness=1.0, tone=None, max_fetch_zoom=None,
-                            lazy=False):
+                            lazy=False, stats=None):
+    """Rasterise the view through libcarto.
+
+    `stats`, if given, receives `misses`: how many tiles the fetch could not
+    supply. Under `cached_only` those are simply not drawn, so a non-zero count
+    means the frame has holes and the caller must come back for them.
+    """
     renderer = _get_renderer()
 
     def base_fetch(zz, xx, yy):
         raw = vector_source.get_raw(zz, xx, yy, cached_only=cached_only)
+        if raw is None and stats is not None:
+            stats['misses'] = stats.get('misses', 0) + 1
         if raw and raw[:2] == b"\x1f\x8b":
             try:
                 raw = gzip.decompress(raw)

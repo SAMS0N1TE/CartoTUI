@@ -105,9 +105,38 @@ class MapControl(UIControl):
         self.direct_paint = False
         self._paint_rows = None
         self._paint_size = (0, 0)
+        self._refill_lock = threading.Lock()
+        self._refill_timer = None
 
     def _mark_panning(self) -> None:
         self._pan_until = time.monotonic() + 0.16
+
+    def _refill_after_pan(self) -> None:
+        """Ask for one more frame once the pan window has lapsed.
+
+        By then `_panning()` is false, so the render fetches what it is missing
+        instead of leaving holes. One timer at a time: a pan draws a frame every
+        few milliseconds and each would otherwise queue its own.
+        """
+        with self._refill_lock:
+            if self._refill_timer is not None:
+                return
+            delay = max(0.05, self._pan_until - time.monotonic()) + 0.05
+            timer = threading.Timer(delay, self._refill_fire)
+            timer.daemon = True
+            self._refill_timer = timer
+        timer.start()
+
+    def _refill_fire(self) -> None:
+        with self._refill_lock:
+            self._refill_timer = None
+        if self._panning():
+            # Still moving: re-arm rather than drop the request, since nothing
+            # else will ask again. Keys off `_pan_until`, so it stops when the
+            # pan does.
+            self._refill_after_pan()
+            return
+        self.request_render(force=True)
 
     def _panning(self) -> bool:
         return (bool(self.cfg["render"].get("dynamic_quality", True))
@@ -571,10 +600,12 @@ class MapControl(UIControl):
                         pf_enable = bool(self.cfg["prefetch"].get("enable", True))
                         # libcarto folds the tone into its colour table, which is
                         # the same result for a fraction of the work.
+                        _rstats = {}
                         img = rasterise_view_libcarto(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
                             preload=pf_enable and not panning,
                             cached_only=panning,
+                            stats=_rstats,
                             supersample=supersample,
                             road_thickness=road_thickness,
                             tone=tone,
@@ -590,6 +621,12 @@ class MapControl(UIControl):
                                 self.vector_source.prefetch_viewport(lat, lon, z, px_w, px_h)
                             except Exception:
                                 pass
+                            # A cached-only frame draws nothing where a tile
+                            # was missing; the prefetch lands it moments later,
+                            # and without this the holes stay on screen until
+                            # the view moves again.
+                            if _rstats.get("misses"):
+                                self._refill_after_pan()
                     except Exception as e:
                         log.warning("libcarto rasterise failed (%s); using python path", e)
                         img = None
