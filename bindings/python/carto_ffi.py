@@ -30,11 +30,25 @@ elif sys.platform == "darwin":
 else:
     _LIB_NAMES = ("libcarto.so", "carto.so")
 
+def _search_dirs():
+    yield _BUILD_DIR
+    # Frozen builds (PyInstaller) unpack to a temp dir that is not laid out
+    # relative to this file.
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        yield os.path.join(meipass, "libcarto", "build")
+        yield meipass
+
+
 def _find_default_lib():
-    for name in _LIB_NAMES:
-        cand = os.path.join(_BUILD_DIR, name)
-        if os.path.exists(cand):
-            return cand
+    override = os.environ.get("CARTOTUI_LIBCARTO")
+    if override:
+        return override
+    for d in _search_dirs():
+        for name in _LIB_NAMES:
+            cand = os.path.join(d, name)
+            if os.path.exists(cand):
+                return cand
     return os.path.join(_BUILD_DIR, _LIB_NAMES[0])
 
 _DEFAULT_DLL = _find_default_lib()
