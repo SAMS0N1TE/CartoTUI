@@ -6,11 +6,13 @@ import logging
 import math
 import threading
 import zlib
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from cartotui.mvt_decoder import decode as _pure_decode
 
@@ -31,6 +33,15 @@ except ImportError:
 log = logging.getLogger("cartotui.vector")
 
 __all__ = ["VectorTileSource", "VectorTile"]
+
+# A decoded tile is 2.5 MB of Python objects for a median tile and 7.9 MB for a
+# dense one, so the cache has to be capped by weight rather than tile count.
+_DECODED_BUDGET_BYTES = 192 * 1024 * 1024
+_DECODED_BYTES_PER_RAW = 80          # measured ratio, decoded : compressed
+
+# Bounds how fast a pan can cover fresh ground: N workers move N/rtt tiles a
+# second, and a pan that outruns them reaches tiles that have not landed.
+_PREFETCH_WORKERS = 8
 
 @dataclass
 class VectorTile:
@@ -55,8 +66,10 @@ class VectorTileSource:
         self.user_agent = user_agent
 
         self._lock = threading.Lock()
-        self._decoded: Dict[Tuple[int, int, int], VectorTile] = {}
-        self._max_cached = 256
+        self._decoded: OrderedDict = OrderedDict()
+        self._decoded_sizes: Dict[Tuple[int, int, int], int] = {}
+        self._decoded_bytes = 0
+        self._max_cached = 256       # a ceiling; the byte budget binds first
         self._prefetch_inflight: set = set()
         self._prefetch_lock = threading.Lock()
 
@@ -69,6 +82,14 @@ class VectorTileSource:
 
         self._session = requests.Session()
         self._session.headers["User-Agent"] = user_agent
+        # Sized to the prefetch, plus headroom for the render worker, which
+        # fetches on this session too.
+        _pool = _PREFETCH_WORKERS + 4
+        _adapter = HTTPAdapter(pool_connections=_pool, pool_maxsize=_pool)
+        self._session.mount("https://", _adapter)
+        self._session.mount("http://", _adapter)
+        self._prefetch_pool_obj = None
+        self._last_centre = None     # for the direction of travel
 
         self._pm_reader = None
         self._pm_header: Optional[dict] = None
@@ -82,6 +103,7 @@ class VectorTileSource:
         with self._lock:
             cached = self._decoded.get(key)
             if cached is not None:
+                self._decoded.move_to_end(key)      # most recently used
                 return cached
 
         raw = self._load_raw_from_disk(z, x, y)
@@ -97,11 +119,22 @@ class VectorTileSource:
         tile = VectorTile(z=z, x=x, y=y, extent=4096, layers=decoded)
 
         with self._lock:
-            if len(self._decoded) >= self._max_cached:
-                drop = next(iter(self._decoded))
-                self._decoded.pop(drop, None)
             self._decoded[key] = tile
+            self._decoded.move_to_end(key)
+            approx = len(raw) * _DECODED_BYTES_PER_RAW
+            self._decoded_bytes += approx - self._decoded_sizes.get(key, 0)
+            self._decoded_sizes[key] = approx
+            self._evict_locked()
         return tile
+
+    def _evict_locked(self) -> None:
+        """Drop least-recently-used tiles until the cache fits its budget."""
+        while self._decoded and (self._decoded_bytes > _DECODED_BUDGET_BYTES
+                                 or len(self._decoded) > self._max_cached):
+            old_key, _ = self._decoded.popitem(last=False)
+            self._decoded_bytes -= self._decoded_sizes.pop(old_key, 0)
+        if not self._decoded:
+            self._decoded_bytes = 0
 
     _MISSES_BEFORE_CAPPING = 3
 
@@ -152,16 +185,31 @@ class VectorTileSource:
             self._save_raw_to_disk(z, x, y, raw)
         return raw
 
-    def _covering_tiles(self, lat, lon, z, px_w, px_h, tile_px=256):
+    def _covering_tiles(self, lat, lon, z, px_w, px_h, tile_px=256, ring=0,
+                        lead=(0, 0)):
+        """The tiles the viewport touches, widened by `ring` on the leading edges.
+
+        `lead` is the direction of travel in tile units, each component -1, 0 or
+        +1. A ring is only useful ahead of the view: spent behind, it competes
+        with the on-screen tiles for the same connections and costs more than it
+        saves. A stationary axis widens both ways.
+        """
         from cartotui.geodesy import latlon_to_tile_xy
         n = 1 << z
         xt, yt = latlon_to_tile_xy(lat, lon, z)
         cx = xt * tile_px
         cy = yt * tile_px
-        tx0 = int(math.floor((cx - px_w / 2.0) / tile_px))
-        tx1 = int(math.floor((cx + px_w / 2.0) / tile_px))
-        ty0 = int(math.floor((cy - px_h / 2.0) / tile_px))
-        ty1 = int(math.floor((cy + px_h / 2.0) / tile_px))
+        ring = max(0, int(ring))
+        lx, ly = lead
+        if lx or ly:
+            x_lo, x_hi = (ring if lx < 0 else 0), (ring if lx > 0 else 0)
+            y_lo, y_hi = (ring if ly < 0 else 0), (ring if ly > 0 else 0)
+        else:
+            x_lo = x_hi = y_lo = y_hi = ring
+        tx0 = int(math.floor((cx - px_w / 2.0) / tile_px)) - x_lo
+        tx1 = int(math.floor((cx + px_w / 2.0) / tile_px)) + x_hi
+        ty0 = int(math.floor((cy - px_h / 2.0) / tile_px)) - y_lo
+        ty1 = int(math.floor((cy + px_h / 2.0) / tile_px)) + y_hi
         out = []
         for ty in range(ty0, ty1 + 1):
             for tx in range(tx0, tx1 + 1):
@@ -169,14 +217,36 @@ class VectorTileSource:
                     out.append((z, tx, ty))
         return out
 
-    def prefetch_viewport(self, lat, lon, z, px_w, px_h) -> None:
+    def prefetch_viewport(self, lat, lon, z, px_w, px_h, ring: int = 1) -> None:
+        """Get the viewport's tiles, and a ring ahead of them, onto disk.
+
+        Raw bytes on disk are what the base map needs: the libcarto backend
+        reads `get_raw`, and during a pan it passes `cached_only=True`, so a
+        tile that has not landed is drawn as nothing. Only the pure-Python
+        engine and the label overlays read the decoded cache.
+
+        Do not decode here. Decode is ~18 ms of pure Python a tile and holds the
+        GIL, and the base map never reads the result, so it would starve the
+        render worker and delay the disk writes a pan is waiting on.
+        """
+        if self._closed:
+            return
         try:
-            tiles = self._covering_tiles(lat, lon, z, px_w, px_h)
+            lead = self._note_travel(lat, lon, z)
+            core = self._covering_tiles(lat, lon, z, px_w, px_h)
+            outer = (self._covering_tiles(lat, lon, z, px_w, px_h,
+                                          ring=ring, lead=lead)
+                     if ring else core)
         except Exception:
             return
+        # On-screen tiles first: `_covering_tiles` walks from the top-left, so
+        # submitting it as it comes would fetch the margin before the view.
+        on_screen = set(core)
+        ordered = list(core) + [t for t in outer if t not in on_screen]
+
         with self._prefetch_lock:
             missing = [
-                t for t in tiles
+                t for t in ordered
                 if t not in self._prefetch_inflight and not self._disk_path(*t).exists()
             ]
             if not missing:
@@ -184,24 +254,61 @@ class VectorTileSource:
             for t in missing:
                 self._prefetch_inflight.add(t)
 
-        def work():
-            from concurrent.futures import ThreadPoolExecutor
+        pool = self._prefetch_pool()
+        for t in missing:
             try:
-                with ThreadPoolExecutor(max_workers=min(6, len(missing))) as ex:
-                    list(ex.map(lambda t: self.get_raw(*t), missing))
-            except Exception:
-                pass
-            finally:
+                pool.submit(self._prefetch_one, t)
+            except RuntimeError:            # pool shut down under us
                 with self._prefetch_lock:
-                    for t in missing:
-                        self._prefetch_inflight.discard(t)
+                    self._prefetch_inflight.discard(t)
 
-        threading.Thread(target=work, daemon=True, name="mvt-prefetch").start()
+    def _note_travel(self, lat, lon, z):
+        """Which way the view is moving, in tile units, as (-1|0|+1, -1|0|+1).
+
+        Taken from the previous centre so callers need not thread it through. A
+        zoom change or goto reads as stationary: no direction to lead in.
+        """
+        from cartotui.geodesy import latlon_to_tile_xy
+        try:
+            xt, yt = latlon_to_tile_xy(lat, lon, z)
+        except Exception:
+            return (0, 0)
+        prev = self._last_centre
+        self._last_centre = (z, xt, yt)
+        if prev is None or prev[0] != z:
+            return (0, 0)
+        dx, dy = xt - prev[1], yt - prev[2]
+        eps = 0.02                      # a fiftieth of a tile: real motion, not jitter
+        return (1 if dx > eps else (-1 if dx < -eps else 0),
+                1 if dy > eps else (-1 if dy < -eps else 0))
+
+    def _prefetch_pool(self):
+        """One executor for the life of the source, shared by every batch."""
+        if self._prefetch_pool_obj is None:
+            with self._prefetch_lock:
+                if self._prefetch_pool_obj is None:
+                    from concurrent.futures import ThreadPoolExecutor
+                    self._prefetch_pool_obj = ThreadPoolExecutor(
+                        max_workers=_PREFETCH_WORKERS,
+                        thread_name_prefix="mvt-prefetch")
+        return self._prefetch_pool_obj
+
+    def _prefetch_one(self, t) -> None:
+        try:
+            self.get_raw(*t)
+        except Exception:
+            pass
+        finally:
+            with self._prefetch_lock:
+                self._prefetch_inflight.discard(t)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        pool, self._prefetch_pool_obj = self._prefetch_pool_obj, None
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
         try:
             self._session.close()
         except Exception:
