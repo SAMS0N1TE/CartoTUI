@@ -341,7 +341,8 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--list-ports", action="store_true", help="List serial ports and exit.")
     ad.add_argument("--host", help="sbs1: feed host (e.g. 192.168.1.50).")
     ad.add_argument("--port", type=int, help="sbs1: feed port (default 30003).")
-    ad.add_argument("--provider", choices=("airplanes.live", "adsb.lol", "adsb.fi"),
+    from cartotui.traffic.adsb_api import PROVIDERS as _API_PROVIDERS
+    ad.add_argument("--provider", choices=tuple(_API_PROVIDERS),
                     help="api: aggregator to poll.")
     ad.add_argument("--radius", type=float, help="api: radius in nautical miles (max 250).")
     ad.add_argument("--interval", type=float, help="api: poll interval in seconds.")
