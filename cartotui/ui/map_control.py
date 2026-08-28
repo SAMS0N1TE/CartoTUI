@@ -399,14 +399,7 @@ class MapControl(UIControl):
 
     def request_render(self, force: bool = False) -> None:
         snap = self.state.snapshot()
-        snap_key = None
-        if force:
-            self._force_nonce = getattr(self, "_force_nonce", 0) + 1
-            ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
-            ac_sel = self.state.selected_aircraft_icao or ""
-            snap_key = (self._last_w, self._last_h, ac_gen, ac_sel,
-                        self._force_nonce) + snap
-        self._enqueue(self._last_w, self._last_h, snap, snap_key)
+        self._enqueue(self._last_w, self._last_h, snap, force=force)
         app = get_app_or_none()
         if app:
             app.invalidate()
@@ -422,24 +415,39 @@ class MapControl(UIControl):
         if self.vector_source is not None:
             self.vector_source.close()
 
-    def _enqueue(self, w: int, h: int, snap: Tuple, snap_key: Optional[Tuple] = None) -> None:
+    def _enqueue(self, w: int, h: int, snap: Tuple, snap_key: Optional[Tuple] = None,
+                 force: bool = False) -> None:
+        """Queue a render.
+
+        Two keys travel with the job. `snap_key` identifies the *content* and is
+        what the finished frame is stamped with, so `create_content` can tell
+        whether the frame on screen still matches the state. `dedup_key` only
+        gates the queue. A forced render carries a nonce in the dedup key so it
+        beats the dedup check -- but that nonce must stay out of the content key,
+        or every forced render is immediately judged stale and re-queued, and
+        costs two full renders instead of one.
+        """
         if w < 1 or h < 1:
             return
         if snap_key is None:
             ac_gen = self.aircraft_registry.generation if self.aircraft_registry else 0
             ac_sel = self.state.selected_aircraft_icao or ""
             snap_key = (w, h, ac_gen, ac_sel) + snap
+        dedup_key = snap_key
+        if force:
+            self._force_nonce = getattr(self, "_force_nonce", 0) + 1
+            dedup_key = snap_key + (self._force_nonce,)
         with self._dedup_lock:
-            if self._inflight_key == snap_key:
+            if self._inflight_key == dedup_key:
                 return
-            if (self._last_enqueued_key == snap_key
+            if (self._last_enqueued_key == dedup_key
                     and self._req_q.qsize() > 0):
                 return
-            self._last_enqueued_key = snap_key
+            self._last_enqueued_key = dedup_key
         with self._req_q.mutex:
             self._req_q.queue.clear()
         try:
-            self._req_q.put_nowait((w, h, snap, snap_key))
+            self._req_q.put_nowait((w, h, snap, snap_key, dedup_key))
         except queue.Full:
             pass
 
@@ -455,13 +463,13 @@ class MapControl(UIControl):
             if job is None or self._stop.is_set():
                 break
 
-            w, h, snap, snap_key = job
+            w, h, snap, snap_key, dedup_key = job
             (lat, lon, z, source, render_mode, palette, color, dither,
              theme, shaded, labels, brightness, contrast, gamma, saturation,
              black_point, white_point, threshold_mode, _src_idx) = snap
 
             with self._dedup_lock:
-                self._inflight_key = snap_key
+                self._inflight_key = dedup_key
 
             cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
@@ -721,7 +729,7 @@ class MapControl(UIControl):
                 app.invalidate()
 
             with self._dedup_lock:
-                if self._inflight_key == snap_key:
+                if self._inflight_key == dedup_key:
                     self._inflight_key = None
 
     def _cell_pixel_size(self) -> Tuple[int, int]:
