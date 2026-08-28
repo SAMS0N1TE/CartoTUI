@@ -133,6 +133,13 @@ class Renderer:
         self._tile_cache_max = 512
         self._cache_lock = threading.Lock()
 
+        # Two pools, kept apart on purpose: a viewport render blocks on its
+        # own fetches, so it must not queue behind speculative ring prefetches.
+        self._pools = {}
+        self._pool_lock = threading.Lock()
+        self._prefetch_inflight = set()
+        self._prefetch_lock = threading.Lock()
+
     def set_vector_style(self, vs, road_width_scale: float = 1.0) -> None:
         if vs is None:
             return
@@ -185,30 +192,73 @@ class Renderer:
                 self._tile_cache.pop(old, None)
         return buf
 
+    def _fetch_pool(self, name, workers):
+        """A long-lived pool for tile fetches.
+
+        Built on demand and kept, because these are hit once per rendered frame;
+        standing a pool up per call costs more than the work it does.
+        """
+        pool = self._pools.get(name)
+        if pool is None:
+            with self._pool_lock:
+                pool = self._pools.get(name)
+                if pool is None:
+                    pool = ThreadPoolExecutor(
+                        max_workers=max(1, int(workers)),
+                        thread_name_prefix=f"carto-{name}")
+                    self._pools[name] = pool
+        return pool
+
+    def close(self):
+        with self._pool_lock:
+            pools, self._pools = self._pools, {}
+        for pool in pools.values():
+            pool.shutdown(wait=False, cancel_futures=True)
+
     def prefetch_ring(self, lat, lon, z, w, h, fetch, ring=1, workers=4):
-        def work():
+        # Work out what is missing on the caller's thread. This runs on every
+        # non-panning frame and is almost always a no-op, so spawning a thread
+        # first and deciding afterwards just burns a thread per frame.
+        n = 2 ** z
+        cx = ((lon + 180.0) / 360.0) * n * 256
+        yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0
+        cy = yn * n * 256
+        tx0 = int(math.floor((cx - w / 2.0) / 256)) - ring
+        tx1 = int(math.floor((cx + w / 2.0) / 256)) + ring
+        ty0 = int(math.floor((cy - h / 2.0) / 256)) - ring
+        ty1 = int(math.floor((cy + h / 2.0) / 256)) + ring
+        missing = []
+        with self._cache_lock:
+            for ty in range(ty0, ty1 + 1):
+                for tx in range(tx0, tx1 + 1):
+                    if (0 <= tx < n and 0 <= ty < n
+                            and (z, tx, ty) not in self._tile_cache):
+                        missing.append((z, tx, ty))
+        if not missing:
+            return
+
+        pool = self._fetch_pool("prefetch", workers)
+        with self._prefetch_lock:
+            missing = [k for k in missing if k not in self._prefetch_inflight]
+            if not missing:
+                return
+            self._prefetch_inflight.update(missing)
+
+        def one(k):
             try:
-                n = 2 ** z
-                cx = ((lon + 180.0) / 360.0) * n * 256
-                yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0
-                cy = yn * n * 256
-                tx0 = int(math.floor((cx - w / 2.0) / 256)) - ring
-                tx1 = int(math.floor((cx + w / 2.0) / 256)) + ring
-                ty0 = int(math.floor((cy - h / 2.0) / 256)) - ring
-                ty1 = int(math.floor((cy + h / 2.0) / 256)) + ring
-                missing = []
-                for ty in range(ty0, ty1 + 1):
-                    for tx in range(tx0, tx1 + 1):
-                        if 0 <= tx < n and 0 <= ty < n and (z, tx, ty) not in self._tile_cache:
-                            missing.append((z, tx, ty))
-                if not missing:
-                    return
-                with ThreadPoolExecutor(max_workers=min(workers, len(missing))) as ex:
-                    for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
-                        self._store_tile(k, raw)
+                self._store_tile(k, fetch(k[0], k[1], k[2]))
             except Exception:
                 pass
-        threading.Thread(target=work, daemon=True).start()
+            finally:
+                with self._prefetch_lock:
+                    self._prefetch_inflight.discard(k)
+
+        for k in missing:
+            try:
+                pool.submit(one, k)
+            except RuntimeError:
+                with self._prefetch_lock:
+                    self._prefetch_inflight.discard(k)
 
     @property
     def lock(self):
@@ -258,10 +308,9 @@ class Renderer:
 
         missing = [(z, tx, ty) for (tx, ty) in tiles if (z, tx, ty) not in self._tile_cache]
         if len(missing) > 1:
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=min(8, len(missing))) as ex:
-                for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
-                    self._store_tile(k, raw)
+            ex = self._fetch_pool("viewport", 8)
+            for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
+                self._store_tile(k, raw)
         elif missing:
             k = missing[0]
             self._store_tile(k, fetch(k[0], k[1], k[2]))
