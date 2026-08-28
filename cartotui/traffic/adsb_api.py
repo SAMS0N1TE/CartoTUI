@@ -10,25 +10,29 @@ from cartotui.traffic.source import TrafficSource
 
 log = logging.getLogger("cartotui.traffic.adsb_api")
 
+# Order matters: the first entry is what setup offers by default.
 PROVIDERS = {
-    "airplanes.live": {
-        "url": "https://api.airplanes.live/v2/point/{lat}/{lon}/{radius}",
-        "key": "ac",
-        "min_interval_s": 1.0,
-    },
     "adsb.lol": {
         "url": "https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}",
         "key": "ac",
         "min_interval_s": 1.0,
+        "note": "",
     },
     "adsb.fi": {
         "url": "https://opendata.adsb.fi/api/v2/lat/{lat}/lon/{lon}/dist/{radius}",
         "key": "aircraft",
         "min_interval_s": 1.0,
+        "note": "",
+    },
+    "airplanes.live": {
+        "url": "https://api.airplanes.live/v2/point/{lat}/{lon}/{radius}",
+        "key": "ac",
+        "min_interval_s": 1.0,
+        "note": "needs prior permission -- returns 403 to unregistered callers",
     },
 }
 
-DEFAULT_PROVIDER = "airplanes.live"
+DEFAULT_PROVIDER = "adsb.lol"
 MAX_RADIUS_NM = 250
 
 INTERVAL_MIN_S = 0.5
@@ -242,6 +246,7 @@ class ADSBApiSource(TrafficSource):
         session.headers.update({"User-Agent": self.user_agent})
         backoff = 1.0
         last_prune = time.time()
+        last_error: Optional[str] = None
 
         while not self._stop_evt.is_set():
             cycle_start = time.time()
@@ -255,12 +260,28 @@ class ADSBApiSource(TrafficSource):
             except Exception as e:
                 self._bump(parse_errors=1)
                 self._set_status(connected=False, detail=f"{self.provider}: {e}")
+                # Log the first failure and any change of cause, then stay quiet:
+                # this loop runs every couple of seconds, and a provider that has
+                # closed its public endpoint would otherwise fill the log. Before
+                # this the only trace of a dead provider was the status line.
+                cause = f"{e.__class__.__name__}: {e}"
+                if cause != last_error:
+                    last_error = cause
+                    note = PROVIDERS[self.provider].get("note")
+                    log.warning(
+                        "ADS-B provider %s is not answering (%s).%s Pick another "
+                        "with: cartotui-config adsb --provider %s",
+                        self.provider, cause,
+                        f" {note}." if note else "",
+                        next((p for p in PROVIDERS if p != self.provider), "adsb.lol"),
+                    )
                 if self._stop_evt.wait(timeout=backoff):
                     return
                 backoff = min(backoff * 2, 30.0)
                 continue
 
             backoff = 1.0
+            last_error = None
             aircraft = data.get(key) or []
             count = 0
             for raw in aircraft:

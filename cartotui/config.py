@@ -151,7 +151,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "port": 30003,
         },
         "api": {
-            "provider": "airplanes.live",
+            "provider": "adsb.lol",
             "radius_nm": 100.0,
             "interval_s": 5.0,
             "follow_map": True,

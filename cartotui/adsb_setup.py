@@ -290,8 +290,9 @@ def probe_config(cfg: Config) -> TestResult:
             m = cfg.data.get("map", {})
             lat = float(m.get("center_lat", 0.0))
             lon = float(m.get("center_lon", 0.0))
+        from cartotui.traffic.adsb_api import DEFAULT_PROVIDER
         return probe_api(
-            str(api.get("provider", "airplanes.live")), lat, lon,
+            str(api.get("provider") or DEFAULT_PROVIDER), lat, lon,
             float(api.get("radius_nm", 100.0)),
             str(cfg.data.get("network", {}).get("user_agent", "CartoTUI")),
         )
