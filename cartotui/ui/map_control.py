@@ -532,6 +532,12 @@ class MapControl(UIControl):
             tone_done = False
 
             if source == "vector" and self.vector_source is not None:
+                # Above a source's real depth every tile 404s; render the parent
+                # tiles scaled up rather than an empty frame.
+                try:
+                    fetch_z = self.vector_source.max_fetch_zoom(z)
+                except Exception:
+                    fetch_z = z
                 engine = self.cfg["render"].get("vector_engine", "libcarto")
                 if engine == "libcarto":
                     try:
@@ -546,6 +552,7 @@ class MapControl(UIControl):
                             supersample=supersample,
                             road_thickness=road_thickness,
                             tone=tone,
+                            max_fetch_zoom=fetch_z,
                         )
                         tone_done = img is not None and tone is not None
                         if panning:
@@ -562,7 +569,15 @@ class MapControl(UIControl):
                         except Exception:
                             bg = (24, 26, 32)
                         img = Image.new("RGB", (px_w, px_h), bg)
-                if img is None:
+                # The attempt just made is how the source learns it has no
+                # tiles this deep.
+                try:
+                    deeper = self.vector_source.max_fetch_zoom(z)
+                except Exception:
+                    deeper = fetch_z
+                too_deep = deeper < fetch_z
+
+                if img is None and not too_deep:
                     try:
                         img = rasterise_view(
                             self.vector_source, lat, lon, z, px_w, px_h, style=style,
@@ -570,6 +585,7 @@ class MapControl(UIControl):
                             selected_icao=None,
                             supersample=supersample,
                             road_thickness=road_thickness,
+                            pmap_max_zoom=fetch_z,
                         )
                     except Exception as e:
                         log.warning("Vector rasterise failed: %s", e)
@@ -577,6 +593,14 @@ class MapControl(UIControl):
                 if img is not None and tone is not None and not tone_done:
                     from cartotui.composite import apply_image_adjustments
                     img = apply_image_adjustments(img, **tone)
+
+                # A miss yields a blank frame rather than a failure, so the
+                # retry keys off the depth the source just revealed, not `img`.
+                # Without it the empty frame stays up until something else moves.
+                if too_deep:
+                    log.info("vector source has no tiles at z%d; overzooming "
+                             "from z%d", fetch_z, deeper)
+                    self.request_render(force=True)
 
             if img is None:
                 cfg_sharpen = int(r.get("sharpen_percent", 150))

@@ -133,7 +133,7 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
 
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
-                            road_thickness=1.0, tone=None):
+                            road_thickness=1.0, tone=None, max_fetch_zoom=None):
     renderer = _get_renderer()
 
     def base_fetch(zz, xx, yy):
@@ -155,14 +155,16 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
             with _load_lock:
                 _load_pending -= 1
 
+    fetch_z = z if max_fetch_zoom is None else min(int(z), int(max_fetch_zoom))
     rgb565, drawn = renderer.render_viewport(
         lat, lon, z, px_w, px_h, counted_fetch,
         style=style,
         road_width_scale=(max(1.0, float(supersample))
                           * max(0.05, float(road_thickness))),
+        fetch_z=fetch_z,
     )
     if preload:
-        renderer.prefetch_ring(lat, lon, z, px_w, px_h, base_fetch, ring=1)
+        renderer.prefetch_ring(lat, lon, fetch_z, px_w, px_h, base_fetch, ring=1)
     if drawn == 0:
         return None
     return _rgb565_to_image(rgb565, px_w, px_h, tone)
