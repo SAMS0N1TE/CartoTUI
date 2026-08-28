@@ -254,6 +254,10 @@ class CartoTUIApp:
         finally:
             self._radar_stop.set()
             try:
+                self.radar_source.close()
+            except Exception:
+                pass
+            try:
                 self.traffic_source.stop(timeout_s=2.0)
             except Exception:
                 pass
