@@ -530,6 +530,7 @@ class MapControl(UIControl):
             if not tone_active(**tone):
                 tone = None
             tone_done = False
+            fetch_z = z
 
             if source == "vector" and self.vector_source is not None:
                 # Above a source's real depth every tile 404s; render the parent
@@ -682,6 +683,9 @@ class MapControl(UIControl):
                         term_w=w, term_h=h,
                         canvas_px_w=px_w, canvas_px_h=px_h,
                         style=style,
+                        # Same depth the map itself was drawn from, so labels
+                        # and boundaries are not asking for tiles that 404.
+                        pmap_max_zoom=fetch_z,
                         max_labels=64 if labels_enabled else 0,
                         draw_boundaries=boundaries_enabled,
                         boundary_style=str(r_cfg.get("boundary_style", "dots")),
