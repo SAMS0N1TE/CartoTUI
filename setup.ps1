@@ -99,7 +99,8 @@ function Build-Libcarto {
     $lib      = Join-Path $Root "libcarto"
     $build    = Join-Path $lib "build"
     $out      = Join-Path $build "carto.dll"
-    $srcNames = @("style.c", "framebuffer.c", "raster.c", "geom.c", "mvt.c", "carto.c")
+    $srcNames = @("style.c", "framebuffer.c", "raster.c", "geom.c", "mvt.c",
+                  "carto.c", "cells.c")
 
     New-Item -ItemType Directory -Force $build | Out-Null
     if (Test-Path $out) { Remove-Item -Force $out }
@@ -142,7 +143,8 @@ function Build-Libcarto {
             $srcs = ($srcNames | ForEach-Object { '"' + (Join-Path $lib "src\$_") + '"' }) -join " "
             $inc  = Join-Path $lib "include"
             $exports = (@("carto_fb_init", "carto_style_default", "carto_begin",
-                          "carto_render_tile", "carto_end") |
+                          "carto_render_tile", "carto_end",
+                          "carto_cellify", "carto_cell_geometry") |
                         ForEach-Object { "/EXPORT:$_" }) -join " "
             $cmd = "call `"$vcvars`" >nul && cl /nologo /LD /O2 /I`"$inc`" $srcs " +
                    "/Fe:`"$out`" /Fo:`"$build\`" /link $exports"

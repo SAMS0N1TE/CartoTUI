@@ -68,6 +68,7 @@ class CartoTUIApp:
             subpixel_percentile=float(rcfg.get("subpixel_percentile", 55)),
             shaded_blocks=bool(rcfg.get("shaded_blocks", False)),
         )
+        self.renderer.use_native_cells = bool(rcfg.get("native_cells", True))
 
         traffic_cfg = self.cfg.data.get("traffic", {}) if hasattr(self.cfg, "data") else {}
         self.aircraft_registry = AircraftRegistry(

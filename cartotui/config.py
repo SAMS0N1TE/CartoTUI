@@ -79,6 +79,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vector_overlay": True,
         "boundaries": True,
         "vector_engine": "libcarto",
+        "native_cells": True,
         "vector_scale": 6,
         "vector_render_mode": "quadrant",
         "raster_render_mode": "ascii",
