@@ -18,6 +18,9 @@ _MAPS_URL = "https://api.rainviewer.com/public/weather-maps.json"
 _META_TTL_S = 180.0
 RADAR_MAX_Z = 7
 RADAR_MAX_PX = 768
+RADAR_PARALLEL = 8
+# However many tiles land in a burst, ask for at most one repaint this often.
+_READY_COALESCE_S = 0.25
 
 
 def _is_precip_tile(tile: Image.Image) -> bool:
@@ -59,6 +62,14 @@ class RadarSource:
         self.max_px = RADAR_MAX_PX
         self.meta_ttl_s = _META_TTL_S
         self.on_tiles_ready: Optional[callable] = None
+        self._pending = set()       # keys a batch has already claimed
+        self._session = None        # built on first use, see _http()
+        self._session_lock = threading.Lock()
+        self._pool_obj = None
+        self._ready_lock = threading.Lock()
+        self._ready_at = 0.0
+        self._ready_timer = None
+        self._closed = False
 
     def loading(self) -> int:
         """Number of radar tiles currently being fetched in the background."""
@@ -159,8 +170,7 @@ class RadarSource:
                f"/{z}/{x}/{y}/{color}/{smooth}_{snow}.png")
         tile = None
         try:
-            import requests
-            r = requests.get(url, headers={"User-Agent": self.user_agent}, timeout=8)
+            r = self._http().get(url, timeout=8)
             if r.status_code == 200 and r.content:
                 tile = Image.open(io.BytesIO(r.content)).convert("RGBA")
                 if not _is_precip_tile(tile):
@@ -201,52 +211,141 @@ class RadarSource:
                 coords.append((tx % n, ty))
         return rz, coords
 
+    def _http(self):
+        """One pooled session for every radar tile.
+
+        A bare `requests.get` opens a fresh TCP+TLS connection per tile, and
+        across an animation's frames that handshake costs more than the
+        transfer.
+        """
+        if self._session is None:
+            with self._session_lock:
+                if self._session is None:
+                    import requests
+                    from requests.adapters import HTTPAdapter
+                    sess = requests.Session()
+                    sess.headers["User-Agent"] = self.user_agent
+                    adapter = HTTPAdapter(pool_connections=RADAR_PARALLEL,
+                                          pool_maxsize=RADAR_PARALLEL)
+                    sess.mount("https://", adapter)
+                    sess.mount("http://", adapter)
+                    self._session = sess
+        return self._session
+
+    def _pool(self):
+        """One executor for the life of the source, shared by every batch."""
+        if self._pool_obj is None:
+            with self._session_lock:
+                if self._pool_obj is None:
+                    from concurrent.futures import ThreadPoolExecutor
+                    self._pool_obj = ThreadPoolExecutor(
+                        max_workers=RADAR_PARALLEL,
+                        thread_name_prefix="radar-tile")
+        return self._pool_obj
+
     def _prefetch(self, lat, lon, z, px_w, px_h, color, smooth, snow, frames):
-        """Load every not-yet-cached tile for `frames` over the viewport in a
-        single background batch, then invoke on_tiles_ready once when done."""
-        if not frames:
+        """Queue the tiles for `frames` over the viewport that nothing holds yet.
+
+        A tile is skipped when it is already cached *or already queued by an
+        earlier batch*. Without the second test, a pan issues a fresh batch
+        every time the rounded centre moves and each re-requests whatever the
+        batches in flight have not finished, an order of magnitude more fetches
+        than the viewport needs.
+        """
+        if not frames or self._closed:
             return
         rz, coords = self._tile_coords(lat, lon, z, px_w, px_h)
 
         todo = []
-        for f in frames:
-            t, p = f.get("time"), f.get("path")
-            for (x, y) in coords:
-                key = (t, rz, x, y, color, smooth, snow, self.tile_size)
-                with self._lock:
-                    if key in self._cache:
-                        continue
-                todo.append((t, p, x, y))
-        if not todo:
-            return
-
         with self._lock:
+            for f in frames:
+                t, p = f.get("time"), f.get("path")
+                for (x, y) in coords:
+                    key = (t, rz, x, y, color, smooth, snow, self.tile_size)
+                    if key in self._cache or key in self._pending:
+                        continue
+                    self._pending.add(key)
+                    todo.append((key, t, p, x, y))
+            if not todo:
+                return
             self._inflight += len(todo)
 
-        def one(t, p, x, y):
+        def one(key, t, p, x, y):
             try:
-                self._tile_for(t, p, rz, x, y, color, smooth, snow)
-                return 1
+                return 1 if self._tile_for(t, p, rz, x, y, color, smooth, snow) else 0
+            except Exception:
+                return 0
             finally:
                 with self._lock:
                     self._inflight -= 1
+                    self._pending.discard(key)
 
-        def work():
-            from concurrent.futures import ThreadPoolExecutor
-            added = 0
+        pool = self._pool()
+        for args in todo:
             try:
-                with ThreadPoolExecutor(max_workers=8) as ex:
-                    futs = [ex.submit(one, t, p, x, y) for (t, p, x, y) in todo]
-                    added = sum(fu.result() for fu in futs)
+                pool.submit(one, *args).add_done_callback(self._tile_done)
+            except RuntimeError:        # pool shut down under us
+                with self._lock:
+                    self._inflight -= 1
+                    self._pending.discard(args[0])
+
+    def _tile_done(self, fut) -> None:
+        try:
+            if fut.result():
+                self._signal_ready()
+        except Exception:
+            pass
+
+    def _signal_ready(self) -> None:
+        """Ask for one repaint per burst of tiles, not one per batch."""
+        if self.on_tiles_ready is None or self._closed:
+            return
+        with self._ready_lock:
+            if self._ready_timer is not None:
+                return                  # a repaint is already scheduled
+            wait = self._ready_at + _READY_COALESCE_S - time.monotonic()
+            if wait <= 0:
+                self._ready_at = time.monotonic()
+                timer = None
+            else:
+                timer = threading.Timer(wait, self._fire_ready)
+                timer.daemon = True
+                self._ready_timer = timer
+        if timer is None:
+            self._call_ready()
+        else:
+            timer.start()
+
+    def _fire_ready(self) -> None:
+        with self._ready_lock:
+            self._ready_timer = None
+            self._ready_at = time.monotonic()
+        self._call_ready()
+
+    def _call_ready(self) -> None:
+        cb = self.on_tiles_ready
+        if cb is None or self._closed:
+            return
+        try:
+            cb()
+        except Exception as e:
+            log.debug("radar on_tiles_ready failed: %s", e)
+
+    def close(self) -> None:
+        self._closed = True
+        with self._ready_lock:
+            if self._ready_timer is not None:
+                self._ready_timer.cancel()
+                self._ready_timer = None
+        pool, self._pool_obj = self._pool_obj, None
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+        sess, self._session = self._session, None
+        if sess is not None:
+            try:
+                sess.close()
             except Exception:
                 pass
-            if added and self.on_tiles_ready is not None:
-                try:
-                    self.on_tiles_ready()
-                except Exception:
-                    pass
-
-        threading.Thread(target=work, daemon=True).start()
 
     def prefetch_viewport(self, lat, lon, z, px_w, px_h, color=4, smooth=1, snow=1):
         self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow,
