@@ -285,12 +285,19 @@ class Renderer:
             return bytes(pixels)
 
     def render_viewport(self, lat, lon, z, w, h, fetch, tile_px=256,
-                        style=None, road_width_scale=1.0):
+                        style=None, road_width_scale=1.0, fetch_z=None):
         """Render a viewport. Pass `style` here rather than calling
         `set_vector_style` separately: the native context keeps a live pointer to
         the one style struct, so applying it under the same lock as the render is
         what stops another thread restyling this frame mid-flight."""
         L = self.lib
+        # Overzoom. carto_render_tile places a tile at tile_x * tile_px and
+        # ignores the tile's own z, so rendering the world at the fetch zoom
+        # with tile_px doubled per level covers exactly the deeper viewport --
+        # the parent tiles scaled up, instead of a blank frame.
+        if fetch_z is not None and 0 <= fetch_z < z:
+            tile_px = int(tile_px) << (int(z) - int(fetch_z))
+            z = int(fetch_z)
         n = 2 ** z
         cx = ((lon + 180.0) / 360.0) * n * tile_px
         yn = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0

@@ -60,6 +60,13 @@ class VectorTileSource:
         self._prefetch_inflight: set = set()
         self._prefetch_lock = threading.Lock()
 
+        # What depth this source actually has. Tile servers advertise nothing,
+        # so it is learned from 404s: versatiles' OSM tiles stop at z14, and
+        # asking it for z15 returns nothing and renders a black screen.
+        self._zoom_lock = threading.Lock()
+        self._zoom_ok: set = set()
+        self._zoom_missing: Dict[int, int] = {}
+
         self._session = requests.Session()
         self._session.headers["User-Agent"] = user_agent
 
@@ -95,6 +102,44 @@ class VectorTileSource:
                 self._decoded.pop(drop, None)
             self._decoded[key] = tile
         return tile
+
+    _MISSES_BEFORE_CAPPING = 3
+
+    def _note_zoom(self, z: int, status: int) -> None:
+        with self._zoom_lock:
+            if status == 200:
+                self._zoom_ok.add(z)
+                self._zoom_missing.pop(z, None)
+            elif status == 404:
+                self._zoom_missing[z] = self._zoom_missing.get(z, 0) + 1
+
+    def max_fetch_zoom(self, z: int) -> int:
+        """The deepest zoom at or below `z` worth asking this source for.
+
+        Above a source's real depth every tile 404s and the frame comes out
+        empty. Clamping here lets the renderer scale the parent tiles up
+        instead -- blurrier, but a map rather than a black screen.
+
+        `vector.max_zoom` pins it explicitly; otherwise it is learned, stepping
+        down one level per frame until it lands on a zoom that answers.
+        """
+        try:
+            cap = int(self.cfg.get("max_zoom") or 0)
+        except (TypeError, ValueError):
+            cap = 0
+        if cap <= 0 and self._pm_header:
+            cap = int(self._pm_header.get("max_zoom") or 0)
+        if cap > 0:
+            return max(0, min(z, cap))
+        with self._zoom_lock:
+            # A tile pyramid is contiguous, so the shallowest zoom known to be
+            # empty bounds every zoom below it too. Without that, learning walks
+            # down one level per frame and each step shows a blank frame.
+            dead = [zz for zz, misses in self._zoom_missing.items()
+                    if misses >= self._MISSES_BEFORE_CAPPING and zz not in self._zoom_ok]
+            if not dead:
+                return int(z)
+            return max(0, min(int(z), min(dead) - 1))
 
     def get_raw(self, z: int, x: int, y: int, cached_only: bool = False) -> Optional[bytes]:
         raw = self._load_raw_from_disk(z, x, y)
@@ -210,15 +255,16 @@ class VectorTileSource:
             log.warning("protomaps_api selected but no protomaps_api_key set")
             return None
         url = url_tmpl.format(z=z, x=x, y=y) + f"?key={key}"
-        return self._http_get(url)
+        return self._http_get(url, on_status=lambda code: self._note_zoom(z, code))
 
     def _fetch_mvt_url(self, z: int, x: int, y: int) -> Optional[bytes]:
         url_tmpl = self.cfg.get("mvt_url", "")
         if not url_tmpl:
             return None
-        return self._http_get(url_tmpl.format(z=z, x=x, y=y))
+        return self._http_get(url_tmpl.format(z=z, x=x, y=y),
+                              on_status=lambda code: self._note_zoom(z, code))
 
-    def _http_get(self, url: str) -> Optional[bytes]:
+    def _http_get(self, url: str, on_status=None) -> Optional[bytes]:
         with self._lock:
             if not getattr(self, "_logged_first_url", False):
                 self._logged_first_url = True
@@ -234,6 +280,8 @@ class VectorTileSource:
         except requests.RequestException as e:
             self._log_failure_once(url, f"network error: {e.__class__.__name__}: {e}")
             return None
+        if on_status is not None:
+            on_status(r.status_code)
         if r.status_code == 404:
             log.debug("404 for %s", _redact_key(url))
             return None
