@@ -80,6 +80,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "boundaries": True,
         "vector_engine": "libcarto",
         "native_cells": True,
+        "direct_paint": False,
         "vector_scale": 6,
         "vector_render_mode": "quadrant",
         "raster_render_mode": "ascii",
