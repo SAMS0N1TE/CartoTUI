@@ -12,9 +12,27 @@ class StatusBar(UIControl):
     def __init__(self, state: MapState, cfg: Config) -> None:
         self.state = state
         self.cfg = cfg
+        self._engine: str | None = None
 
     def is_focusable(self) -> bool:
         return False
+
+    def _engine_tag(self) -> str:
+        """"C" if the native renderer is live, "PY" if we fell back.
+
+        The fallback is several times slower and until now announced itself only
+        as one WARNING in the log file, so a machine with no compiler looked
+        merely sluggish rather than misconfigured.
+        """
+        if self._engine is None:
+            if self.state.source != "vector":
+                return ""
+            try:
+                from cartotui.rendering.libcarto_backend import available
+                self._engine = "C" if available() else "PY"
+            except Exception:
+                self._engine = "PY"
+        return self._engine
 
     def create_content(self, width: int, height: int) -> UIContent:
         color = "color" if self.state.color else "mono"
@@ -30,6 +48,11 @@ class StatusBar(UIControl):
         )
         right_parts = []
         if show_latency:
+            engine = self._engine_tag()
+            if engine:
+                right_parts.append(
+                    ("class:statusbar.warn" if engine == "PY" else "class:statusbar",
+                     f"  {engine} "))
             warn = latency > 250
             right_parts.append(("class:statusbar.warn" if warn else "class:statusbar",
                                 f"  {latency:5.1f} ms render "))
