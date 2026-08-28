@@ -14,6 +14,7 @@ from ctypes import (
     c_double,
     c_int,
     c_int32,
+    c_int64,
     c_size_t,
     c_ubyte,
     c_uint8,
@@ -149,6 +150,10 @@ class Renderer:
             L.carto_cell_geometry.argtypes = [c_int32, POINTER(c_int32),
                                               POINTER(c_int32)]
             L.carto_cell_geometry.restype = None
+        self.has_hist = hasattr(L, "carto_histogram_u16")
+        if self.has_hist:
+            L.carto_histogram_u16.argtypes = [c_void_p, c_int64, c_void_p]
+            L.carto_histogram_u16.restype = None
         self.has_cells_565 = hasattr(L, "carto_cellify_rgb565")
         if self.has_cells_565:
             L.carto_cellify_rgb565.argtypes = [c_void_p, c_int32, c_int32, c_void_p,
@@ -277,6 +282,9 @@ class Renderer:
             c_void_p(src_ptr), int(sw), int(sh), c_void_p(lut_ptr), byref(opts),
             c_void_p(glyph_ptr), c_void_p(fg_ptr or None), c_void_p(bg_ptr or None))
         return rc == 0
+
+    def histogram_u16(self, src_ptr, n, bins_ptr):
+        self.lib.carto_histogram_u16(c_void_p(src_ptr), int(n), c_void_p(bins_ptr))
 
     def close(self):
         with self._pool_lock:

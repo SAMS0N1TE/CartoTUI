@@ -77,6 +77,11 @@ int carto_cellify_rgb565(const uint16_t *src, int32_t sw, int32_t sh,
                          const uint32_t *lut, const carto_cell_opts *opts,
                          uint32_t *glyph, uint32_t *fg, uint32_t *bg);
 
+/* Colour histogram over a 16-bit index buffer; `bins` must hold 65536 entries
+ * and is overwritten. Used to find the frame's mean luminance and the small set
+ * of colours it actually contains. */
+void carto_histogram_u16(const uint16_t *src, int64_t n, int64_t *bins);
+
 /* Subcell size for a mode, so callers can scale the grid to match. */
 void carto_cell_geometry(int32_t mode, int32_t *cell_w, int32_t *cell_h);
 

@@ -141,6 +141,20 @@ def _image_from(v, w, h, lut32):
     return Image.frombuffer("RGBA", (w, h), out32, "raw", "RGBA", 0, 1).convert("RGB")
 
 
+def _histogram(v):
+    """Per-colour counts, int64 to match what np.bincount would return."""
+    import numpy as np
+    try:
+        r = _get_renderer()
+        if getattr(r, "has_hist", False):
+            bins = np.empty(65536, dtype=np.int64)
+            r.histogram_u16(v.ctypes.data, v.size, bins.ctypes.data)
+            return bins
+    except Exception:
+        pass
+    return np.bincount(v.ravel(), minlength=65536)
+
+
 def _lut_for(v, tone):
     """The colour table this frame should be gathered through."""
     global _BASE_LUT32, _TONED_LUT32
@@ -151,16 +165,25 @@ def _lut_for(v, tone):
         # The pivot is the frame's mean luminance, taken off a 65536-bin
         # histogram of the colour indices rather than off the pixels: the same
         # sum, without materialising a float image to reduce.
-        counts = np.bincount(v.ravel(), minlength=65536)
+        counts = _histogram(v)
         total = int(counts.sum())
         if total:
+            used = np.flatnonzero(counts)
             pivot = float((counts * _lum565()).sum() / total)
             key = (pivot, tuple(sorted(tone.items())))
             cached = _TONED_LUT32
             if cached is not None and cached[0] == key:
                 lut32 = cached[1]
             else:
-                lut32 = _pack_lut32(_toned_lut(pivot, tone))
+                # A themed vector frame holds under a dozen distinct RGB565
+                # values -- background, water, parks, buildings, a few road
+                # classes. Toning the whole 65536-entry table meant doing
+                # thousands of times the necessary work; entries the frame does
+                # not contain are never gathered, so they can stay zero.
+                from cartotui.composite import tone_colors
+                lut32 = np.zeros(65536, dtype="<u4")
+                lut32[used] = _pack_lut32(
+                    tone_colors(_rgb565_lut()[used], pivot, **tone))
                 _TONED_LUT32 = (key, lut32)
     if lut32 is None:
         if _BASE_LUT32 is None:

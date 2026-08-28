@@ -654,3 +654,16 @@ int carto_cellify_rgb565(const uint16_t *src, int32_t sw, int32_t sh,
     free(rgb);
     return rc;
 }
+
+/* Colour histogram over the framebuffer.
+ *
+ * np.bincount widens its input to intp before counting, so a million 16-bit
+ * indices become an 8 MB temporary first. Counting them where they lie costs a
+ * single pass. `bins` must hold 65536 entries and is written, not accumulated.
+ */
+void carto_histogram_u16(const uint16_t *src, int64_t n, int64_t *bins) {
+    if (!src || !bins || n < 0) return;
+    memset(bins, 0, 65536 * sizeof(int64_t));
+    for (int64_t i = 0; i < n; ++i)
+        bins[src[i]]++;
+}
