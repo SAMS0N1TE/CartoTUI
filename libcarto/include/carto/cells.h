@@ -64,6 +64,19 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                   const carto_cell_opts *opts,
                   uint32_t *glyph, uint32_t *fg, uint32_t *bg);
 
+/* As above, but straight from libcarto's own RGB565 framebuffer. `lut` is a
+ * 65536-entry little-endian RGBA table (red in the low byte) with the tone
+ * chain already folded in, and
+ * the downsample to the subcell grid happens here -- so no full-resolution RGB
+ * image is materialised and resampled outside.
+ *
+ * Returns -1 when the target is larger than the source, which wants a
+ * different filter; the caller should fall back.
+ */
+int carto_cellify_rgb565(const uint16_t *src, int32_t sw, int32_t sh,
+                         const uint32_t *lut, const carto_cell_opts *opts,
+                         uint32_t *glyph, uint32_t *fg, uint32_t *bg);
+
 /* Subcell size for a mode, so callers can scale the grid to match. */
 void carto_cell_geometry(int32_t mode, int32_t *cell_w, int32_t *cell_h);
 

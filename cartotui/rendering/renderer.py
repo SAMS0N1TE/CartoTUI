@@ -238,13 +238,21 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
         (2, 2) if mode == "quadrant" else ((2, 4) if mode == "braille" else (1, 2)))
     tw, th = term_w * cw, term_h * chh
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    if img.width != tw or img.height != th:
-        img = _resample(img, tw, th)
-    arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8))
-    if arr.ndim != 3 or arr.shape[2] != 3:
-        return None
+    native_src = None
+    from cartotui.rendering.libcarto_backend import NativeFrame
+    if isinstance(img, NativeFrame) and r.has_cells_565:
+        native_src = img
+        arr = None
+    else:
+        if isinstance(img, NativeFrame):
+            img = img.image()
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        if img.width != tw or img.height != th:
+            img = _resample(img, tw, th)
+        arr = np.ascontiguousarray(np.asarray(img, dtype=np.uint8))
+        if arr.ndim != 3 or arr.shape[2] != 3:
+            return None
 
     chars = list(palette) if palette else list(" .") if mode == "ascii" else list(" ░▒▓█")
     if len(chars) < 2:
@@ -270,10 +278,18 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
     want_color = bool(opts.want_color)
     fg = np.empty(n, dtype=np.uint32) if want_color else None
     bg = np.empty(n, dtype=np.uint32) if mode == "half" else None
+    fgp = fg.ctypes.data if fg is not None else 0
+    bgp = bg.ctypes.data if bg is not None else 0
     try:
-        r.cellify(arr.ctypes.data, tw, th, opts, glyph.ctypes.data,
-                  fg.ctypes.data if fg is not None else 0,
-                  bg.ctypes.data if bg is not None else 0)
+        if native_src is not None:
+            ok = r.cellify_rgb565(native_src.indices.ctypes.data,
+                                  native_src.width, native_src.height,
+                                  native_src.lut32.ctypes.data, opts,
+                                  glyph.ctypes.data, fgp, bgp)
+            if not ok:
+                return None
+        else:
+            r.cellify(arr.ctypes.data, tw, th, opts, glyph.ctypes.data, fgp, bgp)
     except Exception as e:
         log.debug("carto_cellify failed (%s); using the python backend", e)
         return None
@@ -810,6 +826,8 @@ class Renderer:
             if frame is not None:
                 return frame
 
+        if hasattr(img, "image"):
+            img = img.image()
         backend = self._backends.get(effective_mode) or self._backends["ascii"]
         return backend.render(
             img,

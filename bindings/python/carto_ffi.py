@@ -149,6 +149,12 @@ class Renderer:
             L.carto_cell_geometry.argtypes = [c_int32, POINTER(c_int32),
                                               POINTER(c_int32)]
             L.carto_cell_geometry.restype = None
+        self.has_cells_565 = hasattr(L, "carto_cellify_rgb565")
+        if self.has_cells_565:
+            L.carto_cellify_rgb565.argtypes = [c_void_p, c_int32, c_int32, c_void_p,
+                                               POINTER(CartoCellOpts),
+                                               c_void_p, c_void_p, c_void_p]
+            L.carto_cellify_rgb565.restype = c_int
 
         self._arena_buf = (c_char * (8 * 1024 * 1024))()
         self._render_lock = threading.RLock()
@@ -257,6 +263,20 @@ class Renderer:
                                     c_void_p(bg_ptr or None))
         if rc != 0:
             raise RuntimeError(f"carto_cellify failed ({rc})")
+
+    def cellify_rgb565(self, src_ptr, sw, sh, lut_ptr, opts,
+                       glyph_ptr, fg_ptr=0, bg_ptr=0):
+        """Cells straight from the native framebuffer, downsampling on the way.
+
+        Returns False when the shape needs a filter this does not implement, so
+        the caller can fall back rather than get a wrong frame.
+        """
+        if not self.has_cells_565:
+            return False
+        rc = self.lib.carto_cellify_rgb565(
+            c_void_p(src_ptr), int(sw), int(sh), c_void_p(lut_ptr), byref(opts),
+            c_void_p(glyph_ptr), c_void_p(fg_ptr or None), c_void_p(bg_ptr or None))
+        return rc == 0
 
     def close(self):
         with self._pool_lock:

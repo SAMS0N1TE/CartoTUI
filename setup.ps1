@@ -144,7 +144,8 @@ function Build-Libcarto {
             $inc  = Join-Path $lib "include"
             $exports = (@("carto_fb_init", "carto_style_default", "carto_begin",
                           "carto_render_tile", "carto_end",
-                          "carto_cellify", "carto_cell_geometry") |
+                          "carto_cellify", "carto_cellify_rgb565",
+                          "carto_cell_geometry") |
                         ForEach-Object { "/EXPORT:$_" }) -join " "
             $cmd = "call `"$vcvars`" >nul && cl /nologo /LD /O2 /I`"$inc`" $srcs " +
                    "/Fe:`"$out`" /Fo:`"$build\`" /link $exports"

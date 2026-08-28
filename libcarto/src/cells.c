@@ -464,3 +464,193 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
     free(sig); free(scratch); free(fill);
     return 0;
 }
+
+/* --------------------------------------------------- RGB565 source pipeline */
+
+/* Pillow's two downsamplers, reproduced exactly so the fused path and the PIL
+ * path agree bit for bit. Which one applies is decided the same way
+ * renderer._resample decides it. */
+
+#define CARTO_PREC_BITS 22
+
+/* The table is little-endian RGBA -- red in the low byte -- because the same
+ * table is handed to PIL as a raw RGBA buffer on the non-fused path. */
+static inline void lut_rgb(const uint32_t *lut, uint16_t v, int32_t *out) {
+    uint32_t c = lut[v];
+    out[0] = (int32_t)(c & 0xFF);
+    out[1] = (int32_t)((c >> 8) & 0xFF);
+    out[2] = (int32_t)((c >> 16) & 0xFF);
+}
+
+/* ImagingReduceNxN: block sum biased by half a block, then a reciprocal
+ * multiply. The reciprocal is computed in float, as Pillow does. */
+static void reduce_nxn_565(const uint16_t *src, int32_t sw, const uint32_t *lut,
+                           int32_t fx, int32_t fy, uint8_t *dst,
+                           int32_t dw, int32_t dh) {
+    int32_t n = fx * fy;
+    uint32_t multiplier =
+        (uint32_t)(((float)(1 << 30) * 4.0f) / (float)((1 << 8) * n));
+    uint32_t amend = (uint32_t)(n / 2);
+    for (int32_t y = 0; y < dh; ++y) {
+        for (int32_t x = 0; x < dw; ++x) {
+            uint32_t s0 = amend, s1 = amend, s2 = amend;
+            for (int32_t yy = 0; yy < fy; ++yy) {
+                const uint16_t *row = src + (size_t)(y * fy + yy) * sw + x * fx;
+                for (int32_t xx = 0; xx < fx; ++xx) {
+                    int32_t c[3];
+                    lut_rgb(lut, row[xx], c);
+                    s0 += (uint32_t)c[0];
+                    s1 += (uint32_t)c[1];
+                    s2 += (uint32_t)c[2];
+                }
+            }
+            uint8_t *o = dst + ((size_t)y * dw + x) * 3;
+            o[0] = (uint8_t)((s0 * multiplier) >> 24);
+            o[1] = (uint8_t)((s1 * multiplier) >> 24);
+            o[2] = (uint8_t)((s2 * multiplier) >> 24);
+        }
+    }
+}
+
+/* precompute_coeffs for the box filter, normalised and fixed-point encoded the
+ * way normalize_coeffs_8bpc does. */
+static int32_t box_coeffs(int32_t in_size, int32_t out_size,
+                          int32_t **bounds_out, int32_t **kk_out) {
+    double scale = (double)in_size / (double)out_size;
+    double fscale = scale < 1.0 ? 1.0 : scale;
+    double support = 0.5 * fscale;
+    double inv = 1.0 / fscale;
+    int32_t ksize = (int32_t)ceil(support) * 2 + 1;
+
+    int32_t *bounds = (int32_t *)malloc((size_t)out_size * 2 * sizeof(int32_t));
+    int32_t *kk = (int32_t *)calloc((size_t)out_size * ksize, sizeof(int32_t));
+    double *tmp = (double *)malloc((size_t)ksize * sizeof(double));
+    if (!bounds || !kk || !tmp) {
+        free(bounds); free(kk); free(tmp);
+        return -1;
+    }
+
+    for (int32_t xx = 0; xx < out_size; ++xx) {
+        double center = ((double)xx + 0.5) * scale;
+        int32_t xmin = (int32_t)(center - support + 0.5);
+        if (xmin < 0) xmin = 0;
+        int32_t xmax = (int32_t)(center + support + 0.5);
+        if (xmax > in_size) xmax = in_size;
+        xmax -= xmin;
+        double ww = 0.0;
+        for (int32_t x = 0; x < xmax; ++x) {
+            double arg = ((double)(x + xmin) - center + 0.5) * inv;
+            double w = (arg > -0.5 && arg <= 0.5) ? 1.0 : 0.0;
+            tmp[x] = w;
+            ww += w;
+        }
+        bounds[xx * 2] = xmin;
+        bounds[xx * 2 + 1] = xmax;
+        for (int32_t x = 0; x < xmax; ++x) {
+            double w = ww != 0.0 ? tmp[x] / ww : 0.0;
+            kk[xx * ksize + x] =
+                (int32_t)(0.5 + w * (double)(1 << CARTO_PREC_BITS));
+        }
+    }
+    free(tmp);
+    *bounds_out = bounds;
+    *kk_out = kk;
+    return ksize;
+}
+
+static inline uint8_t clip8_prec(int64_t v) {
+    v >>= CARTO_PREC_BITS;
+    return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+}
+
+/* Horizontal then vertical, each rounding to 8 bits, exactly as Pillow does. */
+static int box_resize_565(const uint16_t *src, int32_t sw, int32_t sh,
+                          const uint32_t *lut, uint8_t *dst,
+                          int32_t dw, int32_t dh) {
+    int32_t *hb = NULL, *hk = NULL, *vb = NULL, *vk = NULL;
+    int32_t hks = box_coeffs(sw, dw, &hb, &hk);
+    int32_t vks = box_coeffs(sh, dh, &vb, &vk);
+    uint8_t *mid = (uint8_t *)malloc((size_t)dw * sh * 3);
+    if (hks < 0 || vks < 0 || !mid) {
+        free(hb); free(hk); free(vb); free(vk); free(mid);
+        return -1;
+    }
+    const int64_t bias = (int64_t)1 << (CARTO_PREC_BITS - 1);
+
+    for (int32_t y = 0; y < sh; ++y) {
+        const uint16_t *row = src + (size_t)y * sw;
+        uint8_t *out = mid + (size_t)y * dw * 3;
+        for (int32_t x = 0; x < dw; ++x) {
+            int32_t xmin = hb[x * 2], n = hb[x * 2 + 1];
+            const int32_t *k = hk + (size_t)x * hks;
+            int64_t a = bias, b = bias, c = bias;
+            for (int32_t i = 0; i < n; ++i) {
+                int32_t px[3];
+                lut_rgb(lut, row[xmin + i], px);
+                a += (int64_t)px[0] * k[i];
+                b += (int64_t)px[1] * k[i];
+                c += (int64_t)px[2] * k[i];
+            }
+            out[x * 3] = clip8_prec(a);
+            out[x * 3 + 1] = clip8_prec(b);
+            out[x * 3 + 2] = clip8_prec(c);
+        }
+    }
+
+    for (int32_t y = 0; y < dh; ++y) {
+        int32_t ymin = vb[y * 2], n = vb[y * 2 + 1];
+        const int32_t *k = vk + (size_t)y * vks;
+        uint8_t *out = dst + (size_t)y * dw * 3;
+        for (int32_t x = 0; x < dw; ++x) {
+            int64_t a = bias, b = bias, c = bias;
+            for (int32_t i = 0; i < n; ++i) {
+                const uint8_t *p = mid + ((size_t)(ymin + i) * dw + x) * 3;
+                a += (int64_t)p[0] * k[i];
+                b += (int64_t)p[1] * k[i];
+                c += (int64_t)p[2] * k[i];
+            }
+            out[x * 3] = clip8_prec(a);
+            out[x * 3 + 1] = clip8_prec(b);
+            out[x * 3 + 2] = clip8_prec(c);
+        }
+    }
+
+    free(hb); free(hk); free(vb); free(vk); free(mid);
+    return 0;
+}
+
+int carto_cellify_rgb565(const uint16_t *src, int32_t sw, int32_t sh,
+                         const uint32_t *lut, const carto_cell_opts *opts,
+                         uint32_t *glyph, uint32_t *fg, uint32_t *bg) {
+    if (!src || !lut || !opts || !glyph) return -1;
+    int32_t cw, chh;
+    carto_cell_geometry(opts->mode, &cw, &chh);
+    int32_t dw = opts->cols * cw, dh = opts->rows * chh;
+    if (dw < 1 || dh < 1) return -1;
+    /* Upscaling wants Lanczos rather than a box; let the caller fall back. */
+    if (sw < dw || sh < dh) return -1;
+
+    uint8_t *rgb = (uint8_t *)malloc((size_t)dw * dh * 3);
+    if (!rgb) return -1;
+
+    int rc;
+    if (sw == dw && sh == dh) {
+        for (int32_t i = 0; i < dw * dh; ++i) {
+            int32_t c[3];
+            lut_rgb(lut, src[i], c);
+            rgb[i * 3] = (uint8_t)c[0];
+            rgb[i * 3 + 1] = (uint8_t)c[1];
+            rgb[i * 3 + 2] = (uint8_t)c[2];
+        }
+        rc = 0;
+    } else if (sw % dw == 0 && sh % dh == 0 && (sw / dw > 1 || sh / dh > 1)) {
+        reduce_nxn_565(src, sw, lut, sw / dw, sh / dh, rgb, dw, dh);
+        rc = 0;
+    } else {
+        rc = box_resize_565(src, sw, sh, lut, rgb, dw, dh);
+    }
+    if (rc == 0)
+        rc = carto_cellify(rgb, dw, dh, opts, glyph, fg, bg);
+    free(rgb);
+    return rc;
+}
