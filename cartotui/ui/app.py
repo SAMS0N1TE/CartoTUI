@@ -21,6 +21,7 @@ from cartotui.sources import build_source_list
 from cartotui.themes import make_style
 from cartotui.traffic import AircraftRegistry
 from cartotui.traffic import build_source as build_traffic_source
+from cartotui import winperf
 from cartotui.ui.compass import Compass
 from cartotui.ui.goto import GotoPrompt
 from cartotui.ui.helppane import HelpPane
@@ -206,8 +207,16 @@ class CartoTUIApp:
         )
 
     def run(self) -> None:
+        raised_timer = False
+        if self.cfg["ui"].get("high_resolution_timer", True):
+            raised_timer = winperf.begin_high_resolution_timer(1)
         try:
             log.info("Starting CartoTUI %s", os.environ.get("USER", ""))
+            # Deferred to here: reading Application.output builds the console
+            # output, which a headless caller constructing the app must not
+            # trigger.
+            if self.cfg["ui"].get("mouse_motion", "drag") != "all":
+                winperf.use_button_only_mouse(self.app.output)
             self.traffic_source.start()
             if self.traffic_recorder is not None:
                 self.traffic_recorder.start()
@@ -225,6 +234,8 @@ class CartoTUIApp:
                 except Exception:
                     pass
             self.map_control.shutdown()
+            if raised_timer:
+                winperf.end_high_resolution_timer()
 
     def _radar_loop(self) -> None:
         rs = self.radar_source

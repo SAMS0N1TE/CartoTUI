@@ -108,6 +108,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "pan_step_cells": 6,
         "panels": [],
         "max_fps": 30,
+        "high_resolution_timer": True,
+        "mouse_motion": "drag",
     },
     "aircraft": {
         "altitude_colors": True,
