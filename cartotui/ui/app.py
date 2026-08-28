@@ -548,31 +548,43 @@ class CartoTUIApp:
         self.app.invalidate()
 
     def _apply_theme_render(self, name: str) -> None:
+        """Apply the render settings a theme declares, and only those.
+
+        A theme that says nothing about a setting leaves it alone; most bundled
+        themes carry no render block at all, so resolving every key against
+        DEFAULT_CONFIG would reset the user's tone settings on every change.
+
+        `view` is deliberately not honoured: the render mode belongs to a Look,
+        which sets it and writes the per-kind config key.
+        """
         from cartotui import theme_loader
-        from cartotui.config import DEFAULT_CONFIG
         rp = theme_loader.theme_render(name) or {}
         st = self.state
-        dr = DEFAULT_CONFIG["render"]
 
-        def _num(key, default, lo=0.2, hi=3.0):
+        def _declared(key: str, lo: float, hi: float):
+            """The theme's value for `key`, clamped -- or None if it has none."""
+            if key not in rp:
+                return None
             try:
                 return max(lo, min(hi, float(rp[key])))
-            except (KeyError, TypeError, ValueError):
-                return float(default)
+            except (TypeError, ValueError):
+                return None            # malformed is not a request to reset
 
-        st.brightness = _num("brightness", dr["brightness"])
-        st.contrast = _num("contrast", dr["contrast"])
-        st.gamma = _num("gamma", dr["gamma"])
-        st.saturation = _num("saturation", dr["saturation"], lo=0.0)
-        st.black_point = _num("black_point", dr["black_point"], lo=0.0, hi=0.9)
-        st.white_point = _num("white_point", dr["white_point"], lo=0.1, hi=1.0)
-        dith = rp.get("dither", dr["dither"])
-        st.dither = dith if dith in ("none", "bayer", "atkinson", "floyd") else dr["dither"]
+        for key, lo, hi in (("brightness", 0.2, 3.0),
+                            ("contrast", 0.2, 3.0),
+                            ("gamma", 0.2, 3.0),
+                            ("saturation", 0.0, 3.0),
+                            ("black_point", 0.0, 0.9),
+                            ("white_point", 0.1, 1.0)):
+            value = _declared(key, lo, hi)
+            if value is not None:
+                setattr(st, key, value)
 
+        if rp.get("dither") in ("none", "bayer", "atkinson", "floyd"):
+            st.dither = rp["dither"]
         if rp.get("palette"):
             st.palette = str(rp["palette"])
-        if rp.get("view") in ("ascii", "quadrant", "braille", "half"):
-            st.set_render_mode(rp["view"])
+
         patch = {}
         for k in ("road_highlight", "raster_tint", "vector_engine",
                   "vector_scale", "vector_render_mode",
