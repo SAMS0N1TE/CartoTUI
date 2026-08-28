@@ -101,12 +101,51 @@ def _pack_lut32(lut):
 _BASE_LUT32 = None
 _TONED_LUT32 = None  # (cache key, packed lut)
 
-def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
+class NativeFrame:
+    """A rendered framebuffer that has not been turned into pixels yet.
+
+    Materialising the RGB image costs a 65k-entry gather over a million pixels
+    and then a PIL resample down to the cell grid. When the renderer is going
+    straight to terminal cells libcarto can do both itself, and neither is
+    needed -- so hold the raw buffer and only convert if something asks.
+    """
+
+    __slots__ = ("indices", "width", "height", "lut32", "_image")
+    mode = "RGB"
+
+    def __init__(self, indices, width, height, lut32):
+        self.indices = indices
+        self.width = int(width)
+        self.height = int(height)
+        self.lut32 = lut32
+        self._image = None
+
+    @property
+    def size(self):
+        return (self.width, self.height)
+
+    def image(self):
+        if self._image is None:
+            self._image = _image_from(self.indices, self.width, self.height,
+                                      self.lut32)
+        return self._image
+
+    def convert(self, mode):
+        img = self.image()
+        return img if img.mode == mode else img.convert(mode)
+
+
+def _image_from(v, w, h, lut32):
+    from PIL import Image
+    out32 = lut32[v]
+    return Image.frombuffer("RGBA", (w, h), out32, "raw", "RGBA", 0, 1).convert("RGB")
+
+
+def _lut_for(v, tone):
+    """The colour table this frame should be gathered through."""
     global _BASE_LUT32, _TONED_LUT32
     import numpy as np
-    from PIL import Image
 
-    v = np.frombuffer(rgb565, dtype="<u2").reshape(h, w)
     lut32 = None
     if tone:
         # The pivot is the frame's mean luminance, taken off a 65536-bin
@@ -127,13 +166,18 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
         if _BASE_LUT32 is None:
             _BASE_LUT32 = _pack_lut32(_rgb565_lut())
         lut32 = _BASE_LUT32
+    return lut32
 
-    out32 = lut32[v]
-    return Image.frombuffer("RGBA", (w, h), out32, "raw", "RGBA", 0, 1).convert("RGB")
+
+def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
+    import numpy as np
+    v = np.frombuffer(rgb565, dtype="<u2").reshape(h, w)
+    return _image_from(v, w, h, _lut_for(v, tone))
 
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
-                            road_thickness=1.0, tone=None, max_fetch_zoom=None):
+                            road_thickness=1.0, tone=None, max_fetch_zoom=None,
+                            lazy=False):
     renderer = _get_renderer()
 
     def base_fetch(zz, xx, yy):
@@ -167,4 +211,8 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
         renderer.prefetch_ring(lat, lon, fetch_z, px_w, px_h, base_fetch, ring=1)
     if drawn == 0:
         return None
+    if lazy:
+        import numpy as np
+        v = np.frombuffer(rgb565, dtype="<u2").reshape(px_h, px_w)
+        return NativeFrame(v, px_w, px_h, _lut_for(v, tone))
     return _rgb565_to_image(rgb565, px_w, px_h, tone)

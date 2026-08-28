@@ -553,6 +553,10 @@ class MapControl(UIControl):
                             road_thickness=road_thickness,
                             tone=tone,
                             max_fetch_zoom=fetch_z,
+                            # Hand back the framebuffer rather than pixels: if
+                            # the renderer goes straight to cells, libcarto
+                            # downsamples it itself and no RGB image is built.
+                            lazy=True,
                         )
                         tone_done = img is not None and tone is not None
                         if panning:
