@@ -17,17 +17,43 @@ def _app():
         return CartoTUIApp(cfg)
 
 
-def test_switching_theme_resets_image_adjust_no_leak():
+def test_theme_without_render_block_leaves_settings_alone():
+    """A theme that declares nothing must not touch the user's tone settings."""
     app = _app()
     try:
         app.state.brightness = 2.5
         app.state.contrast = 2.0
         app.state.dither = "floyd"
+        app.state.set_render_mode("braille")
         app.state.theme = "dark"
         app._apply_theme_render("dark")
-        assert abs(app.state.brightness - 1.0) < 0.01
-        assert abs(app.state.contrast - 1.05) < 0.01
-        assert app.state.dither == "none"
+        assert abs(app.state.brightness - 2.5) < 0.01
+        assert abs(app.state.contrast - 2.0) < 0.01
+        assert app.state.dither == "floyd"
+        assert app.state.render_mode == "braille"
+    finally:
+        app.map_control.shutdown()
+
+
+def test_theme_applies_only_the_keys_it_declares():
+    """amber declares tone keys and a view; the tone applies, the view does not.
+
+    The render mode belongs to a Look, not a theme -- a theme setting it made
+    the Amber CRT look, which asks for quadrant, land on ascii instead.
+    """
+    import cartotui.theme_loader as _T
+    amber = _T.theme_render("amber")
+    if not amber:
+        return
+    app = _app()
+    try:
+        app.state.brightness = 2.5
+        app.state.set_render_mode("braille")
+        app._apply_theme_render("amber")
+        for key in ("brightness", "contrast", "gamma", "saturation"):
+            if key in amber:
+                assert abs(getattr(app.state, key) - float(amber[key])) < 0.01
+        assert app.state.render_mode == "braille"
     finally:
         app.map_control.shutdown()
 
