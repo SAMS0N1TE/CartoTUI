@@ -8,6 +8,7 @@ import sys
 from cartotui import __version__
 from cartotui.config import Config, default_config_path
 from cartotui.logging_conf import setup_logging
+from cartotui.rendering.renderer import default_palettes
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -31,7 +32,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--palette",
-        help="Override palette name (see resources/palettes.json).",
+        help=("Override palette name: "
+              + ", ".join(default_palettes())
+              + ". A literal string of glyphs, darkest first, also works."),
     )
     p.add_argument(
         "--no-color",
