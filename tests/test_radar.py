@@ -114,12 +114,16 @@ def test_inflight_balances_to_zero_after_prefetch():
     rs.on_tiles_ready = lambda: done.append(True)
     rs._prefetch(43.2, -71.5, 5, 512, 512, 4, 1, 1, [{"time": 1, "path": "/p"}])
     import time as _t
-    for _ in range(100):
-        if done:
+    # A repaint is asked for as tiles land, not once the whole batch is done,
+    # so wait for the batch to drain rather than for the first repaint.
+    for _ in range(200):
+        if rs.loading() == 0 and done:
             break
         _t.sleep(0.02)
-    assert done == [True]
+    assert done, "a repaint should have been requested"
     assert rs.loading() == 0
+    assert not rs._pending, "claimed tiles must be released once fetched"
+    rs.close()
 
 
 def test_animation_index_cycles():
