@@ -81,6 +81,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "boundaries": True,
         "geometry_mode": "standard",
         "detail_labels": True,
+        "label_background": "auto",
         "vector_engine": "libcarto",
         "native_cells": True,
         "direct_paint": True,
@@ -375,6 +376,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["subpixel_percentile"] = _coerce_int(r.get("subpixel_percentile"), 55, (5, 95))
     r["shaded_blocks"] = _coerce_bool(r.get("shaded_blocks"), DEFAULT_CONFIG["render"]["shaded_blocks"])
     r["vector_overlay"] = _coerce_bool(r.get("vector_overlay"), DEFAULT_CONFIG["render"]["vector_overlay"])
+    r["label_background"] = _coerce_choice(r.get("label_background"), ("auto", "theme", "none"), "auto")
     r["geometry_mode"] = _coerce_choice(r.get("geometry_mode"), ("standard", "solid", "vector-only"), "standard")
     for key in ("detail_labels",):
         r[key] = _coerce_bool(r.get(key), True)

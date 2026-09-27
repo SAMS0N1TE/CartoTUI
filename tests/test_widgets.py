@@ -287,4 +287,4 @@ def test_theme_does_not_duplicate_map_tone_controls():
     text = "\n".join("".join(t for _, t in line) for line in lines)
     assert "Brightness" not in text
     assert "Road width" not in text
-    assert "Save preset to this theme" in text
+    assert "Save as named preset" in text

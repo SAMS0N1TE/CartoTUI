@@ -149,6 +149,7 @@ class CartoTUIApp:
                 aircraft_registry=self.aircraft_registry,
                 get_traffic=lambda: self.traffic_source,
                 on_theme_changed=self._reload_theme,
+                on_style_changed=lambda: self._reload_theme(apply_render=False),
                 request_render=lambda: self.map_control.request_render(force=True),
                 invalidate=self._invalidate,
                 snapshot=self._snapshot,
@@ -552,9 +553,10 @@ class CartoTUIApp:
             return
         self.state.set_info("No other sources available")
 
-    def _reload_theme(self) -> None:
+    def _reload_theme(self, apply_render=True) -> None:
         self.cfg.update({"ui": {"theme": self.state.theme}})
-        self._apply_theme_render(self.state.theme)
+        if apply_render:
+            self._apply_theme_render(self.state.theme)
         self._current_style = make_style(self.cfg)
         self.map_control.request_render(force=True)
         self.app.invalidate()
@@ -566,12 +568,16 @@ class CartoTUIApp:
         themes carry no render block at all, so resolving every key against
         DEFAULT_CONFIG would reset the user's tone settings on every change.
 
-        `view` is deliberately not honoured: the render mode belongs to a Look,
-        which sets it and writes the per-kind config key.
+        Legacy themes leave `view` to Looks. Versioned user presets restore
+        the complete visual configuration, including source and view.
         """
         from cartotui import theme_loader
         rp = theme_loader.theme_render(name) or {}
         st = self.state
+        if rp.get("preset_version") == 1:
+            from cartotui.presets import apply_settings
+            apply_settings(st, self.cfg, rp)
+            return
 
         def _declared(key: str, lo: float, hi: float):
             """The theme's value for `key`, clamped -- or None if it has none."""
@@ -611,17 +617,14 @@ class CartoTUIApp:
         lk = looks.get_look(key)
         if lk is None:
             return
-        theme_changed = looks.apply_look(self.state, self.cfg, lk)
+        looks.apply_look(self.state, self.cfg, lk)
         try:
             self.cfg.save()
         except Exception:
             pass
         if announce:
             self.state.set_info(f"Look → {lk.name}")
-        if theme_changed:
-            self._reload_theme()
-        else:
-            self.map_control.request_render(force=True)
+        self._reload_theme(apply_render=False)
         self.app.invalidate()
 
     def _cycle_look(self, step: int = 1) -> None:
@@ -976,4 +979,6 @@ class CartoTUIApp:
         for binding in sidebar_kb.bindings:
             wrapped.add(*binding.keys, filter=sidebar_kb_filter)(binding.handler)
 
-        return merge_key_bindings([kb, wrapped])
+        from prompt_toolkit.key_binding import ConditionalKeyBindings
+        return ConditionalKeyBindings(merge_key_bindings([kb, wrapped]),
+            Condition(lambda: not getattr(self.widget_manager, "_dialog_open", False)))

@@ -267,7 +267,7 @@ def draw_boundary_lines(
     px_per_cell_x = canvas_px_w / max(1, term_w)
     px_per_cell_y = canvas_px_h / max(1, term_h)
 
-    color = getattr(style, "label_color", (200, 200, 200))
+    color = getattr(style, "boundary_color", getattr(style, "label_color", (200, 200, 200)))
     base_style = f"fg:#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
 
     stamps: List[Tuple[int, int, str, str]] = []
@@ -414,6 +414,7 @@ def _apply_vector_overlay(
     pmap_max_zoom: int = 15,
     max_labels: int = 64,
     label_bg: bool = True,
+    label_background: str = "auto",
     draw_boundaries: bool = False,
     boundary_style: str = "dots",
     detail_labels: bool = False,
@@ -523,8 +524,8 @@ def _apply_vector_overlay(
 
     candidates.sort(key=lambda t: (t[0], t[1]))
 
-    if label_bg:
-        bg = _inverse_color(style.label_color)
+    if label_bg and label_background != "none":
+        bg = style.halo_color if label_background == "theme" else _inverse_color(style.label_color)
         label_style = _rgb_to_style_with_bg(style.label_color, bg, bold=True)
     else:
         label_style = _rgb_to_style(style.label_color, bold=True)

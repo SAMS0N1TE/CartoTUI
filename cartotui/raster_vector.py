@@ -46,6 +46,7 @@ class VectorStyle:
     building: Tuple[int, int, int] = (75, 75, 80)
     road_color: Tuple[int, int, int] = (255, 255, 255)
     label_color: Tuple[int, int, int] = (255, 255, 255)
+    boundary_color: Tuple[int, int, int] = (128, 128, 128)
     halo_color:  Tuple[int, int, int] = (0, 0, 0)
 
     aircraft_color:          Tuple[int, int, int] = (255, 200, 60)

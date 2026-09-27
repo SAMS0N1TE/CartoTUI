@@ -53,18 +53,18 @@ class RadarSource:
         self._last_latest_seen = None
         self.animate = False
         self._anim_idx = 0
-        self._prefetch_sig = None
-        self._prefetch_cur_sig = None
         self._cache = {}
         self._cache_bytes = 0
         self._generation = 0
         self._retained_layer = None
+        self._presented_layer = None
         self._lru = []
         self._lock = threading.Lock()
         self._inflight = 0
         self.max_px = RADAR_MAX_PX
         self.meta_ttl_s = _META_TTL_S
         self.on_tiles_ready: Optional[callable] = None
+        self._retry_after = {}
         self._pending = set()       # keys a batch has already claimed
         self._session = None        # built on first use, see _http()
         self._session_lock = threading.Lock()
@@ -72,6 +72,7 @@ class RadarSource:
         self._ready_lock = threading.Lock()
         self._ready_at = 0.0
         self._ready_timer = None
+        self._retry_timer = None
         self._closed = False
 
     def loading(self) -> int:
@@ -85,13 +86,13 @@ class RadarSource:
         rz = min(int(z), RADAR_MAX_Z)
         while rz > 1:
             scale = 2 ** (z - rz)
-            rpx_w = max(1, px_w // scale)
-            rpx_h = max(1, px_h // scale)
+            rpx_w = max(1, math.ceil(px_w / scale))
+            rpx_h = max(1, math.ceil(px_h / scale))
             if max(rpx_w, rpx_h) <= self.max_px:
                 return rz, scale, rpx_w, rpx_h
             rz -= 1
         scale = 2 ** (z - rz)
-        return rz, scale, max(1, px_w // scale), max(1, px_h // scale)
+        return rz, scale, max(1, math.ceil(px_w / scale)), max(1, math.ceil(px_h / scale))
 
     def clear_cache(self) -> None:
         with self._lock:
@@ -100,9 +101,10 @@ class RadarSource:
             self._cache_bytes = 0
             self._generation += 1
             self._retained_layer = None
+            self._presented_layer = None
+            self._retry_after.clear()
 
     def force_refresh(self) -> None:
-        self.clear_cache()
         self.refresh_frames(force=True)
 
     def refresh_frames(self, force: bool = False) -> None:
@@ -175,16 +177,26 @@ class RadarSource:
         url = (f"{self._host}{frame_path}/{self.tile_size}"
                f"/{z}/{x}/{y}/{color}/{smooth}_{snow}.png")
         tile = None
+        fetched = False
         try:
             r = self._http().get(url, timeout=8)
             if r.status_code == 200 and r.content:
                 tile = Image.open(io.BytesIO(r.content)).convert("RGBA")
+                fetched = True
                 if not _is_precip_tile(tile):
                     tile = None
         except Exception as e:
             log.debug("radar tile fetch failed: %s", e)
             tile = None
         with self._lock:
+            if not fetched:
+                self._retry_after[key] = time.monotonic() + 3.0
+                if self._retry_timer is None and not self._closed:
+                    self._retry_timer = threading.Timer(3.1, self._retry_ready)
+                    self._retry_timer.daemon = True
+                    self._retry_timer.start()
+                return None
+            self._retry_after.pop(key, None)
             old = self._cache.get(key)
             if old is not None:
                 self._cache_bytes -= old.width * old.height * 4
@@ -277,7 +289,8 @@ class RadarSource:
                 t, p = f.get("time"), f.get("path")
                 for (x, y) in coords:
                     key = (t, rz, x, y, color, smooth, snow, self.tile_size)
-                    if key in self._cache or key in self._pending:
+                    if (key in self._cache or key in self._pending
+                            or self._retry_after.get(key, 0) > time.monotonic()):
                         continue
                     self._pending.add(key)
                     todo.append((key, t, p, x, y))
@@ -304,10 +317,15 @@ class RadarSource:
                     self._inflight -= 1
                     self._pending.discard(args[0])
 
+    def _retry_ready(self):
+        with self._lock:
+            self._retry_timer = None
+        self._signal_ready()
+
     def _tile_done(self, fut) -> None:
         try:
-            if fut.result():
-                self._signal_ready()
+            fut.result()
+            self._signal_ready()
         except Exception:
             pass
 
@@ -348,6 +366,10 @@ class RadarSource:
 
     def close(self) -> None:
         self._closed = True
+        with self._lock:
+            if self._retry_timer is not None:
+                self._retry_timer.cancel()
+                self._retry_timer = None
         with self._ready_lock:
             if self._ready_timer is not None:
                 self._ready_timer.cancel()
@@ -371,23 +393,11 @@ class RadarSource:
         frames = self._frames_all
         if not frames:
             return
-        sig = (round(lat, 2), round(lon, 2), int(z), len(frames),
-               frames[0].get("time"), frames[-1].get("time"))
-        if sig == self._prefetch_sig:
-            return
-        self._prefetch_sig = sig
         self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow, list(frames))
 
     def _maybe_prefetch_current(self, lat, lon, z, px_w, px_h, color, smooth, snow):
         """Static: only the currently shown frame needs to be loaded."""
-        frame = self._active_frame("latest")
-        if frame is None:
-            return
-        sig = (round(lat, 2), round(lon, 2), int(z),
-               self._frame_time, color, smooth, snow)
-        if sig == self._prefetch_cur_sig:
-            return
-        self._prefetch_cur_sig = sig
+        frame = {"time": self._frame_time, "path": self._frame_path}
         self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow, [frame])
 
     def build_layer(self, lat: float, lon: float, z: int,
@@ -414,6 +424,19 @@ class RadarSource:
                 self._maybe_prefetch(lat, lon, z, px_w, px_h, color, smooth, snow)
             else:
                 self._maybe_prefetch_current(lat, lon, z, px_w, px_h, color, smooth, snow)
+        # Present complete frames atomically. Keep the last complete image only
+        # for the identical viewport/options; never reuse an old screen crop
+        # after a zoom, pan or resize.
+        view_key = (lat, lon, z, px_w, px_h, opacity, color, smooth, snow,
+                    self.tile_size, self.max_px)
+        rz_check, coords = self._tile_coords(lat, lon, z, px_w, px_h)
+        with self._lock:
+            complete = all((self._frame_time, rz_check, x, y, color, smooth,
+                            snow, self.tile_size) in self._cache for x, y in coords)
+            presented = self._presented_layer
+        if (cached_only and not complete and presented and presented[0] == view_key
+                and presented[2] != self._frame_time):
+            return presented[1]
         getter = self._get_cached if cached_only else self._get_tile
         with self._lock:
             generation = self._generation
@@ -447,9 +470,12 @@ class RadarSource:
                     continue
                 sx = int(round(tx * tp - world_left))
                 sy = int(round(ty * tp - world_top))
-                layer.paste(tile, (sx, sy), tile)
+                layer.paste(tile, (sx, sy))
                 drew += 1
         if drew == 0:
+            if complete:
+                with self._lock:
+                    self._presented_layer = (view_key, None, self._frame_time)
             return None
 
         if (rpx_w, rpx_h) != (px_w, px_h):
@@ -460,6 +486,9 @@ class RadarSource:
         with self._lock:
             if generation == self._generation:
                 self._retained_layer = (layer_key, layer)
+                if (complete or not cached_only or self._presented_layer is None
+                        or self._presented_layer[0] != view_key):
+                    self._presented_layer = (view_key, layer, self._frame_time)
         return layer
 
     def composite_onto(self, base: Image.Image, lat: float, lon: float, z: int,

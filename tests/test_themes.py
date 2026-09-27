@@ -138,7 +138,7 @@ def test_saved_preset_round_trips_every_tone_knob(tmp_path, monkeypatch):
     for k, v in want.items():
         setattr(st, k, v)
 
-    w._save_preset()
+    w._save_as("tone_roundtrip")
     got = theme_loader.theme_render(st.theme)
     for k, v in want.items():
         assert got.get(k) == pytest.approx(v), k

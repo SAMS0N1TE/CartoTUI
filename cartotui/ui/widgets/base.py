@@ -15,6 +15,7 @@ class WidgetContext:
     aircraft_registry: Any = None
     get_traffic: Optional[Callable[[], Any]] = None
     on_theme_changed: Optional[Callable[[], None]] = None
+    on_style_changed: Optional[Callable[[], None]] = None
     request_render: Optional[Callable[[], None]] = None
     invalidate: Optional[Callable[[], None]] = None
     snapshot: Optional[Callable[[str], None]] = None

@@ -36,6 +36,8 @@ class Look:
     white_point: float = 1.0
     theme: Optional[str] = None
     tags: Tuple[str, ...] = ()
+    map_colors: Tuple[Tuple[str, str], ...] = ()
+    road_thickness: float = 0.7
 
     def summary(self) -> str:
         bits = [self.render_mode]
@@ -53,14 +55,15 @@ class Look:
 
 LOOKS: Tuple[Look, ...] = (
     Look(
-        key="terminal", name="Terminal",
-        desc="Balanced colour map. Safe default.",
-        render_mode="quadrant", palette="shades", color=True,
+        key="terminal", name="Clean Map",
+        desc="Quiet dark land, clear water and roads.",
+        theme="dark", render_mode="half", road_thickness=0.5, palette="shades", color=True,
         threshold="stable", tags=("colour", "everyday"),
     ),
     Look(
-        key="photo", name="Hi-Fi Photo",
-        desc="Half-block colour. Maximum detail.",
+        key="photo", name="Day Map",
+        desc="Bright neutral land and blue water.",
+        theme="light", road_thickness=0.5,
         render_mode="half", palette="shades", color=True,
         tags=("colour", "detail"),
     ),
@@ -108,15 +111,18 @@ LOOKS: Tuple[Look, ...] = (
     ),
     Look(
         key="paper", name="Paper Map",
-        desc="Light printed-atlas look.",
-        render_mode="quadrant", palette="shades", color=True,
-        theme="paper", tags=("colour", "light"),
+        desc="Light land and restrained atlas colours.",
+        render_mode="half", palette="shades", color=True,
+        theme="paper", road_thickness=0.5, tags=("colour", "light"),
     ),
     Look(
-        key="night", name="Night Ops",
-        desc="Muted dark palette for night.",
-        render_mode="quadrant", palette="shades", color=True,
-        theme="night", tags=("colour", "dark"),
+        key="night", name="Night Map",
+        desc="Muted colours with readable labels.",
+        render_mode="half", palette="shades", color=True,
+        theme="dark", brightness=0.9, road_thickness=0.5, tags=("colour", "dark"),
+        map_colors=(("bg", "#0d141b"), ("water", "#132b42"), ("park", "#17251f"),
+                    ("building", "#24313e"), ("road", "#899aaa"), ("label", "#c4ced6"),
+                    ("halo", "#0d141b"), ("boundary", "#51616e")),
     ),
     Look(
         key="hicon", name="High Contrast",
@@ -183,7 +189,14 @@ def apply_look(state, cfg, look: Look) -> bool:
         state.theme = look.theme
         theme_changed = True
 
+    cfg.data["theme"] = dict(look.map_colors)
     render_patch = {
+        "geometry_mode": "standard",
+        "road_thickness": look.road_thickness,
+        "road_thickness_by_mode": {mode: 1.0 for mode in _MODES},
+        "road_highlight": False,
+        "raster_tint": "none",
+        "label_background": "theme",
         "color": bool(look.color),
         "dither": state.dither,
         "brightness": round(float(look.brightness), 3),

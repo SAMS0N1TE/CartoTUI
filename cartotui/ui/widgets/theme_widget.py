@@ -1,286 +1,247 @@
 from __future__ import annotations
 
-import os
-from typing import Dict, Optional
+import re
+from copy import deepcopy
 
-from cartotui import theme_loader
+from cartotui import theme_loader as T
+from cartotui.presets import apply_settings, capture_settings, preset_name
 from cartotui.ui.widgets.base import Widget
+from cartotui.ui.widgets.input_dialog import ask_text
 from cartotui.ui.widgets.registry import register_widget
 
-_UI_CORE = ("bg", "fg", "dim", "accent", "key", "section", "border",
-            "panel_bg", "title_bg", "title_fg", "sel_bg", "sel_fg", "warn", "ok")
+MAP_FIELDS = (("Labels", "label"), ("Label backing", "halo"), ("Land", "bg"),
+              ("Roads", "road"), ("Water", "water"), ("Parks", "park"),
+              ("Buildings", "building"), ("Boundaries", "boundary"), ("Aircraft", "aircraft"))
+UI_FIELDS = (("Panel", "settings_bg"), ("Text", "settings_fg"), ("Accent", "settings_accent"),
+             ("Selected row", "settings_sel_bg"), ("Selected text", "settings_sel_fg"), ("Borders", "settings_dim"))
+SWATCHES = (("White", "#eeeeee"), ("Black", "#121212"), ("Grey", "#889099"),
+            ("Red", "#ed7777"), ("Amber", "#ffcc77"), ("Green", "#8fd694"),
+            ("Cyan", "#77d8df"), ("Blue", "#80adff"), ("Violet", "#bd9bff"), ("Pink", "#ee9ac1"))
 
-_EDIT_FIELDS = [
-    ("Background", "bg"),
-    ("Text", "fg"),
-    ("Accent", "accent"),
-    ("Roads", "road"),
-    ("Water", "water"),
-    ("Labels", "label"),
-]
+
+def parse_color(value):
+    value = value.strip().lower()
+    value = dict((n.lower(), c) for n, c in SWATCHES).get(value, value)
+    value = value.lstrip("#")
+    if re.fullmatch(r"[0-9a-f]{3}", value):
+        value = "".join(c*2 for c in value)
+    if not re.fullmatch(r"[0-9a-f]{6}", value):
+        raise ValueError("Enter #RRGGBB, #RGB or a colour name.")
+    return "#" + value
+
 
 @register_widget
 class ThemeWidget(Widget):
     name = "theme"
-    title = "Themes"
-    default_width = 40
+    title = "Preset editor"
+    default_width = 42
     default_top = 2
     default_left = 62
     default_visible = False
 
-    def __init__(self, ctx) -> None:
+    def __init__(self, ctx):
         super().__init__(ctx)
-        self._cache_name: Optional[str] = None
-        self._cache_data: Dict = {}
-        self._tone_open = False
+        self._group = "map"
+        self._editing = None
+        self._undo = None
+        self._undo_backing = None
+        self._base_name = self._current()
 
-    def _current(self) -> str:
-        return getattr(self.ctx.state, "theme", None) or self.ctx.cfg["ui"].get("theme", "amber")
+    def _current(self):
+        return self.ctx.state.theme
 
-    def _editable_data(self, name: str) -> Dict:
-        if self._cache_name == name and self._cache_data:
-            return self._cache_data
-        path = theme_loader.theme_source_path(name)
-        userdir = theme_loader.user_theme_dir()
-        data: Dict = {}
-        if path and os.path.normpath(os.path.dirname(path)) == os.path.normpath(userdir):
-            try:
-                import json
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
-        if not data:
-            t = theme_loader.resolve_theme(name)
-            ui = t["ui"]
-            m = t["map"] if isinstance(t.get("map"), dict) else {}
-            data = {
-                "name": name,
-                "border": t.get("border", "auto"),
-                "ui": {k: ui[k] for k in _UI_CORE if k in ui},
-                "map": dict(m),
-            }
-        data.setdefault("ui", {})
-        data.setdefault("map", {})
-        rt = theme_loader.resolve_theme(name)
-        for k in _UI_CORE:
-            data["ui"].setdefault(k, rt["ui"].get(k, "#808080"))
-        for k, dflt in (("bg", data["ui"]["bg"]), ("water", "#5f6978"),
-                        ("park", "#3c503c"), ("building", "#4b4b50"),
-                        ("road", data["ui"]["fg"]), ("label", data["ui"]["accent"]),
-                        ("halo", "#000000")):
-            data["map"].setdefault(k, dflt)
-        self._cache_name = name
-        self._cache_data = data
+    def _editable_data(self, name):
+        t = T.resolve_theme(name)
+        data = {"name": name, "border": t.get("border", "auto"),
+                "ui": deepcopy(t["ui"]), "map": deepcopy(t["map"]),
+                "chrome": deepcopy(t.get("chrome_overrides", {}))}
+        custom = self.ctx.cfg.data.get("theme", {})
+        data["ui"].update(custom.get("ui", {}))
+        data["map"].update({k: v for k, v in custom.items() if k in T.MAP_KEYS})
+        if "road" in custom:
+            data["map"]["roads"] = {}
+        from cartotui.themes import _coerce_rgb
+        for key, value in custom.get("road_colors", {}).items():
+            rgb = _coerce_rgb(value)
+            if rgb is not None:
+                data["map"].setdefault("roads", {})[str(key)] = "#%02x%02x%02x" % rgb
+        data["map"].setdefault("boundary", T._blend(
+            data["map"].get("label", data["ui"]["accent"]), data["map"].get("bg", data["ui"]["bg"]), .5))
+        data["chrome"].update(custom.get("chrome", {}))
         return data
 
-    def _field_value(self, data: Dict, key: str) -> str:
-        if key in ("bg", "fg", "accent"):
-            return data["ui"].get(key, "#808080")
-        return data["map"].get(key, "#808080")
+    def _value(self, group, key):
+        return self._editable_data(self._current())[group].get(key, "#808080")
 
-    def build(self, width: int) -> None:
-        cur = self._current()
+    def build(self, width):
+        if self._base_name != self._current():
+            self._base_name = self._current()
+            self._undo = None
+            self._editing = None
+        if self._editing:
+            self._build_picker(width)
+            return
+        self.add_section("Your preset", width)
+        self.add_kv("Base", self._current(), width)
+        self.add_dim("Colours preview live; save when ready.", width)
+        self.add_button("Save as named preset...", width, self._duplicate)
+        if not T.resolve_theme(self._current()).get("builtin"):
+            self.add_button("Update saved preset", width, self._save_preset)
+            self.add_button("Rename preset...", width, self._rename)
+        if self._undo is not None:
+            self.add_button("Undo colour edits", width, self._revert)
+        for group, title, fields in (("map", "Map colours", MAP_FIELDS), ("ui", "Interface colours", UI_FIELDS)):
+            if self.add_fold(title, width, self._group == group,
+                             lambda g=group: self._set_group(g)):
+                for label, key in fields:
+                    value = self._value(group, key)
+                    self.add_kv(label, value, width,
+                                action=lambda g=group, k=key, label=label: self._open_picker(g, k, label))
+        self.add_section("Labels", width)
+        self.add_kv("Names", "on" if self.ctx.state.labels else "off", width, action=self._toggle_labels)
+        bg = self.ctx.cfg["render"].get("label_background", "auto")
+        self.add_kv("Backing", bg, width, action=self._cycle_backing)
+        self.add_button("Map detail / tone settings", width, lambda: self._open_page("render"))
+        self.add_button("Browse presets", width, lambda: self._open_page("looks"))
+        self.add_dim("Saves colours, labels, geometry & tone.", width)
 
-        self.add_section("Select theme", width)
-        for name in theme_loader.available_theme_names():
-            t = theme_loader.resolve_theme(name)
-            mark = "●" if name == cur else "○"
-            tag = "" if t.get("builtin") else " *"
-            self.add_row([
-                ("class:panel.hotkey", " " + mark + " "),
-                ("class:panel.value" if name == cur else "class:panel.label", name + tag),
-            ], width, action=self._make_apply(name))
+    def _open_page(self, page):
+        if self.ctx.manager and self.ctx.manager.open_settings:
+            self.ctx.manager.open_settings(page)
 
-        self.add_section(f"Customize {cur}", width)
-        data = self._editable_data(cur)
-        for label, key in _EDIT_FIELDS:
-            self._color_row(label, key, data, width)
-
-        self.add_section("Manage", width)
-        self.add_button("Save preset to this theme", width, self._save_preset)
-        self.add_button("Save as new theme", width, self._duplicate)
-        userdir = theme_loader.user_theme_dir()
-        path = theme_loader.theme_source_path(cur)
-        is_user = bool(path and os.path.normpath(os.path.dirname(path)) == os.path.normpath(userdir))
-        if is_user:
-            self.add_button("Delete this theme", width, self._reset_current)
-        self.add_dim(f"folder: {userdir}", width)
-
-    def _toggle_tone(self) -> None:
-        self._tone_open = not self._tone_open
+    def _set_group(self, group):
+        self._group = "" if self._group == group else group
         self.ctx.refresh()
 
-    def _adj_tone(self, knob: str, d: float) -> None:
-        getattr(self.ctx.state, f"adjust_{knob}")(d)
+    def _open_picker(self, group, key, label):
+        self._editing = (group, key, label)
+        self.ctx.refresh()
+
+    def _build_picker(self, width):
+        group, key, label = self._editing
+        value = self._value(group, key)
+        self.add_button("Back to preset", width, self._back)
+        self.add_section(label, width)
+        self.add_row([(f"bg:{value} fg:#000000", "   "), ("class:panel.value", " " + value)], width)
+        self.add_button("Type hex / colour name...", width,
+                        lambda: ask_text(self.ctx, label, "#RRGGBB, #RGB or colour name", value,
+                                         lambda v: self._set_color(group, key, v)))
+        for name, color in SWATCHES:
+            self.add_row([(f"fg:{color}", " ██ "), ("class:panel.label", name)], width,
+                         action=lambda c=color: self._set_color(group, key, c))
+        rgb = T._hex_to_rgb(value)
+        for index, channel in enumerate(("Red", "Green", "Blue")):
+            self.add_adjust(channel, str(rgb[index]), width,
+                            lambda i=index: self._channel(group, key, i, -8),
+                            lambda i=index: self._channel(group, key, i, 8))
+        self.add_button("Reset this colour", width, lambda: self._set_color(
+            group, key, T.resolve_theme(self._current())[group].get(key, "#808080")))
+        if key == "label":
+            from cartotui.ui.map_overlay import _inverse_color
+            backing = self.ctx.cfg["render"].get("label_background", "auto")
+            bg = self._value("map", "halo" if backing == "theme" else "bg")
+            if backing == "auto":
+                bg = "#%02x%02x%02x" % _inverse_color(T._hex_to_rgb(value))
+            def lum(color):
+                rgb = [v/255 for v in T._hex_to_rgb(color)]
+                return sum(w*(v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4)
+                           for w, v in zip((.2126, .7152, .0722), rgb))
+            a, b = sorted((lum(value), lum(bg)))
+            contrast = (b+.05)/(a+.05)
+            self.add_dim(f"Label contrast {contrast:.1f}:1" + (" - low" if contrast < 4.5 else ""), width)
+            self.add_row([(f"fg:{value} bg:{bg}", " Sample town / Main Street ")], width)
+
+    def _back(self):
+        self._editing = None
+        self.ctx.refresh()
+
+    def _channel(self, group, key, index, delta):
+        rgb = list(T._hex_to_rgb(self._value(group, key)))
+        rgb[index] = max(0, min(255, rgb[index] + delta))
+        self._set_color(group, key, "#%02x%02x%02x" % tuple(rgb))
+
+    def _set_color(self, group, key, value):
+        value = parse_color(value)
+        custom = self.ctx.cfg.data.setdefault("theme", {})
+        if self._undo is None:
+            self._undo = deepcopy(custom)
+            self._undo_backing = self.ctx.cfg["render"].get("label_background", "auto")
+        if group == "ui":
+            custom.setdefault("ui", {})[key] = value
+        else:
+            custom[key] = value
+            if key == "road":
+                custom["road_colors"] = {}
+            if key == "halo":
+                self.ctx.cfg.update({"render": {"label_background": "theme"}})
+        self._refresh_style()
+
+    def _refresh_style(self):
+        if self.ctx.on_style_changed:
+            self.ctx.on_style_changed()
         self.ctx.rerender()
 
-    def _reset_tone(self) -> None:
-        self.ctx.state.reset_image_adjust()
+    def _revert(self):
+        self.ctx.cfg.data["theme"] = self._undo
+        self.ctx.cfg.update({"render": {"label_background": self._undo_backing}})
+        self._undo = None
+        self._refresh_style()
+
+    def _toggle_labels(self):
+        self.ctx.state.toggle_labels()
         self.ctx.rerender()
 
-    def _cycle_dither(self) -> None:
-        self.ctx.state.cycle_dither()
+    def _cycle_backing(self):
+        options = ("auto", "theme", "none")
+        cur = self.ctx.cfg["render"].get("label_background", "auto")
+        self.ctx.cfg.update({"render": {"label_background": options[(options.index(cur)+1) % 3]}})
         self.ctx.rerender()
 
-    def _cycle_palette(self) -> None:
-        from cartotui.rendering.renderer import default_palettes
-        self.ctx.state.cycle_palette(list(default_palettes().keys()))
-        self.ctx.rerender()
+    def _current_preset(self):
+        return capture_settings(self.ctx.state, self.ctx.cfg)
 
-    def _cycle_view(self) -> None:
-        self.ctx.state.cycle_render_mode()
-        self.ctx.rerender()
-
-    def _adj_road(self, d) -> None:
-        cur = float(self.ctx.cfg["render"].get("road_thickness", 1.0) or 1.0)
-        self.ctx.cfg.update({"render": {
-            "road_thickness": round(max(0.2, min(4.0, cur + d)), 2)}})
-        self._save_cfg()
-        self.ctx.rerender()
-
-    def _adj_road_mode(self, d) -> None:
-        r = self.ctx.cfg["render"]
-        mode = self.ctx.state.render_mode
-        by_mode = dict(r.get("road_thickness_by_mode") or {})
-        cur = float(by_mode.get(mode, 1.0) or 1.0)
-        by_mode[mode] = round(max(0.2, min(4.0, cur + d)), 2)
-        self.ctx.cfg.update({"render": {"road_thickness_by_mode": by_mode}})
-        self._save_cfg()
-        self.ctx.rerender()
-
-    def _toggle_roads(self) -> None:
-        cur = bool(self.ctx.cfg["render"].get("road_highlight", False))
-        self.ctx.cfg.update({"render": {"road_highlight": not cur}})
-        self._save_cfg()
-        self.ctx.rerender()
-
-    def _toggle_tint(self) -> None:
-        cur = self.ctx.cfg["render"].get("raster_tint", "none")
-        self.ctx.cfg.update({"render": {"raster_tint": "none" if cur == "theme" else "theme"}})
-        self._save_cfg()
-        self.ctx.rerender()
-
-    def _save_cfg(self) -> None:
-        try:
-            self.ctx.cfg.save()
-        except Exception:
-            pass
-
-    def _current_preset(self) -> dict:
-        st = self.ctx.state
-        r = self.ctx.cfg["render"]
-        return {
-            "brightness": round(st.brightness, 2),
-            "contrast": round(st.contrast, 2),
-            "gamma": round(st.gamma, 2),
-            "saturation": round(st.saturation, 2),
-            "black_point": round(st.black_point, 2),
-            "white_point": round(st.white_point, 2),
-            "dither": st.dither,
-            "palette": st.palette,
-            "view": st.render_mode,
-            "road_highlight": bool(r.get("road_highlight", False)),
-            "raster_tint": r.get("raster_tint", "none"),
-            "road_thickness": float(r.get("road_thickness", 1.0)),
-            "road_thickness_by_mode": dict(r.get("road_thickness_by_mode") or {}),
-        }
-
-    def _save_preset(self) -> None:
-        cur = self._current()
-        data = dict(self._editable_data(cur))
-        data["ui"] = dict(data["ui"])
-        data["map"] = dict(data["map"])
+    def _save_as(self, name, rename=False, overwrite=False):
+        name = preset_name(name)
+        old = self._current()
+        if name in T.available_theme_names() and not overwrite:
+            raise ValueError("That name already exists. Choose another.")
+        data = self._editable_data(old)
         data["render"] = self._current_preset()
-        theme_loader.save_user_theme(cur, data)
-        self._cache_name = None
-        self.ctx.state.theme = cur
-        if self.ctx.on_theme_changed:
-            self.ctx.on_theme_changed()
-        self.ctx.rerender()
+        T.save_user_theme(name, data)
+        if rename and name != old:
+            T.delete_user_theme(old)
+        self.ctx.cfg.data["theme"] = {}
+        self._undo = None
+        self.ctx.state.theme = name
+        self.ctx.cfg.update({"ui": {"theme": name}})
+        apply_settings(self.ctx.state, self.ctx.cfg, data["render"])
+        self.ctx.cfg.save()
+        self.ctx.state.set_info(f"Saved preset: {name}")
+        self._refresh_style()
 
-    def _color_row(self, label: str, key: str, data: Dict, width: int) -> None:
-        val = self._field_value(data, key)
-        minus, plus, sw = "[-]", "[+]", " ██ "
-        lbl = " " + label
-        right = len(minus) + len(sw) + len(val) + len(plus)
-        gap = max(1, width - len(lbl) - right)
-        y = len(self._lines)
-        self._lines.append([
-            ("class:panel.label", lbl),
-            ("class:panel", " " * gap),
-            ("class:panel.button", minus),
-            (f"fg:{val}", sw),
-            ("class:panel.value", val),
-            ("class:panel.button", plus),
-        ])
-        x = len(lbl) + gap
-        xm0, xm1 = x, x + len(minus)
-        xp0 = xm1 + len(sw) + len(val)
-        xp1 = xp0 + len(plus)
-        self._hits.append((y, xm0, xm1, self._make_edit(key, -8)))
-        self._hits.append((y, xp0, xp1, self._make_edit(key, +8)))
+    def _save_preset(self):
+        # Bundled themes stay intact. Explicit save-as asks for a useful name.
+        if T.resolve_theme(self._current()).get("builtin"):
+            self._duplicate()
+        else:
+            self._save_as(self._current(), overwrite=True)
 
-    def _make_apply(self, name: str):
-        def fn():
+    def _duplicate(self):
+        ask_text(self.ctx, "Save preset", "Name for this map style", "",
+                 self._save_as)
+
+    def _rename(self):
+        ask_text(self.ctx, "Rename preset", "New name", self._current(),
+                 lambda name: self._save_as(name, rename=True))
+
+    def _make_apply(self, name):
+        def apply():
+            self.ctx.cfg.data["theme"] = {}
+            self._undo = None
             self.ctx.state.theme = name
             self.ctx.cfg.update({"ui": {"theme": name}})
             if self.ctx.on_theme_changed:
                 self.ctx.on_theme_changed()
-            self._cache_name = None
+            self.ctx.cfg.save()
             self.ctx.rerender()
-        return fn
-
-    def _make_edit(self, key: str, delta: int):
-        def fn():
-            cur = self._current()
-            data = dict(self._editable_data(cur))
-            data["ui"] = dict(data["ui"])
-            data["map"] = dict(data["map"])
-            val = self._field_value(data, key)
-            newval = theme_loader._shade(val, delta)
-            if key == "bg":
-                data["ui"]["bg"] = newval
-                data["map"]["bg"] = newval
-            elif key in ("fg", "accent"):
-                data["ui"][key] = newval
-            else:
-                data["map"][key] = newval
-            theme_loader.save_user_theme(cur, data)
-            self._cache_name = None
-            self.ctx.state.theme = cur
-            if self.ctx.on_theme_changed:
-                self.ctx.on_theme_changed()
-            self.ctx.rerender()
-        return fn
-
-    def _duplicate(self) -> None:
-        cur = self._current()
-        base = self._editable_data(cur)
-        existing = set(theme_loader.available_theme_names())
-        i = 1
-        while f"custom{i}" in existing:
-            i += 1
-        newname = f"custom{i}"
-        data = {"name": newname, "border": base.get("border", "auto"),
-                "ui": dict(base["ui"]), "map": dict(base["map"]),
-                "render": self._current_preset()}
-        theme_loader.save_user_theme(newname, data)
-        self._cache_name = None
-        self.ctx.state.theme = newname
-        self.ctx.cfg.update({"ui": {"theme": newname}})
-        if self.ctx.on_theme_changed:
-            self.ctx.on_theme_changed()
-        self.ctx.rerender()
-
-    def _reset_current(self) -> None:
-        cur = self._current()
-        theme_loader.delete_user_theme(cur)
-        self._cache_name = None
-        remaining = theme_loader.available_theme_names()
-        newname = cur if cur in remaining else (remaining[0] if remaining else "amber")
-        self.ctx.state.theme = newname
-        self.ctx.cfg.update({"ui": {"theme": newname}})
-        if self.ctx.on_theme_changed:
-            self.ctx.on_theme_changed()
-        self.ctx.rerender()
+        return apply

@@ -145,7 +145,9 @@ def make_style(cfg: Config) -> Style:
         overrides = {}
     if not isinstance(overrides, dict):
         overrides = {}
-    base = theme_loader.chrome_style_map(theme_name, overrides)
+    custom = cfg.data.get("theme", {})
+    base = theme_loader.chrome_style_map(theme_name, overrides,
+                                       custom.get("ui"), custom.get("bg"))
     return Style.from_dict(base)
 
 def theme_palette(theme: str) -> dict:
@@ -188,6 +190,11 @@ def theme_vector_style(theme: str, user_overrides: Optional[Dict] = None):
         return style
 
     rc = dict(style.road_colors)
+    if _coerce_rgb(user_overrides.get("road")) is not None:
+        road = user_overrides["road"]
+        bg = user_overrides.get("bg") or theme_loader.resolve_theme(theme)["map"].get("bg", "#000000")
+        rc = {p: theme_loader._hex_to_rgb(theme_loader._blend(road, bg, .72 * (10-p)/9))
+              for p in range(1, 11)}
     raw = user_overrides.get("road_colors") or {}
     if isinstance(raw, dict):
         for k, v in raw.items():
@@ -210,6 +217,7 @@ def theme_vector_style(theme: str, user_overrides: Optional[Dict] = None):
         ("bg", "bg"),
         ("road", "road_color"),
         ("label", "label_color"),
+        ("boundary", "boundary_color"),
         ("halo", "halo_color"),
         ("aircraft", "aircraft_color"),
         ("aircraft_selected", "aircraft_selected_color"),

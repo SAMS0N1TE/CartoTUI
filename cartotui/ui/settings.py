@@ -8,9 +8,9 @@ from cartotui.ui.sidebar import Sidebar, SidebarControl, _get_bc
 from cartotui.ui.widgets.panel import Panel
 
 PAGES = (
-    ("looks", "Looks / presets"),
+    ("looks", "Preset library"),
     ("render", "Map appearance"),
-    ("theme", "Theme / colours"),
+    ("theme", "Preset editor"),
     ("location", "Location"),
     ("radar", "Weather radar"),
     ("weather", "Weather"),

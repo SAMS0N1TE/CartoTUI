@@ -55,6 +55,7 @@ def test_retained_layer_invalidates_on_arrival_options_and_frame():
         assert layer() is not a
         a = layer()
         rs._past = [{"time": 2000, "path": "/new"}]
+        _fill_frame(rs, 2000, 200, 200, _red_tile())
         assert layer() is not a
         rs.clear_cache()
         assert rs._retained_layer is None
@@ -195,3 +196,58 @@ def test_fmt_interval():
     assert _fmt_interval(30) == "30s"
     assert _fmt_interval(60) == "1m"
     assert _fmt_interval(300) == "5m"
+
+
+def _fill_frame(rs, time, width=400, height=400, tile=None):
+    rz, coords = rs._tile_coords(43.2, -71.5, 8, width, height)
+    for x, y in coords:
+        rs._cache[(time, rz, x, y, 4, 1, 1, 256)] = tile
+    rs._generation += 1
+
+
+def test_animation_keeps_complete_frame_until_replacement_is_ready():
+    rs = _stub()
+    _fill_frame(rs, 1000, tile=_red_tile())
+    old = rs.build_layer(43.2, -71.5, 8, 400, 400)
+    rs._past = [{"time": 2000, "path": "/new"}]
+    assert rs.build_layer(43.2, -71.5, 8, 400, 400) is old
+    # A genuinely dry complete frame clears old precipitation.
+    _fill_frame(rs, 2000)
+    assert rs.build_layer(43.2, -71.5, 8, 400, 400) is None
+    rs.close()
+
+
+def test_zoom_and_resize_never_reuse_old_screen_crop():
+    rs = _stub()
+    _fill_frame(rs, 1000, tile=_red_tile())
+    old = rs.build_layer(43.2, -71.5, 8, 400, 400)
+    assert rs.build_layer(43.2, -71.5, 9, 400, 400) is not old
+    calls = []
+    rs._prefetch = lambda *args: calls.append(args)
+    rs.build_layer(43.2, -71.5, 8, 400, 400)
+    rs.build_layer(43.2, -71.5, 8, 900, 600)
+    assert [a[3:5] for a in calls] == [(400, 400), (900, 600)]
+    rs.close()
+
+
+def test_download_failure_is_retryable_and_not_a_dry_tile():
+    from types import SimpleNamespace
+    rs = _stub()
+    rs._http = lambda: SimpleNamespace(get=lambda *a, **k: SimpleNamespace(status_code=503))
+    assert rs._tile_for(1000, "/p", 7, 1, 1, 4, 1, 1) is None
+    key = (1000, 7, 1, 1, 4, 1, 1, 256)
+    assert key not in rs._cache
+    assert key in rs._retry_after
+    rs.close()
+
+
+def test_empty_tile_completion_requests_repaint():
+    from concurrent.futures import Future
+    rs = _stub()
+    called = []
+    rs._signal_ready = lambda: called.append(True)
+    f = Future()
+    f.set_result(0)
+    rs._tile_done(f)
+    assert called == [True]
+    rs.close()

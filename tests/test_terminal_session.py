@@ -82,3 +82,55 @@ def test_keyboard_settings_over_vt100(direct, packed):
                 app.vector_source.close()
 
     asyncio.run(run())
+
+
+def test_colour_and_name_dialogs_accept_keyboard_over_vt100():
+    from cartotui import theme_loader as T
+    from cartotui.ui.widgets.input_dialog import ask_text
+    from prompt_toolkit.application.current import set_app
+
+    async def run():
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=30, columns=90), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            app = CartoTUIApp(Config())
+            app.map_control._enqueue = lambda *a, **k: None
+            app.map_control.request_render = lambda *a, **k: None
+            task = asyncio.create_task(app.app.run_async())
+            async def until(predicate):
+                for _ in range(100):
+                    if predicate():
+                        return
+                    await asyncio.sleep(.02)
+                raise AssertionError('dialog did not complete')
+            try:
+                await until(lambda: app.app.is_running)
+                editor = app.widget_manager.panel('theme').widget
+                with set_app(app.app):
+                    ask_text(editor.ctx, 'Label colour', 'Hex or name', '',
+                             lambda value: editor._set_color('map', 'label', value))
+                pipe.send_text('#55ccaa\r')
+                await until(lambda: app.cfg['theme'].get('label') == '#55ccaa')
+                with set_app(app.app):
+                    editor._duplicate()
+                pipe.send_text('Keyboard Map\r')
+                await until(lambda: app.state.theme == 'keyboard_map')
+                assert T.vector_style_kwargs('keyboard_map')['label_color'] == (85, 204, 170)
+                # Typing q into a modal field must not quit the map application.
+                with set_app(app.app):
+                    editor._duplicate()
+                pipe.send_text('q')
+                await asyncio.sleep(.08)
+                assert not task.done()
+                pipe.send_text('\x1b')
+                await asyncio.sleep(.6)
+                app.app.exit()
+                await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                T.delete_user_theme('keyboard_map')
+                app.map_control.shutdown()
+                app.vector_source.close()
+                app.radar_source.close()
+    asyncio.run(run())

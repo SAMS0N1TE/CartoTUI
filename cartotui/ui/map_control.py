@@ -822,6 +822,7 @@ class MapControl(UIControl):
                         pmap_max_zoom=fetch_z,
                         max_labels=max(64, min(240, w * h // 100)) if labels_enabled else 0,
                         detail_labels=bool(r_cfg.get("detail_labels", True)),
+                        label_background=r_cfg.get("label_background", "auto"),
                         draw_boundaries=boundaries_enabled,
                         boundary_style=str(r_cfg.get("boundary_style", "dots")),
                     )

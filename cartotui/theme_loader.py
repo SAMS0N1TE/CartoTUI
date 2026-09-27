@@ -27,7 +27,7 @@ UI_KEYS = [
 ]
 
 MAP_KEYS = [
-    "bg", "water", "park", "building", "road", "label", "halo",
+    "bg", "water", "park", "building", "road", "label", "halo", "boundary",
     "aircraft", "aircraft_selected", "aircraft_emergency",
     "aircraft_label", "aircraft_halo",
 ]
@@ -125,6 +125,14 @@ def _derive_ui(ui: dict) -> dict:
     out["input_fg"] = d("input_fg", fg if dark else "#000000")
     out["input_focus_bg"] = d("input_focus_bg", out["sel_bg"])
     out["input_focus_fg"] = d("input_focus_fg", out["sel_fg"])
+    light = _lum(bg) > 140
+    for key, value in {"settings_bg": "#eeeeee" if light else "#182028",
+                       "settings_fg": "#202830" if light else "#eeeeee",
+                       "settings_dim": "#505860" if light else "#b8c0c8",
+                       "settings_accent": _blend(out["accent"], "#202830" if light else "#ffffff", .35),
+                       "settings_sel_bg": "#334455" if light else _blend(out["accent"], "#ffffff", .35),
+                       "settings_sel_fg": "#ffffff" if light else "#101820"}.items():
+        out[key] = d(key, value)
     return out
 
 def _s(bg: str, fg: str, extra: str = "") -> str:
@@ -164,11 +172,10 @@ def _gen_chrome(u: dict, map_bg: Optional[str] = None) -> Dict[str, str]:
     ifb = u["input_focus_bg"]; iff = u["input_focus_fg"]
     mbg = map_bg or bg
     # Settings need readable controls even in deliberately dim map themes.
-    light = _lum(bg) > 140
-    settings_bg = "#eeeeee" if light else "#182028"
-    settings_fg = "#202830" if light else "#eeeeee"
-    settings_dim = "#505860" if light else "#b8c0c8"
-    settings_accent = _blend(accent, "#202830" if light else "#ffffff", 0.35)
+    settings_bg = u["settings_bg"]
+    settings_fg = u["settings_fg"]
+    settings_dim = u["settings_dim"]
+    settings_accent = u["settings_accent"]
     return {
         "settings": _s(settings_bg, settings_fg),
         "settings.border": _s(settings_bg, settings_dim),
@@ -178,8 +185,7 @@ def _gen_chrome(u: dict, map_bg: Optional[str] = None) -> Dict[str, str]:
         "settings.value": _s(settings_bg, settings_fg),
         "settings.dim": _s(settings_bg, settings_dim),
         "settings.button": _s(settings_bg, settings_accent, "bold"),
-        "settings.selected": _s("#334455" if light else settings_accent,
-                                "#ffffff" if light else "#101820", "bold"),
+        "settings.selected": _s(u["settings_sel_bg"], u["settings_sel_fg"], "bold"),
         "settings.hotkey": _s(settings_bg, settings_accent, "bold"),
         "titlebar": _s(title_bg, title_fg, "bold"),
         "titlebar.dim": _s(title_bg, dim),
@@ -201,8 +207,13 @@ def _gen_chrome(u: dict, map_bg: Optional[str] = None) -> Dict[str, str]:
         "frame.border": _s(bg, border),
         "button": _s(btn_bg, fg),
         "button.focused": _s(sel_bg, sel_fg, "bold"),
-        "dialog": _s(panel_bg, fg),
-        "dialog.body": _s(panel_bg, fg),
+        "dialog": _s(settings_bg, settings_fg),
+        "dialog.body": _s(settings_bg, settings_fg),
+        "dialog frame.border": _s(settings_bg, settings_dim),
+        "dialog frame.label": _s(settings_bg, settings_fg, "bold"),
+        "dialog text-area": _s(settings_bg, settings_fg),
+        "dialog button": _s(settings_bg, settings_accent),
+        "dialog button.focused": _s(u["settings_sel_bg"], u["settings_sel_fg"]),
         "dialog.shadow": f"bg:{_shade(bg, -45)}",
         "sidebar": _s(panel_bg, fg),
         "sidebar.title": _s(title_bg, title_fg, "bold"),
@@ -319,9 +330,12 @@ def resolve_theme(name: str) -> dict:
         "path": raw.get("_path"),
     }
 
-def chrome_style_map(name: str, extra_overrides: Optional[dict] = None) -> Dict[str, str]:
+def chrome_style_map(name: str, extra_overrides: Optional[dict] = None,
+                     ui_overrides=None, map_bg=None) -> Dict[str, str]:
     t = resolve_theme(name)
-    base = _gen_chrome(t["ui"], (t["map"] or {}).get("bg"))
+    ui = dict(t["ui"])
+    ui.update(ui_overrides or {})
+    base = _gen_chrome(ui, map_bg or (t["map"] or {}).get("bg"))
     for k, v in t["chrome_overrides"].items():
         if isinstance(k, str) and isinstance(v, str):
             base[k] = v
@@ -365,6 +379,7 @@ def vector_style_kwargs(name: str) -> dict:
         "building": rgb("building", "#4b4b50"),
         "road_color": _hex_to_rgb(road),
         "label_color": rgb("label", ui["accent"]),
+        "boundary_color": rgb("boundary", _blend(m.get("label", ui["accent"]), bg, .5)),
         "halo_color": rgb("halo", "#000000" if _lum(bg) < 128 else "#ffffff"),
         "aircraft_color": rgb("aircraft", "#ffc83c"),
         "aircraft_selected_color": rgb("aircraft_selected", "#ffffff"),
@@ -389,7 +404,8 @@ def theme_source_path(name: str) -> Optional[str]:
 def save_user_theme(name: str, data: dict) -> str:
     d = user_theme_dir()
     os.makedirs(d, exist_ok=True)
-    name = str(name).strip().lower().replace(" ", "_")
+    from cartotui.presets import preset_name
+    name = preset_name(name)
     data = dict(data)
     data["name"] = name
     for k in ("_path", "_builtin"):
@@ -404,7 +420,8 @@ def save_user_theme(name: str, data: dict) -> str:
     return path
 
 def delete_user_theme(name: str) -> bool:
-    path = os.path.join(user_theme_dir(), str(name).lower() + ".json")
+    from cartotui.presets import preset_name
+    path = os.path.join(user_theme_dir(), preset_name(name) + ".json")
     if os.path.exists(path):
         try:
             os.remove(path)
