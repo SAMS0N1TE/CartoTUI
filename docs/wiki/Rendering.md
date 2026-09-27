@@ -111,3 +111,14 @@ protocol, GUI or local display server is required on the remote host. With
 force repainting so closing a menu exposes the map correctly. The painter resets
 inherited text attributes and honours the selected colour depth. `auto` follows
 the terminal; `256` is a useful explicit choice for SSH connections.
+# Windows Terminal half-block colours
+
+If half mode shows bright gray or white blocks along low-contrast edges, check
+Windows Terminal's profile appearance setting `adjustIndistinguishableColors`.
+Set it to `never` for map rendering: automatic text contrast enhancement changes
+the foreground half of an image cell. This is a client-side setting and also
+applies when CartoTUI runs over SSH in that terminal profile.
+
+Dynamic pan quality reduces vector raster resolution during movement and restores
+the configured quality once movement settles. Tile size scales with the raster,
+so the map keeps the same geographic extent throughout.

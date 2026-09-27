@@ -102,18 +102,50 @@ def _bg_seq(h: Optional[str]) -> str:
     return seq
 
 
+_CUBE = (0, 95, 135, 175, 215, 255)
+_CUBE_NEAREST = tuple(min(range(6), key=lambda i: (v - _CUBE[i]) ** 2)
+                      for v in range(256))
+_GRAY_NEAREST = tuple(min(range(24), key=lambda i: abs(s - 3 * (8 + 10 * i)))
+                      for s in range(766))
+
+
+def _xterm256(r, g, b):
+    """Exact nearest fixed palette entry, without searching all 240 colours.
+
+    The cube separates into independent channels; the nearest gray depends
+    only on their sum. Ties use the earlier palette index, like prompt_toolkit.
+    Entries 0-15 are terminal-customisable and deliberately excluded.
+    """
+    ri, gi, bi = _CUBE_NEAREST[r], _CUBE_NEAREST[g], _CUBE_NEAREST[b]
+    gray = _GRAY_NEAREST[r + g + b]
+    gv = 8 + 10 * gray
+    cube_distance = (r - _CUBE[ri]) ** 2 + (g - _CUBE[gi]) ** 2 + (b - _CUBE[bi]) ** 2
+    gray_distance = (r - gv) ** 2 + (g - gv) ** 2 + (b - gv) ** 2
+    return 16 + 36 * ri + 6 * gi + bi if cube_distance <= gray_distance else 232 + gray
+
+
 @lru_cache(maxsize=65536)
 def _color_seq(h, background, depth):
     if depth == ColorDepth.DEPTH_24_BIT:
         return _bg_seq(h) if background else _fg_seq(h)
     if h is None:
         return "\x1b[49m" if background else "\x1b[39m"
+    if depth == ColorDepth.DEPTH_8_BIT:
+        rgb = int(h, 16)
+        index = _xterm256(rgb >> 16, (rgb >> 8) & 255, rgb & 255)
+        return f"\x1b[{48 if background else 38};5;{index}m"
     # Quantise the two pixel colours independently. Text contrast correction
     # (forcing similar fg/bg apart at 16 colours) corrupts half-block images.
     cache = _EscapeCodeCache(depth)
     codes = list(cache._colors_to_code("" if background else h,
                                       h if background else ""))
     return "\x1b[" + ";".join(codes) + "m" if codes else ""
+
+
+@lru_cache(maxsize=65536)
+def _style_sequences(style, base_fg, base_bg, depth):
+    fg, bg = colors_for(style, base_fg, base_bg)
+    return _color_seq(fg, False, depth), _color_seq(bg, True, depth)
 
 
 def _uncovered_spans(x0: int, width: int,
@@ -167,6 +199,26 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
         if not spans:
             continue
         row = rows[ry]
+        if not covers:
+            # Almost all map rows are completely visible. Avoid constructing
+            # and clipping a second list of every fragment on this hot path.
+            out.append("\x1b[%d;%dH" % (sy + 1, x + 1))
+            remaining = width
+            for style, text in row:
+                if not text:
+                    continue
+                fg_seq, bg_seq = _style_sequences(style, base_fg, base_bg, color_depth)
+                if fg_seq != cur_fg:
+                    out.append(fg_seq)
+                    cur_fg = fg_seq
+                if bg_seq != cur_bg:
+                    out.append(bg_seq)
+                    cur_bg = bg_seq
+                out.append(text if len(text) <= remaining else text[:remaining])
+                remaining -= len(text)
+                if remaining <= 0:
+                    break
+            continue
         # Flatten the row's runs into (column, style, text) so a span can be cut
         # out of the middle of one.
         col = x
@@ -188,9 +240,7 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
                 b = min(p1, s1) - p0
                 if b <= a:
                     continue
-                fg, bg = colors_for(style, base_fg, base_bg)
-                fg_seq = _color_seq(fg, False, color_depth)
-                bg_seq = _color_seq(bg, True, color_depth)
+                fg_seq, bg_seq = _style_sequences(style, base_fg, base_bg, color_depth)
                 # Different RGBs often map to the same 256/16-colour entry.
                 # Track what is transmitted, rather than the original RGB.
                 if fg_seq != cur_fg:

@@ -557,6 +557,10 @@ class MapControl(UIControl):
             # exactly where the vector path puts it.
             scale = (int(self.cfg["render"].get("vector_scale", REFERENCE_SCALE))
                      if source == "vector" else REFERENCE_SCALE)
+            if panning and source == "vector":
+                # Scale tile size with the framebuffer, keeping the same map
+                # extent. Restore configured quality in the settled redraw.
+                scale = min(scale, REFERENCE_SCALE / 2)
             px_w, px_h, tile_px = _composite_for(w, h, scale, max_px)
             view_w = max(1, round(px_w * 256 / tile_px))
             view_h = max(1, round(px_h * 256 / tile_px))

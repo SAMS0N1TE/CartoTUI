@@ -24,6 +24,30 @@ from cartotui.ui.app import CartoTUIApp
 MODES = ("half", "quadrant", "braille", "ascii")
 
 
+@pytest.mark.parametrize("panning, expected", [(True, (120, 72, 128)), (False, (240, 144, 256))])
+def test_dynamic_pan_reduces_pixels_without_changing_extent(monkeypatch, panning, expected):
+    from PIL import Image
+
+    from cartotui.rendering import libcarto_backend
+
+    calls = []
+    def raster(source, lat, lon, z, width, height, **kwargs):
+        calls.append((width, height, kwargs["tile_px"]))
+        return Image.new("RGB", (width, height), (20, 30, 40))
+
+    monkeypatch.setattr(libcarto_backend, "rasterise_view_libcarto", raster)
+    app = _app(vector_render_mode="half", vector_scale=3, vector_engine="libcarto")
+    app.map_control._panning = lambda: panning
+    try:
+        assert _drain(app) is not None
+        assert calls and all(c == expected for c in calls)
+        width, height, tile_px = calls[0]
+        assert width / tile_px == 240 / 256
+        assert height / tile_px == 144 / 256
+    finally:
+        app.map_control.shutdown()
+
+
 def _app(**render):
     cfg = Config()
     # Its own config file: building the app saves a panel layout, and the next
