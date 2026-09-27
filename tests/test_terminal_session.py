@@ -55,7 +55,7 @@ def test_keyboard_settings_over_vt100(direct):
                 await until(lambda: bool(getattr(app.sidebar.control, "_actions", [])))
                 pipe.send_text("\x1b[B\r")
                 await until(lambda: app.sidebar.control.page == "render")
-                await until(lambda: "Map appearance" in stream.getvalue())
+                await until(lambda: "MAP APPEARANCE" in stream.getvalue())
                 pipe.send_text("\t")
                 await until(lambda: not app.state.sidebar_visible)
                 pipe.send_text("\x03")

@@ -163,7 +163,24 @@ def _gen_chrome(u: dict, map_bg: Optional[str] = None) -> Dict[str, str]:
     input_bg = u["input_bg"]; input_fg = u["input_fg"]
     ifb = u["input_focus_bg"]; iff = u["input_focus_fg"]
     mbg = map_bg or bg
+    # Settings need readable controls even in deliberately dim map themes.
+    light = _lum(bg) > 140
+    settings_bg = "#eeeeee" if light else "#182028"
+    settings_fg = "#202830" if light else "#eeeeee"
+    settings_dim = "#505860" if light else "#b8c0c8"
+    settings_accent = _blend(accent, "#202830" if light else "#ffffff", 0.35)
     return {
+        "settings": _s(settings_bg, settings_fg),
+        "settings.border": _s(settings_bg, settings_dim),
+        "settings.title": _s(settings_bg, settings_fg, "bold"),
+        "settings.section": _s(settings_bg, settings_accent, "bold"),
+        "settings.label": _s(settings_bg, settings_dim),
+        "settings.value": _s(settings_bg, settings_fg),
+        "settings.dim": _s(settings_bg, settings_dim),
+        "settings.button": _s(settings_bg, settings_accent, "bold"),
+        "settings.selected": _s("#334455" if light else settings_accent,
+                                "#ffffff" if light else "#101820", "bold"),
+        "settings.hotkey": _s(settings_bg, settings_accent, "bold"),
         "titlebar": _s(title_bg, title_fg, "bold"),
         "titlebar.dim": _s(title_bg, dim),
         "titlebar.hotkey": _s(title_bg, key, "bold"),

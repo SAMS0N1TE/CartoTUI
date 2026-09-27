@@ -59,11 +59,14 @@ class SettingsControl(SidebarControl):
             for key, title in PAGES:
                 group = {"looks": "Map", "radar": "Live layers", "search": "Tools"}.get(key)
                 if group:
-                    lines.append([("class:panel.section", " " + group)])
+                    if lines:
+                        lines.append([])
+                    lines.append([("class:panel.section", " " + group.upper())])
                 y = len(lines)
-                lines.append([("class:panel.value", " " + title + " >")])
+                lines.append([("class:panel.value", "  " + title.ljust(max(1, width - 4)) + " >")])
                 self._hits.append((y, 0, width, lambda key=key: self.open_page(key)))
             if self.manager and self.manager.ctx.save_profile:
+                lines.append([])
                 self._hits.append((len(lines), 0, width, self.manager.ctx.save_profile))
                 lines.append([("class:panel.button", " Save profile")])
             return lines
@@ -89,10 +92,11 @@ class SettingsControl(SidebarControl):
 
     def create_content(self, width, height):
         width = max(1, width)
-        body = self._body(width)
+        inner = max(1, width - 4)
+        body = self._body(inner)
         self._actions = list(self._hits)
         self.selected = min(self.selected, max(0, len(self._actions) - 1))
-        room = max(1, height - 3)
+        room = max(1, height - 7)
         if self._actions:
             row = self._actions[self.selected][0]
             if row < self.scroll:
@@ -101,34 +105,44 @@ class SettingsControl(SidebarControl):
                 self.scroll = row - room + 1
         self.scroll = min(self.scroll, max(0, len(body) - room))
         title = dict(PAGES).get(self.page, "Settings")
-        rows = [
-            [("class:panel.title", " < " + title + "  [Tab: map]")],
-            [("class:panel.dim", " Up/Down select  Enter act  Esc back")],
-        ]
-        self._hits = [(0, 0, width, self.back)]
+        border = "class:settings.border"
+        rule = [(border, "+" + "-" * max(0, width - 2) + "+")]
+
+        def framed(line):
+            fitted = [("class:settings " + style.replace("class:panel", "class:settings")
+                     .replace("class:sidebar", "class:settings"), text)
+                      for style, text in Panel._fit_line(line, inner)]
+            return [(border, "|"), ("class:settings", " ")] + fitted + [
+                ("class:settings", " "), (border, "|")]
+
+        rows = [rule, framed([("class:settings.title", title.upper())]), rule]
+        self._hits = [(1, 0, width, self.back)]
         for i, line in enumerate(body[self.scroll : self.scroll + room]):
             y = i + self.scroll
+            line = Panel._fit_line(line, inner)
             if self._actions and y == self._actions[self.selected][0]:
                 _, x0, x1, _ = self._actions[self.selected]
                 highlighted = []
                 x = 0
                 for style, text in line:
                     for ch in text:
-                        highlighted.append((style + (" reverse" if x0 <= x < x1 else ""), ch))
+                        selected = x0 <= x < x1
+                        if self.page == "home" and x == 0:
+                            ch = ">"
+                        highlighted.append(("class:settings.selected" if selected else style, ch))
                         x += 1
                 line = highlighted
-            rows.append(line)
+            rows.append(framed(line))
+        while len(rows) < room + 3:
+            rows.append(framed([]))
         for y, x0, x1, action in self._actions:
             if self.scroll <= y < self.scroll + room:
-                self._hits.append((y - self.scroll + 2, x0, x1, action))
-        rows.append(
-            [
-                (
-                    "class:panel.dim",
-                    f" {min(len(body), self.scroll + 1)}-{min(len(body), self.scroll + room)} / {len(body)}",
-                )
-            ]
-        )
+                self._hits.append((y - self.scroll + 3, x0 + 2, min(x1 + 2, width - 2), action))
+        rows.extend([rule,
+                     framed([("class:settings.dim", "Up/Down move  Enter act")]),
+                     framed([("class:settings.hotkey", "Esc back  Tab map"),
+                             ("class:settings.dim", "   v" if self.scroll + room < len(body) else "")]),
+                     rule])
         rows = [Panel._fit_line(line, width) for line in rows[:height]]
         return UIContent(get_line=lambda i: rows[i] if i < len(rows) else [], line_count=len(rows))
 
