@@ -27,8 +27,6 @@ class RenderWidget(Widget):
         if st.source == "vector":
             self.add_kv("Geometry", geometry, width, action=self._cycle_geometry)
         self.add_kv("Street / POI labels", "on" if r.get("detail_labels", True) else "off", width, action=self._toggle_details)
-        if st.source == "vector" and st.render_mode == "braille" and geometry != "vector-only":
-            self.add_kv("Braille contrast", "on" if r.get("braille_readability", True) else "off", width, action=self._toggle_readability)
         self.add_kv("Boundaries", "on" if r.get("boundaries", True) else "off",
                     width, action=self._toggle_boundaries)
         if geometry == "vector-only":
@@ -135,9 +133,6 @@ class RenderWidget(Widget):
 
     def _toggle_details(self):
         self._apply({"render": {"detail_labels": not self.ctx.cfg["render"].get("detail_labels", True)}})
-
-    def _toggle_readability(self):
-        self._apply({"render": {"braille_readability": not self.ctx.cfg["render"].get("braille_readability", True)}})
 
     def _cycle_mode(self) -> None:
         self.ctx.state.cycle_render_mode()

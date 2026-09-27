@@ -3,14 +3,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from cartotui.rendering.packed import PackedFrame
 from cartotui.themes import available_themes, theme_vector_style
 from cartotui.ui.map_overlay import _extract_labels
 from cartotui.ui.solid_geometry import (
     blank_frame,
     clip_segment,
     draw_solid_geometry,
-    improve_braille_readability,
     luminance,
     readable_color,
 )
@@ -29,19 +27,6 @@ def test_thin_ink_contrast_for_all_themes(theme):
     lum, bg = luminance(colors), luminance(style.bg)
     ratios = (np.maximum(lum, bg) + .05) / (np.minimum(lum, bg) + .05)
     assert np.all(ratios >= 4.45)
-
-
-def test_braille_readability_matches_fallback_and_preserves_edges():
-    glyph = np.full((6, 9), 0x28FF, np.uint32)
-    glyph[2, 4] = 0x2847  # A real subcell edge is never replaced.
-    fg = np.full_like(glyph, 0xCCDDEE)
-    packed = PackedFrame(glyph, fg, None, 9, 6)
-    fallback = list(packed.copy())
-    improve_braille_readability(packed, (250, 250, 240), 5)
-    improve_braille_readability(fallback, (250, 250, 240), 5)
-    assert list(packed) == fallback
-    assert packed.glyph[2, 4] == 0x2847
-    assert packed.glyph[0, 0] == 0x2881
 
 
 def test_street_and_poi_labels_use_layer_extent_and_zoom_gates():

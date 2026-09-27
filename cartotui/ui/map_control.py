@@ -22,7 +22,7 @@ from cartotui.themes import theme_vector_style
 from cartotui.traffic.aircraft import AircraftRegistry
 from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
 from cartotui.ui.map_overlay import apply_vector_overlay
-from cartotui.ui.solid_geometry import blank_frame, draw_solid_geometry, improve_braille_readability
+from cartotui.ui.solid_geometry import blank_frame, draw_solid_geometry
 from cartotui.ui.state import MapState
 from cartotui.vector_source import VectorTileSource
 
@@ -799,8 +799,6 @@ class MapControl(UIControl):
                 rows = [[("", " " * w)] for _ in range(h)]
 
             r_cfg = self.cfg["render"]
-            if geometry_mode != "vector-only" and render_mode == "braille" and source == "vector" and r_cfg.get("braille_readability", True):
-                improve_braille_readability(rows, style.bg, z)
             if geometry_mode != "standard" and self.vector_source is not None:
                 try:
                     draw_solid_geometry(rows, self.vector_source, center_lat=lat, center_lon=lon,

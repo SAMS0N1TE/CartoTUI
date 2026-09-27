@@ -162,3 +162,26 @@ def test_vector_only_bypasses_raster_and_cell_renderers(monkeypatch):
         assert calls == []
     finally:
         app.map_control.shutdown()
+
+
+@pytest.mark.parametrize("theme", ["green", "night", "paper"])
+def test_braille_worker_preserves_native_glyphs_and_colours(theme):
+    import numpy as np
+
+    from cartotui.rendering.packed import PackedFrame
+
+    app = _app(vector_render_mode="braille", boundaries=False, vector_overlay=False)
+    app.state.theme = theme
+    app.state.labels = False
+    # A saved dev1 configuration must not re-enable the rejected treatment.
+    app.cfg.data["render"]["braille_readability"] = True
+    glyphs = np.resize(np.array([0x28FF, 0x28E7, 0x2847, 0x2800], np.uint32), (24, 80))
+    original = PackedFrame(glyphs, np.full_like(glyphs, 0x164A60), None, 80, 24)
+    app.map_control.renderer.render = lambda *a, **k: original.copy()
+    app.map_control._radar_layer = lambda *a, **k: None
+    try:
+        frame = _drain(app)
+        assert frame is not None
+        assert list(frame.rows) == list(original)
+    finally:
+        app.map_control.shutdown()

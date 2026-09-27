@@ -31,4 +31,4 @@ Save profile at the bottom of Home (or Ctrl+S) saves the current visual settings
 Half mode hides palette, dither, shading and threshold controls because they do
 not affect its two colour pixels. Tone controls remain available.
 
-See [geometry and visual QA](../geometry-and-visual-qa.md) for the solid/vector-only modes, braille contrast and settings review gallery.
+See [geometry and visual QA](../geometry-and-visual-qa.md) for the solid/vector-only modes, braille rollback and settings review gallery.

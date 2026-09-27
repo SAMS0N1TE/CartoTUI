@@ -28,7 +28,6 @@ from cartotui.ui.map_overlay import apply_vector_overlay
 from cartotui.ui.solid_geometry import (
     blank_frame,
     draw_solid_geometry,
-    improve_braille_readability,
     luminance,
 )
 from cartotui.vector_source import VectorTileSource
@@ -126,8 +125,6 @@ def main():
                 rows = renderer.render(img, w, h, color, mode, palette, dither=dither, orientation=orientation, packed=True)
                 if geometry == "vector-only":
                     rows = blank_frame(w, h, style.bg)
-                elif mode == "braille":
-                    improve_braille_readability(rows, style.bg, zoom)
                 common = dict(center_lat=args.lat, center_lon=args.lon, z=zoom, term_w=w, term_h=h,
                               canvas_px_w=w*3, canvas_px_h=h*6, style=style)
                 if geometry != "standard":

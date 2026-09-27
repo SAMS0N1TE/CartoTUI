@@ -1,6 +1,6 @@
 # Geometry, movable panels and visual QA
 
-Build: 0.13.1.dev1.
+Build: 0.13.1.dev2.
 
 ## Controls
 
@@ -34,11 +34,11 @@ z14, subject to the provider's minimum zoom. City/region labels take priority,
 and collision checking prevents overlapping text. Larger terminals can fit more
 labels. Layer extents are normalized before projection.
 
-**Braille contrast** strengthens tiny dots against the theme background and
-reduces dense, uniform areas to a quieter texture when zoomed out. The texture
-becomes denser gradually as zoom increases; subcell edge masks remain intact.
-Turn the option off to compare with the original braille treatment. It applies
-equally to native and fallback rendering.
+The experimental braille contrast and sparse-texture pass introduced in dev1
+was removed in dev2. It amplified background texture and introduced repetitive
+horizontal patterns. Braille again preserves the renderer's original glyph masks
+and colours, including when loading a saved dev1 configuration. The movable
+panels, detail labels and opt-in geometry modes remain available.
 
 ## Repeatable visual review
 
