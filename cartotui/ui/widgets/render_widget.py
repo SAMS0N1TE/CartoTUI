@@ -21,14 +21,21 @@ class RenderWidget(Widget):
         r = self.ctx.cfg["render"]
         self.add_section("Map", width)
         self.add_kv("Source", st.source, width, action=self._toggle_source)
-        self.add_kv("View", st.render_mode, width, action=self._cycle_mode)
-        self.add_kv("Geometry", r.get("geometry_mode", "standard"), width, action=self._cycle_geometry)
-        if r.get("geometry_mode") == "vector-only":
-            self.add_dim("Outlines + labels; no image/radar fill.", width)
+        geometry = r.get("geometry_mode", "standard") if st.source == "vector" else "standard"
+        if geometry != "vector-only":
+            self.add_kv("View", st.render_mode, width, action=self._cycle_mode)
+        if st.source == "vector":
+            self.add_kv("Geometry", geometry, width, action=self._cycle_geometry)
         self.add_kv("Street / POI labels", "on" if r.get("detail_labels", True) else "off", width, action=self._toggle_details)
-        self.add_kv("Braille contrast", "on" if r.get("braille_readability", True) else "off", width, action=self._toggle_readability)
+        if st.source == "vector" and st.render_mode == "braille" and geometry != "vector-only":
+            self.add_kv("Braille contrast", "on" if r.get("braille_readability", True) else "off", width, action=self._toggle_readability)
         self.add_kv("Boundaries", "on" if r.get("boundaries", True) else "off",
                     width, action=self._toggle_boundaries)
+        if geometry == "vector-only":
+            self.add_kv("Labels", "on" if st.labels else "off", width, action=self._toggle_labels)
+            self.add_dim("Solid terminal outlines + labels.", width)
+            self.add_dim("Image / radar fills disabled.", width)
+            return
         self.add_kv("Raster", "theme tint" if r.get("raster_tint") == "theme" else "real colours",
                     width, action=self._toggle_tint)
         self.add_section("Roads", width)

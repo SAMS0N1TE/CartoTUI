@@ -57,6 +57,7 @@ def pack(rows, width, height):
 def metrics(rows, bg):
     glyph = rows.glyph
     visible = (glyph != 32) & (glyph != 0x2800)
+    ink_fraction = float(visible.mean())
     visible &= rows.fg != 0xFFFFFFFF
     fg = rows.fg[visible]
     rgb = np.stack((fg >> 16, fg >> 8 & 255, fg & 255), axis=-1)
@@ -65,7 +66,7 @@ def metrics(rows, bg):
     bg_rgb[backgrounds == 0xFFFFFFFF] = bg
     lum, background = luminance(rgb), luminance(bg_rgb)
     ratio = (np.maximum(lum, background) + .05) / (np.minimum(lum, background) + .05)
-    return {"ink_fraction": round(float(visible.mean()), 4),
+    return {"ink_fraction": round(ink_fraction, 4),
             "low_contrast_fraction": round(float((ratio < 3).mean()), 4) if len(ratio) else 0,
             "distinct_glyphs": len(np.unique(glyph)),
             "contrast_p10": round(float(np.percentile(ratio, 10)), 2) if len(ratio) else None}
@@ -80,9 +81,9 @@ def write_gallery(directory, records):
         warning = str(bool(r["warnings"])).lower()
         cards.append(f'<article data-warning="{warning}" data-key="{html.escape(label)}"><h3>{html.escape(label)}</h3><p>{html.escape(str(r["warnings"]))} · {r["ms"]} ms · ink {r["ink_fraction"]} · contrast p10 {r["contrast_p10"]}</p><img loading="lazy" src="{r["image"]}"></article>')
     (directory/"index.html").write_text('''<!doctype html><meta charset="utf-8"><title>CartoTUI visual QA</title>
-le>body{background:#171a20;color:#eee;font:15px system-ui;margin:24px}input{padding:12px;width:80%;position:sticky;top:8px}article{border:1px solid #667;margin:18px 0;padding:12px}img{max-width:100%;image-rendering:pixelated}p{color:#bbb}</style>
-CartoTUI settings review</h1><p>Metrics flag candidates for human review; sparse ocean and dense cities can be correct. Timing includes composition and excludes initial raster/network. Full coverage details are in results.json.</p><input id="search" placeholder="Filter: paper braille, night solid, z19 …" oninput="filterCases()"><label><input id="warnings" type="checkbox" style="width:auto;position:static" onchange="filterCases()"> Warnings only</label>
-ipt>function filterCases(){const q=document.getElementById('search').value.toLowerCase().split(/\\s+/);const warnings=document.getElementById('warnings').checked;document.querySelectorAll('article').forEach(a=>a.hidden=!(q.every(t=>a.dataset.key.toLowerCase().includes(t))&&(!warnings||a.dataset.warning==='true')))}</script>''' + "".join(cards),encoding="utf8")
+<style>body{background:#171a20;color:#eee;font:15px system-ui;margin:24px}input{padding:12px;width:80%;position:sticky;top:8px}article{border:1px solid #667;margin:18px 0;padding:12px}img{max-width:100%;image-rendering:pixelated}p{color:#bbb}</style>
+<h1>CartoTUI settings review</h1><p>Metrics flag candidates for human review; sparse ocean and dense cities can be correct. Timing includes composition and excludes initial raster/network. Full coverage details are in results.json.</p><input id="search" placeholder="Filter: paper braille, night solid, z19 …" oninput="filterCases()"><label><input id="warnings" type="checkbox" style="width:auto;position:static" onchange="filterCases()"> Warnings only</label>
+<script>function filterCases(){const q=document.getElementById('search').value.toLowerCase().split(/\\s+/);const warnings=document.getElementById('warnings').checked;document.querySelectorAll('article').forEach(a=>a.hidden=!(q.every(t=>a.dataset.key.toLowerCase().includes(t))&&(!warnings||a.dataset.warning==='true')))}</script>''' + "".join(cards),encoding="utf8")
 
 
 def main():
