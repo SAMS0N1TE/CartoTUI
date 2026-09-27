@@ -21,6 +21,7 @@ PAGES = (
     ("snapshot", "Export"),
     ("stats", "Statistics"),
     ("compass", "Compass"),
+    ("widgets", "Movable windows"),
     ("help", "Keyboard help"),
 )
 
@@ -32,7 +33,7 @@ class SettingsControl(SidebarControl):
     scroll = 0
 
     def open_page(self, page):
-        self.page = "home" if page == "widgets" else page
+        self.page = page
         self.selected = self.scroll = 0
         self._actions = []
         self.state.sidebar_visible = True
@@ -50,7 +51,19 @@ class SettingsControl(SidebarControl):
         self.open_page(pages[(pages.index(self.page) + delta) % len(pages)])
 
     def preferred_height(self, width, max_available_height, wrap_lines, get_line_prefix):
-        return max_available_height
+        return min(max_available_height, self.compact_height())
+
+    def compact_height(self):
+        hits = self._hits
+        try:
+            return len(self._body(max(1, self.width_chars - 4))) + 7
+        finally:
+            self._hits = hits
+
+    def pop_out(self):
+        if self.manager and self.manager.panel(self.page):
+            self.manager.show(self.page)
+            self._hide()
 
     def _body(self, width):
         self._hits = []
@@ -72,8 +85,8 @@ class SettingsControl(SidebarControl):
             return lines
         if self.manager and self.manager.panel(self.page):
             lines, hits = self.manager.panel(self.page).widget.render_body(width)
-            self._hits = list(hits)
-            return lines
+            self._hits = list(hits) + [(len(lines) + 1, 0, width, self.pop_out)]
+            return lines + [[], [("class:panel.button", " Open movable window >")]]
         bc = _get_bc(self.cfg)
         if self.page == "performance" and self.manager:
             lines, hits = self.manager.panel("render").widget.performance_body(width)

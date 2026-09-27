@@ -27,7 +27,7 @@ class Panel(UIControl):
         self._grab: Optional[Tuple[int, int]] = None
         self._moved = False
         self.float = None
-        self.window = Window(content=self, width=self.width, style="class:panel")
+        self.window = Window(content=self, width=self.width, style="class:settings")
 
     @property
     def name(self) -> str:
@@ -141,7 +141,8 @@ class Panel(UIControl):
             bottom = bc["bl"] + bc["h"] * inner + bc["br"]
             rows.append([("class:panel.border", bottom)])
 
-        formatted = [to_formatted_text(r) for r in rows]
+        formatted = [to_formatted_text([(style.replace("class:panel", "class:settings"), text)
+                                      for style, text in r]) for r in rows]
 
         def get_line(i: int):
             if 0 <= i < len(formatted):

@@ -149,3 +149,16 @@ def test_the_snapshot_path_runs(tmp_path):
         assert out and (tmp_path / "s.png").exists()
     finally:
         app.map_control.shutdown()
+
+
+def test_vector_only_bypasses_raster_and_cell_renderers(monkeypatch):
+    from cartotui.rendering import libcarto_backend
+    calls = []
+    monkeypatch.setattr(libcarto_backend, "rasterise_view_libcarto", lambda *a, **k: calls.append("raster"))
+    app = _app(geometry_mode="vector-only")
+    app.map_control.renderer.render = lambda *a, **k: calls.append("cells")
+    try:
+        assert _drain(app) is not None
+        assert calls == []
+    finally:
+        app.map_control.shutdown()

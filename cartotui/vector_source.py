@@ -163,9 +163,10 @@ class VectorTileSource:
         if not self._decoded:
             self._decoded_bytes = 0
 
-    def get_overlay_tile(self, z: int, x: int, y: int) -> Optional[VectorTile]:
+    def get_overlay_tile(self, z: int, x: int, y: int, layer_names=None) -> Optional[VectorTile]:
         """Decode only overlay layers into a separate source-owned byte LRU."""
-        key = (z, x, y)
+        names = OVERLAY_LAYERS if layer_names is None else frozenset(layer_names)
+        key = (z, x, y) if names == OVERLAY_LAYERS else (z, x, y, names)
         with self._lock:
             found = self._overlay_cache.get(key)
             if found is not None:
@@ -179,14 +180,14 @@ class VectorTileSource:
             return None
         try:
             layers = _pure_decode(self._decompress_if_needed(raw),
-                                  y_coord_down=True, layer_names=OVERLAY_LAYERS)
+                                  y_coord_down=True, layer_names=names)
         except Exception:
             # Preserve support for unusual provider encodings through the existing fallback.
             full = self._decode(raw)
             if full is None:
                 self.overlay_missing += 1
                 return None
-            layers = {k: v for k, v in full.items() if k in OVERLAY_LAYERS}
+            layers = {k: v for k, v in full.items() if k in names}
         tile = VectorTile(z=z, x=x, y=y, extent=4096, layers=layers)
         size = _object_bytes(layers) + sys.getsizeof(tile) + 256
         with self._lock:

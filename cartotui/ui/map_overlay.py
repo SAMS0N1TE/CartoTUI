@@ -14,6 +14,7 @@ from cartotui.ui.aircraft_overlay import (
     _stamp_cells_batch,
     _stamp_label,
 )
+from cartotui.vector_source import OVERLAY_LAYERS
 
 log = logging.getLogger("cartotui.overlay")
 _LAYERS_LOGGED: set = set()
@@ -23,6 +24,8 @@ LineFrag = List[StyleRun]
 FrameFrag = List[LineFrag]
 
 _PLACE_LAYERS = {"places", "place_labels", "place"}
+_DETAIL_LAYERS = {"street_labels", "transportation_name", "road_labels", "water_labels", "poi", "pois", "poi_labels", "public_transport", "water_lines_labels", "water_polygons_labels", "streets_polygons_labels"}
+
 _ADMIN_LABEL_LAYERS = {"boundary_labels", "admin_labels", "place_labels_admin"}
 
 _BOUNDARY_LAYERS = {"boundaries", "boundary", "admin", "admin_boundaries"}
@@ -101,7 +104,7 @@ _TILE_LABEL_CACHE_MAX = 64
 _CLASS_RANK = {
     "country": 0,
     "region": 1, "province": 1, "state": 1, "county": 1,
-    "city": 2, "metropolis": 2,
+    "city": 2, "metropolis": 2, "state_capital": 2, "capital": 2,
     "town": 3, "borough": 3,
     "village": 4,
     "suburb": 5, "quarter": 5, "neighbourhood": 5, "neighborhood": 5,
@@ -124,8 +127,8 @@ _FALLBACK_MIN_ZOOM_BY_RANK = {
 }
 
 def _extract_labels(tile) -> List[Tuple[int, int, str, Tuple[float, float]]]:
-    # Keep the tile alive with this bounded entry: object identity cannot collide
-    # across providers or a replaced tile generation.
+    # Validate weak identity so recycled object IDs cannot reuse another
+    # provider or generation's labels.
     key = id(tile)
     if key in _TILE_LABEL_CACHE and _TILE_LABEL_CACHE[key][0]() is tile:
         _TILE_LABEL_CACHE.move_to_end(key)
@@ -134,11 +137,12 @@ def _extract_labels(tile) -> List[Tuple[int, int, str, Tuple[float, float]]]:
     out: List[Tuple[int, int, str, Tuple[float, float]]] = []
     for layer_name, layer in tile.layers.items():
         is_admin = layer_name in _ADMIN_LABEL_LAYERS
-        if layer_name not in _PLACE_LAYERS and not is_admin:
+        is_detail = layer_name in _DETAIL_LAYERS
+        if layer_name not in _PLACE_LAYERS and not is_admin and not is_detail:
             continue
         for feat in layer.get("features", []):
             geom = feat.get("geometry") or {}
-            if geom.get("type") != "Point":
+            if geom.get("type") not in ("Point", "LineString", "MultiLineString"):
                 continue
             props = feat.get("properties") or {}
             name = (props.get("name:latin") or props.get("name") or
@@ -166,14 +170,25 @@ def _extract_labels(tile) -> List[Tuple[int, int, str, Tuple[float, float]]]:
             else:
                 min_zoom = _FALLBACK_MIN_ZOOM_BY_RANK.get(rank, 10)
 
-            cx, cy = geom["coordinates"]
+            coords = geom.get("coordinates") or []
+            if not coords:
+                continue
+            if geom.get("type") == "MultiLineString":
+                coords = max(coords, key=len)
+            if geom.get("type") in ("LineString", "MultiLineString"):
+                coords = coords[len(coords) // 2]
+            cx, cy = coords
+            if is_detail:
+                rank = 8
+                min_zoom = max(min_zoom, 13 if "street" in layer_name or "road" in layer_name or "transportation" in layer_name else 14)
+            scale = (tile.extent or 4096) / (layer.get("extent") or 4096)
+            cx, cy = cx * scale, cy * scale
             out.append((rank, min_zoom, str(name), (float(cx), float(cy))))
 
     out.sort(key=lambda t: t[0])
     _TILE_LABEL_CACHE[key] = (weakref.ref(tile), out)
     if len(_TILE_LABEL_CACHE) > _TILE_LABEL_CACHE_MAX:
         _TILE_LABEL_CACHE.popitem(last=False)
-    return out
     return out
 
 def clear_classify_cache() -> None:
@@ -401,6 +416,7 @@ def _apply_vector_overlay(
     label_bg: bool = True,
     draw_boundaries: bool = False,
     boundary_style: str = "dots",
+    detail_labels: bool = False,
 ) -> int:
     if vector_source is None:
         return 0
@@ -449,7 +465,10 @@ def _apply_vector_overlay(
     for tx in range(tx_min, tx_max + 1):
         for ty in range(ty_min, ty_max + 1):
             try:
-                tile = getattr(vector_source, "get_overlay_tile", vector_source.get_tile)(fetch_z, tx, ty)
+                tile = (vector_source.get_overlay_tile(fetch_z, tx, ty,
+                        layer_names=OVERLAY_LAYERS | _DETAIL_LAYERS)
+                        if detail_labels and z >= 13 and hasattr(vector_source, "get_overlay_tile")
+                        else getattr(vector_source, "get_overlay_tile", vector_source.get_tile)(fetch_z, tx, ty))
             except Exception:
                 continue
             if tile is None:

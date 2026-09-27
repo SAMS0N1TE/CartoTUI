@@ -22,6 +22,7 @@ from cartotui.themes import theme_vector_style
 from cartotui.traffic.aircraft import AircraftRegistry
 from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
 from cartotui.ui.map_overlay import apply_vector_overlay
+from cartotui.ui.solid_geometry import blank_frame, draw_solid_geometry, improve_braille_readability
 from cartotui.ui.state import MapState
 from cartotui.vector_source import VectorTileSource
 
@@ -581,6 +582,7 @@ class MapControl(UIControl):
             )
 
             r = self.cfg["render"]
+            geometry_mode = r.get("geometry_mode", "standard") if source == "vector" else "standard"
             t0 = time.perf_counter()
             img = None
             ac_overlay = []
@@ -640,6 +642,9 @@ class MapControl(UIControl):
                 except Exception:
                     fetch_z = z
                 engine = self.cfg["render"].get("vector_engine", "libcarto")
+                if geometry_mode == "vector-only":
+                    engine = "geometry"
+                    img = Image.new("RGB", (1, 1), tuple(style.bg))
                 if engine == "libcarto":
                     try:
                         from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
@@ -767,7 +772,7 @@ class MapControl(UIControl):
                         log.debug("raster tint failed: %s", e)
 
             radar_layer = None
-            if img is not None:
+            if img is not None and geometry_mode != "vector-only":
                 radar_layer = self._radar_layer(lat, lon, z, img.width, img.height, tile_px=tile_px)
 
             effective_color = bool(color)
@@ -784,16 +789,25 @@ class MapControl(UIControl):
             orientation = (_theme_orientation(style) if source == "vector" else None)
 
             try:
-                rows = self.renderer.render(
-                    img, w, h, effective_color, render_mode, palette, dither,
-                    overlay=radar_layer, orientation=orientation,
-                    packed=self.direct_paint,
-                )
+                rows = (blank_frame(w, h, style.bg, self.direct_paint)
+                        if geometry_mode == "vector-only" else self.renderer.render(
+                            img, w, h, effective_color, render_mode, palette, dither,
+                            overlay=radar_layer, orientation=orientation,
+                            packed=self.direct_paint))
             except Exception as e:
                 log.warning("Render failed: %s", e)
                 rows = [[("", " " * w)] for _ in range(h)]
 
             r_cfg = self.cfg["render"]
+            if geometry_mode != "vector-only" and render_mode == "braille" and source == "vector" and r_cfg.get("braille_readability", True):
+                improve_braille_readability(rows, style.bg, z)
+            if geometry_mode != "standard" and self.vector_source is not None:
+                try:
+                    draw_solid_geometry(rows, self.vector_source, center_lat=lat, center_lon=lon,
+                        z=z, term_w=w, term_h=h, canvas_px_w=view_w, canvas_px_h=view_h,
+                        style=style, max_fetch_zoom=fetch_z, vector_only=geometry_mode == "vector-only")
+                except Exception as e:
+                    log.warning("Solid geometry failed: %s", e)
             labels_enabled = bool(labels)
             boundaries_enabled = bool(r_cfg.get("boundaries", True)) and not panning
             if (self.vector_source is not None
@@ -808,13 +822,18 @@ class MapControl(UIControl):
                         # Same depth the map itself was drawn from, so labels
                         # and boundaries are not asking for tiles that 404.
                         pmap_max_zoom=fetch_z,
-                        max_labels=64 if labels_enabled else 0,
+                        max_labels=max(64, min(240, w * h // 100)) if labels_enabled else 0,
+                        detail_labels=bool(r_cfg.get("detail_labels", True)),
                         draw_boundaries=boundaries_enabled,
                         boundary_style=str(r_cfg.get("boundary_style", "dots")),
                     )
                 except Exception as e:
                     log.debug("Vector overlay failed: %s", e)
 
+            if geometry_mode == "vector-only" and self.vector_source is not None:
+                # Geometry decoding discovers source depth without a raster pass.
+                if self.vector_source.max_fetch_zoom(z) < fetch_z:
+                    self.request_render(force=True)
             ac_hitboxes: List[Tuple[str, int, int, int, int]] = []
             if ac_overlay:
                 try:

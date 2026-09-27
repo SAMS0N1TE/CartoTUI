@@ -172,6 +172,8 @@ class CartoTUIApp:
         floats = [Float(
             content=self.sidebar.container,
             top=1, right=1, width=self.sidebar.width_chars,
+            height=lambda: min(self.sidebar.control.compact_height(),
+                               max(8, self.widget_manager.screen_h - 2)),
         )]
         map_area = FloatContainer(content=self.map_window, floats=list(floats))
         self.widget_manager.attach(map_area, floats)
@@ -926,7 +928,7 @@ class CartoTUIApp:
 
         @kb.add("w", filter=map_active)
         def _(event):
-            self.widget_manager.toggle("widgets")
+            self._open_settings("home")
             self.state.set_info("Widgets panel")
 
         @kb.add("x", filter=map_active)

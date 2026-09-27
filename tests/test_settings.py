@@ -36,16 +36,30 @@ def test_every_page_fits_small_terminal_and_actions_scroll_into_view():
         app.map_control.shutdown()
 
 
-def test_existing_widget_shortcuts_open_same_settings_window():
+def test_movable_windows_can_be_opened_moved_and_hidden():
     app = make_app()
     try:
-        app.widget_manager.toggle("render")
-        assert app.sidebar.control.page == "render"
-        assert app.app.layout.current_window is app.sidebar.window
-        assert app.widget_manager.build_floats() == []
-        app.sidebar.control.back()
-        assert app.sidebar.control.page == "home"
-        app.sidebar.control.back()
+        manager = app.widget_manager
+        manager.ctx.cfg.save = lambda: None
+        manager.toggle("render")
+        assert manager.is_visible("render")
+        panel = manager.panel("render")
+        assert panel.float in manager.build_floats()
+        app.map_control._last_w, app.map_control._last_h = 120, 40
+        manager.begin_drag(panel, 2, 0)
+        manager.drag_to(18, 7)
+        manager.end_drag()
+        assert (panel.left, panel.top) == (16, 7)
+        manager.toggle("render")
+        assert not manager.is_visible("render")
+        menu = app.sidebar.control
+        menu.open_page("render")
+        menu.create_content(36, 40)
+        hits = list(menu._hits)
+        assert menu.compact_height() < 60
+        assert menu._hits == hits
+        menu.pop_out()
+        assert manager.is_visible("render")
         assert not app.state.sidebar_visible
     finally:
         app.map_control.shutdown()

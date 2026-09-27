@@ -108,9 +108,6 @@ class WidgetManager:
             self.rebuild()
 
     def show(self, name: str) -> None:
-        if self.open_settings is not None:
-            self.open_settings(name)
-            return
         if name in self._panels:
             panel = self._panels[name]
             self._visible[name] = True
@@ -132,9 +129,6 @@ class WidgetManager:
             self.save_layout()
 
     def toggle(self, name: str) -> None:
-        if self.open_settings is not None:
-            self.open_settings(name)
-            return
         if self.is_visible(name):
             self.hide(name)
         else:
@@ -166,8 +160,6 @@ class WidgetManager:
         return panel.float
 
     def build_floats(self) -> List[Float]:
-        if self.open_settings is not None:
-            return []
         floats: List[Float] = []
         for name in self._order:
             if not self._visible.get(name):
