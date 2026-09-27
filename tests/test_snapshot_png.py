@@ -23,6 +23,21 @@ def test_frame_to_png_renders_at_the_asked_cell_size():
     assert img.size == (40 * 12, 12 * 20)
 
 
+def test_half_blocks_have_exact_pixel_colours_without_font_gaps():
+    rows = [[("fg:#20386a bg:#ff5052", "▀▀")]]
+    img = frame_to_png(rows, "night", cell_px=20)
+    a = np.asarray(img)
+    assert (a[:10] == (32, 56, 106)).all()
+    assert (a[10:] == (255, 80, 82)).all()
+
+
+def test_braille_dots_do_not_depend_on_font_coverage():
+    img = frame_to_png([[('fg:#ffffff bg:#000000', '\u2801')]], 'night', cell_px=20)
+    a = np.asarray(img)
+    assert a[:5, :6].max() == 255
+    assert a[6:].max() == 0
+
+
 def test_save_frame_png_scales_to_the_long_side(tmp_path):
     rows = _rows()
     sizes = []
@@ -85,11 +100,12 @@ def test_snapshot_config_defaults_and_validation():
 
 def test_label_and_marker_scaling_grows_with_the_export():
     """A 6x11 bitmap font is a speck on a 4096px PNG; both must scale."""
+    from PIL import ImageDraw
+
     from cartotui.geodesy import latlon_to_tile_xy
     from cartotui.raster_vector import _draw_aircraft
     from cartotui.themes import theme_vector_style
     from cartotui.traffic.aircraft import Aircraft
-    from PIL import ImageDraw
 
     style = theme_vector_style("amber", {})
     W = H = 300

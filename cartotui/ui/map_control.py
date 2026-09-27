@@ -17,7 +17,7 @@ from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from cartotui.cache import TileCache
 from cartotui.composite import composite_from_tiles, prefetch_ring
 from cartotui.raster_vector import rasterise_view
-from cartotui.rendering.renderer import Renderer
+from cartotui.rendering.renderer import REFERENCE_SCALE, Renderer
 from cartotui.themes import theme_vector_style
 from cartotui.traffic.aircraft import AircraftRegistry
 from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
@@ -39,6 +39,30 @@ def _theme_orientation(style) -> Optional[str]:
     except Exception:
         return None
     return "dark" if (0.299 * r + 0.587 * g + 0.114 * b) / 255.0 < 0.4 else "bright"
+
+def _composite_for(cols: int, rows: int, scale: float, max_px: int):
+    """(width, height, tile_px) for a frame of `cols` x `rows` cells.
+
+    The ground a frame covers is fixed by the terminal size and the zoom. The
+    supersample buys detail inside it and must not move it, so it multiplies
+    the pixel count and the tile size together -- `tile_px` is what tells the
+    renderer how many pixels a tile is worth, and scaling both leaves the
+    viewport over exactly the same ground.
+
+    A composite capped by `max_composite_px` therefore loses sharpness, not
+    framing: the cap lowers the supersample rather than cropping the view.
+    """
+    cols = max(1, int(cols))
+    rows = max(1, int(rows))
+    s = max(1.0, float(scale))
+    # Clamp by lowering the supersample, so the frame stays put.
+    s = min(s, max_px / float(cols), max_px / float(2 * rows))
+    s = max(1.0, s)
+    px_w = max(1, int(round(cols * s)))
+    px_h = max(1, int(round(2 * rows * s)))
+    tile_px = max(16, int(round(256.0 * s / REFERENCE_SCALE)))
+    return px_w, px_h, tile_px
+
 
 @dataclass
 class _Frame:
@@ -525,13 +549,17 @@ class MapControl(UIControl):
             with self._dedup_lock:
                 self._inflight_key = dedup_key
 
-            cell_w_px, cell_h_px = self.renderer.cell_pixel_size(render_mode)
             max_px = int(self.cfg["map"].get("max_composite_px", 1400))
             panning = self._panning()
             self._last_render_panning = panning
-            scale = int(self.cfg["render"].get("vector_scale", 6)) if source == "vector" else 4
-            px_w = max(64, min(max_px, w * cell_w_px * scale))
-            px_h = max(64, min(max_px, h * cell_h_px * scale))
+            # Raster tiles carry their own resolution, so they are composited
+            # at the reference scale -- which keeps tile_px at 256 and the frame
+            # exactly where the vector path puts it.
+            scale = (int(self.cfg["render"].get("vector_scale", REFERENCE_SCALE))
+                     if source == "vector" else REFERENCE_SCALE)
+            px_w, px_h, tile_px = _composite_for(w, h, scale, max_px)
+            view_w = max(1, round(px_w * 256 / tile_px))
+            view_h = max(1, round(px_h * 256 / tile_px))
 
             self.renderer.update_options(
                 shaded_blocks=shaded,
@@ -574,7 +602,11 @@ class MapControl(UIControl):
             road_thickness = float(_rc.get("road_thickness", 1.0) or 1.0)
             road_thickness *= float(
                 (_rc.get("road_thickness_by_mode") or {}).get(render_mode, 1.0) or 1.0)
-            supersample = px_w / max(1, w * cell_w_px)
+            # Pixels per terminal cell, which is what road widths scale with so
+            # they keep their apparent thickness. Mode-independent now that the
+            # frame is: how a mode divides a cell into subcells is its own
+            # business and must not change how wide a road looks.
+            supersample = px_w / max(1, w)
 
             from cartotui.composite import tone_active
             v_gamma = 1.0 if panning else float(gamma)
@@ -614,11 +646,12 @@ class MapControl(UIControl):
                             # the renderer goes straight to cells, libcarto
                             # downsamples it itself and no RGB image is built.
                             lazy=True,
+                            tile_px=tile_px,
                         )
                         tone_done = img is not None and tone is not None
                         if panning:
                             try:
-                                self.vector_source.prefetch_viewport(lat, lon, z, px_w, px_h)
+                                self.vector_source.prefetch_viewport(lat, lon, z, view_w, view_h)
                             except Exception:
                                 pass
                             # A cached-only frame draws nothing where a tile
@@ -653,6 +686,7 @@ class MapControl(UIControl):
                             supersample=supersample,
                             road_thickness=road_thickness,
                             pmap_max_zoom=fetch_z,
+                            tile_px=tile_px,
                         )
                     except Exception as e:
                         log.warning("Vector rasterise failed: %s", e)
@@ -685,7 +719,7 @@ class MapControl(UIControl):
                     img = composite_from_tiles(
                         self.cache,
                         lat, lon, z,
-                        px_w, px_h,
+                        view_w, view_h,
                         overzoom_levels=overzoom,
                         contrast=float(contrast),
                         brightness=float(brightness),
@@ -704,6 +738,8 @@ class MapControl(UIControl):
                     log.warning("Composite failed: %s", e)
                     img = Image.new("RGB", (px_w, px_h), (24, 26, 32))
 
+                if img.size != (px_w, px_h):
+                    img = img.resize((px_w, px_h), Image.Resampling.BILINEAR)
                 if img is not None and self.cfg["render"].get("raster_tint", "none") == "theme":
                     try:
                         from PIL import ImageOps
@@ -718,7 +754,7 @@ class MapControl(UIControl):
 
             radar_layer = None
             if img is not None:
-                radar_layer = self._radar_layer(lat, lon, z, img.width, img.height)
+                radar_layer = self._radar_layer(lat, lon, z, img.width, img.height, tile_px=tile_px)
 
             effective_color = bool(color)
 
@@ -743,7 +779,7 @@ class MapControl(UIControl):
                         rows, self.vector_source,
                         center_lat=lat, center_lon=lon, z=z,
                         term_w=w, term_h=h,
-                        canvas_px_w=px_w, canvas_px_h=px_h,
+                        canvas_px_w=view_w, canvas_px_h=view_h,
                         style=style,
                         # Same depth the map itself was drawn from, so labels
                         # and boundaries are not asking for tiles that 404.
@@ -766,7 +802,7 @@ class MapControl(UIControl):
                         rows, ac_overlay,
                         center_lat=lat, center_lon=lon, z=z,
                         term_w=w, term_h=h,
-                        canvas_px_w=px_w, canvas_px_h=px_h,
+                        canvas_px_w=view_w, canvas_px_h=view_h,
                         style=style,
                         selected_icao=sel_icao,
                         show_trails=trails_enabled,
@@ -806,10 +842,10 @@ class MapControl(UIControl):
                         want = []
                         if panning:
                             from cartotui.composite import tiles_for_view
-                            vis = tiles_for_view(lat, lon, z, px_w, px_h)[0]
+                            vis = tiles_for_view(lat, lon, z, view_w, view_h)[0]
                             want = list(vis)
                         ring = list(prefetch_ring(
-                            self.cache, lat, lon, z, px_w, px_h,
+                            self.cache, lat, lon, z, view_w, view_h,
                             ring_radius=int(pf.get("ring_radius", 1)),
                         ))
                         combined = want + ring[:max_inflight]
@@ -829,7 +865,7 @@ class MapControl(UIControl):
     def _cell_pixel_size(self) -> Tuple[int, int]:
         return self.renderer.cell_pixel_size(self.state.render_mode)
 
-    def _radar_layer(self, lat, lon, z, px_w, px_h, cached_only: bool = True):
+    def _radar_layer(self, lat, lon, z, px_w, px_h, cached_only: bool = True, tile_px=256):
         """The radar as a separate RGBA layer for the renderer, or None.
 
         Deliberately not pasted into the map image: the renderer needs the base
@@ -840,8 +876,9 @@ class MapControl(UIControl):
         if not rd.get("enabled") or self.radar_source is None:
             return None
         try:
-            return self.radar_source.build_layer(
-                lat, lon, z, px_w, px_h,
+            layer = self.radar_source.build_layer(
+                lat, lon, z, max(1, round(px_w * 256 / tile_px)),
+                max(1, round(px_h * 256 / tile_px)),
                 opacity=float(rd.get("opacity", 0.65)),
                 color=int(rd.get("color", 4)),
                 smooth=int(rd.get("smooth", 1)),
@@ -849,16 +886,19 @@ class MapControl(UIControl):
                 which=rd.get("frame", "latest"),
                 cached_only=cached_only,
             )
+            if layer is not None and layer.size != (px_w, px_h):
+                layer = layer.resize((px_w, px_h), Image.Resampling.BILINEAR)
+            return layer
         except Exception as e:
             log.debug("radar overlay failed: %s", e)
             return None
 
-    def _apply_radar(self, img, lat, lon, z, cached_only: bool = True):
+    def _apply_radar(self, img, lat, lon, z, cached_only: bool = True, tile_px=256):
         """Flatten radar onto `img` -- for PNG snapshots, which skip the renderer."""
         if img is None:
             return img
         layer = self._radar_layer(lat, lon, z, img.width, img.height,
-                                  cached_only=cached_only)
+                                  cached_only=cached_only, tile_px=tile_px)
         if layer is None:
             return img
         if img.mode != "RGB":
@@ -922,12 +962,30 @@ class MapControl(UIControl):
         term_w = max(20, self._last_w)
         term_h = max(10, self._last_h)
         long_side = max(512, min(4096, int(long_side)))
-        aw, ah = term_w * 8, term_h * 16
-        s = long_side / float(max(aw, ah))
-        px_w = max(64, int(aw * s))
-        px_h = max(64, int(ah * s))
 
         lat, lon, z = self.state.lat, self.state.lon, self.state.z
+
+        # Match the ground the screen is showing, not just its shape. The
+        # export used to render a different pixel size at the same zoom, which
+        # covers a different area entirely -- a 1600px export of a 528px view
+        # took in three times as much map in each direction.
+        #
+        # Holding the extent means every doubling of the output has to be paid
+        # for with a zoom level, so the extra pixels carry real detail rather
+        # than an upscale of the same tiles.
+        vscale = (int(self.cfg["render"].get("vector_scale", REFERENCE_SCALE))
+                  if self.state.source == "vector" else REFERENCE_SCALE)
+        max_px = int(self.cfg["map"].get("max_composite_px", 1400))
+        live_w, live_h, snap_tile_px = _composite_for(term_w, term_h, vscale, max_px)
+
+        # Whichever doubling lands nearest the requested size -- overshooting
+        # it is better than halving it, since the extra comes from real tiles.
+        base = max(live_w, live_h)
+        steps = min(range(5), key=lambda k: abs((base << k) - long_side))
+        steps = min(steps, max(0, int(self.cfg["map"].get("max_zoom", 19)) - int(z)))
+        px_w = live_w << steps
+        px_h = live_h << steps
+        z = min(int(z) + steps, int(self.cfg["map"].get("max_zoom", 19)))
         theme = self.state.theme
         source = self.state.source
         try:
@@ -947,11 +1005,33 @@ class MapControl(UIControl):
         img = None
         if source == "vector" and self.vector_source is not None:
             engine = self.cfg["render"].get("vector_engine", "libcarto")
+            try:
+                fetch_z = self.vector_source.max_fetch_zoom(z)
+            except Exception:
+                fetch_z = z
             if engine == "libcarto" and not (want_labels or planes):
                 try:
                     from cartotui.rendering.libcarto_backend import rasterise_view_libcarto
-                    img = rasterise_view_libcarto(self.vector_source, lat, lon, z, px_w, px_h, style=style)
-                except Exception:
+                    # Same depth cap the live map uses. Without it a snapshot
+                    # taken past the source's deepest tiles asked for tiles that
+                    # 404, and every one that did came out as a hole of bare
+                    # background -- the black rectangles in an exported PNG.
+                    stats = {}
+                    img = rasterise_view_libcarto(
+                        self.vector_source, lat, lon, z, px_w, px_h, style=style,
+                        max_fetch_zoom=fetch_z, stats=stats,
+                        tile_px=snap_tile_px)
+                    if stats.get("misses"):
+                        # One more pass: the misses that were transient are in
+                        # the cache by now, and an export is worth the wait.
+                        log.info("snapshot: %d tiles missing, fetching again",
+                                 stats["misses"])
+                        img = rasterise_view_libcarto(
+                            self.vector_source, lat, lon, z, px_w, px_h,
+                            style=style, max_fetch_zoom=fetch_z,
+                            tile_px=snap_tile_px) or img
+                except Exception as e:
+                    log.warning("Snapshot libcarto rasterise failed: %s", e)
                     img = None
             if img is None:
                 try:
@@ -959,6 +1039,7 @@ class MapControl(UIControl):
                         self.vector_source, lat, lon, z, px_w, px_h, style=style,
                         aircraft_overlay=planes, selected_icao=sel,
                         label_px=label_px, marker_scale=scale,
+                        pmap_max_zoom=fetch_z, tile_px=snap_tile_px,
                     )
                 except Exception as e:
                     log.warning("Snapshot vector rasterise failed: %s", e)
@@ -966,7 +1047,8 @@ class MapControl(UIControl):
         if img is None:
             r = self.cfg["render"]
             img = composite_from_tiles(
-                self.cache, lat, lon, z, px_w, px_h,
+                self.cache, lat, lon, z, max(1, round(px_w * 256 / snap_tile_px)),
+                max(1, round(px_h * 256 / snap_tile_px)),
                 overzoom_levels=int(self.cfg["map"].get("overzoom", 2)),
                 contrast=float(self.state.contrast), brightness=float(self.state.brightness),
                 gamma=float(self.state.gamma),
@@ -979,6 +1061,8 @@ class MapControl(UIControl):
                 edge_boost=bool(r.get("edge_boost", False)),
                 invert=bool(r.get("invert", False)),
             )
+            if img.size != (px_w, px_h):
+                img = img.resize((px_w, px_h), Image.Resampling.BILINEAR)
             if self.cfg["render"].get("raster_tint", "none") == "theme":
                 from PIL import ImageOps
                 hi = max((style.road_color, style.label_color), key=lambda c: sum(c))
@@ -995,7 +1079,7 @@ class MapControl(UIControl):
                 white_point=float(self.state.white_point))
 
         if bool(sn.get("png_radar", True)):
-            img = self._apply_radar(img, lat, lon, z, cached_only=False)
+            img = self._apply_radar(img, lat, lon, z, cached_only=False, tile_px=snap_tile_px)
         img.save(path)
         return path
 

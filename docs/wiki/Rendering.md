@@ -50,7 +50,8 @@ luminance maps onto fill levels.
 
 | Mode | What it does |
 | --- | --- |
-| `adaptive` | Stretches contrast per tile on a 4x4 grid. Default, and the most forgiving |
+| `stable` | Default for new configurations. Bounded local contrast at two sample scales; fixed coverage decisions independent of viewport percentiles |
+| `adaptive` | Legacy contrast stretch per tile on a 4x4 grid |
 | `percentile` | One global stretch. `render.subpixel_percentile` sets the white point |
 | `edge` | Sobel edges mixed into the signal. Line-drawing look |
 | `fixed` | No stretch at all. Takes the image as it is |
@@ -69,7 +70,7 @@ also switch theme.
 `terminal`, `photo`, `bold`, `classic`, `newsprint`, `blueprint`, `braille`,
 `amber_crt`, `matrix`, `paper`, `night`, `hicon`.
 
-Change anything a Look set and the sidebar shows "Custom".
+Change anything a Look set and the Looks page shows "Custom".
 
 ## Quality and speed
 
@@ -78,7 +79,7 @@ Change anything a Look set and the sidebar shows "Custom".
 | `render.vector_engine` | `libcarto` | `libcarto` is the native renderer. `python` is the fallback and can also draw place labels and aircraft into the image |
 | `render.vector_scale` | 6 | Supersampling. 3 is fastest, 8 is sharpest |
 | `render.dynamic_quality` | true | Drop quality while panning, restore when still |
-| `render.color_depth` | `truecolor` | `256` and `16` for terminals that need it |
+| `render.color_depth` | `auto` | Uses terminal capabilities; explicit `truecolor`, `256` or `16` remain available |
 | `map.max_composite_px` | 1400 | Ceiling on the working image |
 | `render.road_thickness` | 1.0 | Multiplied by `road_thickness_by_mode` for the current mode |
 
@@ -88,3 +89,25 @@ Place labels and aircraft are drawn onto the terminal cells rather than into the
 map image, which keeps them sharp at any map scale. A `map` PNG export is the
 image, so it does not carry them unless you ask for them. See
 [Snapshots](Snapshots.md).
+
+## Stable detail and SSH output
+
+Stable detail uses fixed, bounded contrast enhancement in a two-sample radius.
+It preserves broad regions with a smooth tone curve and enhances nearby thin
+features without stretching tiny noise differences to full intensity. Quadrant
+and braille coverage is chosen before palette reduction, rather than comparing
+each subpixel to its own cell average. Distant bright objects cannot change a
+feature's threshold. Resampling, actual feature size and tone adjustments can
+still change its appearance as you zoom; this is not semantic road recognition.
+
+Existing profiles keep their selected threshold. Choose **Map appearance > Detail
+> stable** or apply the Terminal Look to try the new mapping. Legacy modes remain
+available. Updated libcarto runs it natively; older shared libraries fall back to
+Python safely. Half mode bypasses thresholding entirely.
+
+Both terminal output paths use ordinary text and ANSI colours: no graphics
+protocol, GUI or local display server is required on the remote host. With
+`render.direct_paint=true`, map rows are sent only when changed; layout changes
+force repainting so closing a menu exposes the map correctly. The painter resets
+inherited text attributes and honours the selected colour depth. `auto` follows
+the terminal; `256` is a useful explicit choice for SSH connections.

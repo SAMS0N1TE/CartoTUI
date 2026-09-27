@@ -53,7 +53,7 @@
     "sharpen_threshold": 3,
     "edge_boost": false,
     "invert": false,
-    "subpixel_threshold": "adaptive",
+    "subpixel_threshold": "stable",
     "subpixel_percentile": 55,
     "shaded_blocks": false,
     "vector_overlay": true,
@@ -73,7 +73,7 @@
     "road_highlight": false,
     "raster_tint": "none",
     "dynamic_quality": true,
-    "color_depth": "truecolor"
+    "color_depth": "auto"
   },
   "theme": {
     "chrome": {},

@@ -22,6 +22,7 @@ from cartotui.traffic.interest import classify
 from cartotui.traffic.source import TrafficSource
 from cartotui.ui.state import MapState
 
+
 def _distance_bearing_nm(lat1: float, lon1: float,
                          lat2: float, lon2: float) -> Tuple[float, float]:
     import math
@@ -215,7 +216,6 @@ class SidebarControl(UIControl):
                 app.invalidate()
 
     def _build_performance_lines(self, w: int, bc: dict) -> List:
-        r = self.cfg["render"]
         m = self.cfg["map"]
         pf = self.cfg["prefetch"]
         at = self.cfg["aircraft_trails"]
@@ -223,13 +223,7 @@ class SidebarControl(UIControl):
         ca = self.cfg["cache"]
         lines: List = []
 
-        lines.append(self._section("Renderer", w, bc))
-        self._perf_row(lines, "Engine", r.get("vector_engine", "libcarto"),
-                       w, bc, self._perf_toggle_engine)
-        scale = int(r.get("vector_scale", 6))
-        qual = {2: "fastest", 3: "fast", 4: "balanced",
-                6: "sharp", 8: "max"}.get(scale, str(scale))
-        self._perf_row(lines, "Quality", qual, w, bc, self._perf_cycle_quality)
+        lines.append(self._section("Tile detail", w, bc))
         self._perf_row(lines, "Overzoom", str(int(m.get("overzoom", 2))),
                        w, bc, self._perf_cycle_overzoom)
         lines.append(self._section_end(w, bc))
@@ -300,7 +294,7 @@ class SidebarControl(UIControl):
             (focus_cls, field_text),
             ("class:sidebar", " " + v),
         ])
-        hint = "(Enter to go, Esc to clear)"
+        hint = "(Enter to go, Esc back)"
         lines.append([("class:sidebar.dim", v + " " + hint.ljust(w - 3) + " " + v)])
         lines.append(self._section_end(w, bc))
 
@@ -371,9 +365,9 @@ class SidebarControl(UIControl):
 
         lines.append(self._section("App", w, bc))
         for key, desc in (
-            ("Tab",  "toggle sidebar"),
-            ("w",    "widgets"),
-            ("1-4",  "switch tab"),
+            ("Tab",  "settings / map"),
+            ("w",    "settings home"),
+            ("F3/F4", "previous / next page"),
             ("h / ?","help"),
             ("q",    "quit"),
         ):
@@ -712,6 +706,8 @@ def _human_bytes(n: float) -> str:
 
 class Sidebar:
 
+    control_type = SidebarControl
+
     def __init__(
         self,
         state: MapState,
@@ -725,7 +721,7 @@ class Sidebar:
         self.state = state
         self.cfg = cfg
         self.width_chars = max(28, int(width_chars))
-        self.control = SidebarControl(
+        self.control = self.control_type(
             state, cfg, get_traffic, get_registry,
             on_select_aircraft, on_search_submit,
             width_chars=self.width_chars,

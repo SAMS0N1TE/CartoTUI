@@ -42,9 +42,9 @@ def test_dynamic_quality_defaults():
 def test_perf_settings():
     c = _validate({})
     assert c["ui"]["max_fps"] == 30
-    assert c["render"]["color_depth"] == "truecolor"
+    assert c["render"]["color_depth"] == "auto"
     assert _validate({"ui": {"max_fps": 999}})["ui"]["max_fps"] == 120
-    assert _validate({"render": {"color_depth": "bad"}})["render"]["color_depth"] == "truecolor"
+    assert _validate({"render": {"color_depth": "bad"}})["render"]["color_depth"] == "auto"
     assert _validate({"render": {"color_depth": "256"}})["render"]["color_depth"] == "256"
 
 
@@ -57,3 +57,14 @@ def test_unknown_nested_keys_preserved():
 def test_panels_list_normalised():
     assert _validate({"ui": {"panels": "bad"}})["ui"]["panels"] == []
     assert _validate({"ui": {"panels": [{"name": "compass"}]}})["ui"]["panels"] == [{"name": "compass"}]
+
+
+def test_configs_and_defaults_do_not_share_mutable_values():
+    from cartotui.config import DEFAULT_CONFIG, Config
+    first, second = Config(), Config()
+    first.data["render"]["color_depth"] = "16"
+    first.data["ui"]["panels"].append({"name": "render"})
+    assert second.data["render"]["color_depth"] == "auto"
+    assert DEFAULT_CONFIG["render"]["color_depth"] == "auto"
+    assert second.data["ui"]["panels"] == []
+    assert DEFAULT_CONFIG["ui"]["panels"] == []

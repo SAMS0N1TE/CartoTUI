@@ -1,44 +1,29 @@
-# Widgets
+# Settings and tools
 
-Floating panels over the map. `w` opens the launcher. Drag them by the title bar,
-`[-]` minimises, `[x]` closes. `Ctrl+S` saves positions so they come back where
-you left them.
+`Tab` opens or closes the settings browser; `w` opens its home page. All settings
+and tools share this one window. Old floating-panel positions are retained in
+configuration for compatibility, but no longer reopen competing menus.
 
-| Widget | What it does |
+Use Up/Down to select an action, Enter to activate it, and Escape to go back.
+Left goes back; Right activates. Page Up/Down move eight actions. Long pages
+scroll automatically to keep the selected action visible. The mouse wheel and
+clicks also work, but no mouse is required. Minus and plus buttons are separate
+keyboard targets, with the selected button highlighted.
+
+| Page | Contents |
 | --- | --- |
-| `widgets` | The launcher. Show and hide the rest |
-| `looks` | The Looks gallery, click to apply |
-| `render` | Engine, view, quality, roads, colour, labels, Tone |
-| `location` | Where you are, and jump somewhere |
-| `compass` | Heading |
-| `adsb` | Live aircraft. See [ADS-B](ADS-B.md) |
-| `stats` | Frame time, cache, tiles |
-| `weather` | Conditions for the map centre |
-| `radar` | Precipitation. See [Overlays](Overlays.md) |
-| `snapshot` | PNG and HTML export. See [Snapshots](Snapshots.md) |
-| `theme` | Pick, edit and save themes. See [Themes](Themes.md) |
+| Looks / presets | Apply a complete visual preset |
+| Map appearance | Source, view, boundaries, roads, labels, detail mapping and tone |
+| Theme / colours | Select, edit and save themes; save current settings as a preset |
+| Location | View coordinates and jump somewhere |
+| Weather radar / Weather | Overlay and weather controls |
+| Aircraft settings / Live aircraft | Display controls and aircraft list |
+| Search | Type a location and press Enter |
+| Performance | Engine, quality, terminal colours, dynamic panning, tiles and cache |
+| Export | PNG and HTML snapshots |
+| Statistics / Compass | Live measurements and heading |
+| Keyboard help | Existing map shortcuts |
 
-## Folded sections
-
-Some panels fold a section away behind a `▸`. Click the header to open it. While
-it is closed the header shows a summary of what is inside.
-
-The ADS-B widget folds Display and Declutter. The Render and Themes widgets fold
-Tone.
-
-## Rows you can click
-
-- A row ending `▸` cycles or toggles
-- A row with `[-] value [+]` steps that value
-- A `[ button ]` does the obvious thing
-
-## Render widget
-
-Vector engine, view mode, boundaries, raster tint, pan quality, colour depth and
-quality preset. Then road thickness, global and per view mode, with the effective
-product shown under them. Then colour, map labels, palette, dither, and Tone.
-
-## Stats widget
-
-Frame time is the useful one. If it climbs, drop `render.vector_scale` or turn on
-`dynamic_quality`.
+Save profile at the bottom of Home (or Ctrl+S) saves the current visual settings.
+Half mode hides palette, dither, shading and threshold controls because they do
+not affect its two colour pixels. Tone controls remain available.

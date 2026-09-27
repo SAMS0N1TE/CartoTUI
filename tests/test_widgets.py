@@ -102,7 +102,7 @@ def _find_row(w, width, label):
     raise AssertionError(f"row {label!r} not found")
 
 
-@pytest.mark.parametrize("name", ["render", "theme"])
+@pytest.mark.parametrize("name", ["render"])
 def test_tone_fold_toggles_and_reveals_knobs(name):
     w, _state = _tone_widget(name)
     width = w.default_width - 2
@@ -120,7 +120,7 @@ def test_tone_fold_toggles_and_reveals_knobs(name):
         _find_row(w, width, label)
 
 
-@pytest.mark.parametrize("name", ["render", "theme"])
+@pytest.mark.parametrize("name", ["render"])
 def test_tone_minus_and_plus_hits_move_the_right_knob(name):
     w, state = _tone_widget(name)
     width = w.default_width - 2
@@ -279,3 +279,12 @@ def test_adsb_trail_length_adjusts():
     y, _ = _find_row(w, width, "length")
     assert _click(w, width, y, width - 2)
     assert cfg.data["aircraft_trails"]["duration_s"] == pytest.approx(75.0)
+
+
+def test_theme_does_not_duplicate_map_tone_controls():
+    widget, _ = _tone_widget("theme")
+    lines, _ = _rows_and_hits(widget, 42)
+    text = "\n".join("".join(t for _, t in line) for line in lines)
+    assert "Brightness" not in text
+    assert "Road width" not in text
+    assert "Save preset to this theme" in text

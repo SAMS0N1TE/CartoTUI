@@ -100,6 +100,7 @@ class MapState:
         self.crosshair = (vp.get("crosshair_char") or "+") if vp.get("crosshair", True) else ""
 
         self.theme = str(self.cfg["ui"].get("theme", "amber"))
+        self.sidebar_visible = bool(self.cfg["viewport"].get("show_sidebar", True))
 
         try:
             from cartotui import looks
@@ -251,7 +252,7 @@ class MapState:
 
     def cycle_threshold(self) -> None:
         with self._lock:
-            order = ["adaptive", "percentile", "edge", "fixed"]
+            order = ["stable", "adaptive", "percentile", "edge", "fixed"]
             i = order.index(self.threshold_mode) if self.threshold_mode in order else 0
             self.threshold_mode = order[(i + 1) % len(order)]
 

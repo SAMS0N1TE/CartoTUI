@@ -20,8 +20,11 @@ Off by default; `render.direct_paint` turns it on.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from prompt_toolkit.output import ColorDepth
+from prompt_toolkit.output.vt100 import _EscapeCodeCache
 from prompt_toolkit.renderer import Renderer as _PTRenderer
 
 log = logging.getLogger("cartotui.direct_paint")
@@ -99,6 +102,20 @@ def _bg_seq(h: Optional[str]) -> str:
     return seq
 
 
+@lru_cache(maxsize=65536)
+def _color_seq(h, background, depth):
+    if depth == ColorDepth.DEPTH_24_BIT:
+        return _bg_seq(h) if background else _fg_seq(h)
+    if h is None:
+        return "\x1b[49m" if background else "\x1b[39m"
+    # Quantise the two pixel colours independently. Text contrast correction
+    # (forcing similar fg/bg apart at 16 colours) corrupts half-block images.
+    cache = _EscapeCodeCache(depth)
+    codes = list(cache._colors_to_code("" if background else h,
+                                      h if background else ""))
+    return "\x1b[" + ";".join(codes) + "m" if codes else ""
+
+
 def _uncovered_spans(x0: int, width: int,
                      covers: Sequence[Tuple[int, int]]) -> List[Tuple[int, int]]:
     """Columns of [x0, x0+width) left over once `covers` are removed."""
@@ -124,7 +141,9 @@ def _uncovered_spans(x0: int, width: int,
 def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int,
                blocked: Sequence[Tuple[int, int, int, int]],
                base_fg: Optional[str] = None,
-               base_bg: Optional[str] = None) -> str:
+               base_bg: Optional[str] = None,
+               color_depth=ColorDepth.DEPTH_24_BIT,
+               previous_rows=None) -> str:
     """The escape stream that draws `rows` at (x, y), skipping blocked rects.
 
     `blocked` is a sequence of (x0, y0, x1, y1) in screen coordinates.
@@ -136,10 +155,12 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
     per frame rather than per run. Both start unknown, so the first run always
     states both and nothing is inherited from whatever came before.
     """
-    out: List[str] = [_SAVE]
+    out: List[str] = [_SAVE, _RESET]
     cur_fg = cur_bg = _UNSET
     n = min(height, len(rows))
     for ry in range(n):
+        if previous_rows is not None and ry < len(previous_rows) and rows[ry] == previous_rows[ry]:
+            continue
         sy = y + ry
         covers = [(bx0, bx1) for bx0, by0, bx1, by1 in blocked if by0 <= sy < by1]
         spans = _uncovered_spans(x, width, covers)
@@ -168,13 +189,19 @@ def paint_rows(rows: Sequence[LineFrag], x: int, y: int, width: int, height: int
                 if b <= a:
                     continue
                 fg, bg = colors_for(style, base_fg, base_bg)
-                if fg != cur_fg:
-                    out.append(_fg_seq(fg))
-                    cur_fg = fg
-                if bg != cur_bg:
-                    out.append(_bg_seq(bg))
-                    cur_bg = bg
+                fg_seq = _color_seq(fg, False, color_depth)
+                bg_seq = _color_seq(bg, True, color_depth)
+                # Different RGBs often map to the same 256/16-colour entry.
+                # Track what is transmitted, rather than the original RGB.
+                if fg_seq != cur_fg:
+                    out.append(fg_seq)
+                    cur_fg = fg_seq
+                if bg_seq != cur_bg:
+                    out.append(bg_seq)
+                    cur_bg = bg_seq
                 out.append(text[a:b])
+    if len(out) == 2:
+        return ""
     out.append(_RESET)
     out.append(_RESTORE)
     return "".join(out)
@@ -192,6 +219,9 @@ class DirectPaintRenderer(_PTRenderer):
     map_window = None
 
     def render(self, app, layout, is_done: bool = False) -> None:
+        if self._last_screen is None:
+            self._paint_previous = None
+        self._paint_depth = app.color_depth
         super().render(app, layout, is_done)
         if is_done or self.map_source is None or self.map_window is None:
             return
@@ -230,8 +260,15 @@ class DirectPaintRenderer(_PTRenderer):
             if ox1 <= mx0 or ox0 >= mx1 or oy1 <= my0 or oy0 >= my1:
                 continue
             blocked.append((ox0, oy0, ox1, oy1))
-        return paint_rows(rows, mx0, my0, wp.width, wp.height, blocked,
-                          base_fg=base_fg, base_bg=base_bg)
+        depth = getattr(self, "_paint_depth", ColorDepth.DEPTH_24_BIT)
+        signature = (mx0, my0, wp.width, wp.height, tuple(blocked), base_fg, base_bg, depth)
+        previous = getattr(self, "_paint_previous", None)
+        old_rows = previous[1] if previous and previous[0] == signature else None
+        blob = paint_rows(rows, mx0, my0, wp.width, wp.height, blocked,
+                          base_fg=base_fg, base_bg=base_bg, color_depth=depth,
+                          previous_rows=old_rows)
+        self._paint_previous = (signature, [list(row) for row in rows])
+        return blob
 
     def _window_colors(self):
         """The map window's own colours, the way prompt_toolkit resolves them.

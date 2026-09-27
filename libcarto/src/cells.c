@@ -11,6 +11,44 @@
 
 #define CARTO_BRAILLE_BASE 0x2800u
 
+int carto_cells_version(void) { return 2; }
+
+static int clamp_index(int v, int size) {
+    return v < 0 ? 0 : (v >= size ? size - 1 : v);
+}
+
+static void stable_signal(float *sig, int w, int h, float *scratch, float floor) {
+    memcpy(scratch, sig, (size_t)w * h * sizeof(float));
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            float s = scratch[y * w + x], near = s, wide = s;
+            const int dxs[4] = {-1, 1, 0, 0}, dys[4] = {0, 0, -1, 1};
+            int interior = x >= 2 && x + 2 < w && y >= 2 && y + 2 < h;
+            for (int i = 0; i < 4; ++i) {
+                int yy = interior ? y + dys[i] : clamp_index(y + dys[i], h);
+                int xx = interior ? x + dxs[i] : clamp_index(x + dxs[i], w);
+                float v = scratch[yy * w + xx];
+                if (v < near) near = v;
+            }
+            for (int dy = -2; dy <= 2; dy += 2)
+                for (int dx = -2; dx <= 2; dx += 2) {
+                    int yy = interior ? y + dy : clamp_index(y + dy, h);
+                    int xx = interior ? x + dx : clamp_index(x + dx, w);
+                    float v = scratch[yy * w + xx];
+                    if (v < wide) wide = v;
+                }
+            float detail = s - near, broad = (s - wide) * 0.75f;
+            if (broad > detail) detail = broad;
+            detail -= (floor > 0.0f ? floor : 0.0f) * 0.25f;
+            if (detail < 0.0f) detail = 0.0f;
+            detail /= detail + 0.10f;
+            float base = s > 0.06f ? s - 0.06f : 0.0f;
+            base /= base + 0.12f;
+            sig[y * w + x] = base > detail ? base : detail;
+        }
+    }
+}
+
 static const uint32_t CARTO_QUAD_GLYPHS[16] = {
     0x0020, 0x2597, 0x2596, 0x2584,
     0x259D, 0x2590, 0x259E, 0x259F,
@@ -271,7 +309,9 @@ static void fill_levels(const uint8_t *rgb, int32_t w, int32_t h,
     if (orient == CARTO_ORIENT_BRIGHT)
         for (int32_t i = 0; i < n; ++i) sig[i] = 1.0f - sig[i];
 
-    if (o->threshold_mode == CARTO_THRESH_ADAPTIVE) {
+    if (o->threshold_mode == CARTO_THRESH_STABLE) {
+        stable_signal(sig, w, h, scratch, o->signal_floor);
+    } else if (o->threshold_mode == CARTO_THRESH_ADAPTIVE) {
         if (adaptive_stretch(sig, w, h, scratch, o->tile_grid,
                              o->black_pct, o->white_pct, o->signal_floor) != 0)
             global_stretch(sig, n, scratch, o->black_pct, o->white_pct);
@@ -346,7 +386,9 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
         free(sig); free(scratch); free(fill);
         return -1;
     }
-    fill_levels(rgb, w, h, o, levels, sig, scratch, fill);
+    int stable = o->threshold_mode == CARTO_THRESH_STABLE;
+    fill_levels(rgb, w, h, o, stable && o->mode != CARTO_CELL_ASCII ? 256 : levels,
+                sig, scratch, fill);
 
     const uint32_t *pal = o->palette;
 
@@ -373,6 +415,13 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                 int32_t avg = (tl + tr + bl + br) / 4;
                 int32_t code = ((tl > avg) << 3) | ((tr > avg) << 2)
                              | ((bl > avg) << 1) | (br > avg);
+                if (stable) {
+                    code = ((tl >= 80) << 3) | ((tr >= 80) << 2)
+                         | ((bl >= 80) << 1) | (br >= 80);
+                    avg = (int32_t)rint(avg * ((levels - 1) / 255.0));
+                    mx = (int32_t)rint(mx * ((levels - 1) / 255.0));
+                    mn = (int32_t)rint(mn * ((levels - 1) / 255.0));
+                }
                 uint32_t gl = CARTO_QUAD_GLYPHS[code];
                 if (mx == mn) {
                     int32_t fi = avg < 0 ? 0 : (avg > levels - 1 ? levels - 1 : avg);
@@ -415,20 +464,21 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                 for (int32_t ry = 0; ry < 4; ++ry) {
                     size_t base = (size_t)(4 * y + ry) * w + 2 * x;
                     for (int32_t cx = 0; cx < 2; ++cx) {
-                        if ((double)fill[base + cx] > avg) {
+                        if (stable ? fill[base + cx] >= 80 : (double)fill[base + cx] > avg) {
                             code |= CARTO_BRAILLE_BITS[ry][cx];
                             lit++;
                         }
                     }
                 }
                 uint32_t gl = CARTO_BRAILLE_BASE + code;
+                double palette_avg = stable ? avg * ((levels - 1) / 255.0) : avg;
                 if (code == 0 || code == 0xFF) {
-                    int32_t fi = (int32_t)avg;  /* astype(int32) truncates */
+                    int32_t fi = (int32_t)palette_avg;  /* astype(int32) truncates */
                     if (fi < 0) fi = 0; else if (fi > levels - 1) fi = levels - 1;
                     gl = pal[fi];
                 }
                 if (o->shaded && lit >= 6) {
-                    int32_t si = (int32_t)avg;
+                    int32_t si = (int32_t)palette_avg;
                     if (si < 1) si = 1; else if (si > levels - 1) si = levels - 1;
                     gl = pal[si];
                 }
@@ -441,7 +491,7 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                         size_t base = (size_t)(4 * y + ry) * w + 2 * x;
                         for (int32_t cx = 0; cx < 2; ++cx) {
                             const uint8_t *p = rgb + (base + cx) * 3;
-                            int32_t on = ((double)fill[base + cx] > avg);
+                            int32_t on = stable ? fill[base + cx] >= 80 : ((double)fill[base + cx] > avg);
                             for (int32_t k = 0; k < 3; ++k) {
                                 whole[k] += p[k];
                                 if (on) acc[k] += p[k];

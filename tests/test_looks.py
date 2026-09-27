@@ -17,7 +17,7 @@ def test_look_registry_is_consistent():
     for lk in looks.LOOKS:
         assert lk.render_mode in ("ascii", "quadrant", "braille", "half")
         assert lk.dither in ("none", "bayer", "atkinson", "floyd")
-        assert lk.threshold in ("adaptive", "percentile", "edge", "fixed")
+        assert lk.threshold in ("stable", "adaptive", "percentile", "edge", "fixed")
         assert 0.2 <= lk.brightness <= 3.0
         assert 0.2 <= lk.contrast <= 3.0
         assert not (lk.dither != "none" and lk.render_mode != "ascii")

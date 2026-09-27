@@ -11,18 +11,12 @@ from cartotui.ui.map_control import MapControl
 from cartotui.ui.state import MapState
 
 _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
+    ("Tab", "Settings"),
     ("Q",   "Quit"),
     ("?",   "Help"),
     ("+/-", "Zoom"),
-    ("K",   "Style"),
     ("V",   "Src"),
     ("M",   "View"),
-    ("T",   "Theme"),
-    ("P",   "Pal"),
-    ("D",   "Dith"),
-    ("S",   "Shade"),
-    ("U",   "Thr"),
-    ("C",   "Color"),
     ("G",   "Goto"),
     ("R",   "Reset"),
 ]
@@ -66,6 +60,7 @@ class Toolbar(UIControl):
         palettes: List[str],
         on_theme_changed: Optional[Callable[[], None]] = None,
         on_cycle_source: Optional[Callable[[], None]] = None,
+        on_settings: Optional[Callable[[], None]] = None,
     ) -> None:
         self.state = state
         self.map_control = map_control
@@ -75,6 +70,7 @@ class Toolbar(UIControl):
         self.palettes = palettes
         self.on_theme_changed = on_theme_changed
         self.on_cycle_source = on_cycle_source
+        self.on_settings = on_settings
 
         self._hit_zones: List[Tuple[int, int, str]] = []
         self._hover_key: Optional[str] = None
@@ -161,7 +157,10 @@ class Toolbar(UIControl):
                 app.invalidate()
             return
 
-        if key == "Q":
+        if key == "Tab":
+            if self.on_settings is not None:
+                self.on_settings()
+        elif key == "Q":
             self.on_quit()
         elif key == "?":
             self.on_help()

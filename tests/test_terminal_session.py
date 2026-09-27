@@ -1,0 +1,73 @@
+"""Exercise VT100 output and keyboard input with no mouse or graphics protocol."""
+
+import asyncio
+import io
+
+import pytest
+from prompt_toolkit.application import create_app_session
+from prompt_toolkit.data_structures import Size
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import ColorDepth
+from prompt_toolkit.output.vt100 import Vt100_Output
+
+from cartotui.config import Config
+from cartotui.ui.app import CartoTUIApp
+from cartotui.ui.map_control import _Frame
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_keyboard_settings_over_vt100(direct):
+    async def run():
+        stream = io.StringIO()
+        output = Vt100_Output(
+            stream,
+            lambda: Size(rows=24, columns=80),
+            term="xterm-256color",
+            enable_cpr=False,
+            default_color_depth=ColorDepth.DEPTH_8_BIT,
+        )
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            cfg = Config()
+            cfg.data["ui"]["mouse"] = False
+            cfg.data["viewport"]["show_sidebar"] = False
+            cfg.data["render"]["color_depth"] = "256"
+            app = CartoTUIApp(cfg)
+            app.map_control._enqueue = lambda *args, **kwargs: None
+            app.map_control.request_render = lambda *args, **kwargs: None
+            app.map_control._last_frame = _Frame(
+                80, 20, [[("fg:#20386a bg:#000000", "▀" * 80)] for _ in range(20)], ()
+            )
+            if direct:
+                app._install_direct_paint()
+            task = asyncio.create_task(app.app.run_async())
+
+            async def until(predicate):
+                for _ in range(100):
+                    if predicate():
+                        return
+                    await asyncio.sleep(0.02)
+                raise AssertionError("terminal interaction did not complete")
+
+            try:
+                await until(lambda: app.app.is_running)
+                pipe.send_text("w")
+                await until(lambda: app.state.sidebar_visible)
+                await until(lambda: bool(getattr(app.sidebar.control, "_actions", [])))
+                pipe.send_text("\x1b[B\r")
+                await until(lambda: app.sidebar.control.page == "render")
+                await until(lambda: "Map appearance" in stream.getvalue())
+                pipe.send_text("\t")
+                await until(lambda: not app.state.sidebar_visible)
+                pipe.send_text("\x03")
+                await asyncio.wait_for(task, 3)
+                assert "38;2;" not in stream.getvalue()
+                assert "38;5;" in stream.getvalue()
+                assert "\x1b_G" not in stream.getvalue()  # no Kitty protocol
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                app.map_control.shutdown()
+                app.vector_source.close()
+
+    asyncio.run(run())

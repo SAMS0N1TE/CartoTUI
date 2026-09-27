@@ -142,6 +142,11 @@ class Renderer:
         L.carto_end.restype = None
 
         self.has_cells = hasattr(L, "carto_cellify")
+        self.has_stable_cells = False
+        if hasattr(L, "carto_cells_version"):
+            L.carto_cells_version.argtypes = []
+            L.carto_cells_version.restype = c_int
+            self.has_stable_cells = L.carto_cells_version() >= 2
         if self.has_cells:
             L.carto_cellify.argtypes = [c_void_p, c_int32, c_int32,
                                         POINTER(CartoCellOpts),

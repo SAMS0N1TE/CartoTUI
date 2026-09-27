@@ -70,6 +70,7 @@ def _lum565():
     global _LUM565
     if _LUM565 is None:
         import numpy as np
+
         from cartotui.composite import _LUMA
         _LUM565 = (_rgb565_lut().astype(np.float32) / 255.0) @ _LUMA
     return _LUM565
@@ -170,7 +171,9 @@ def _lut_for(v, tone):
         if total:
             used = np.flatnonzero(counts)
             pivot = float((counts * _lum565()).sum() / total)
-            key = (pivot, tuple(sorted(tone.items())))
+            # Sparse tables are valid only for the colours populated in them.
+            # A pan can introduce new colours without changing the mean luma.
+            key = (pivot, tuple(sorted(tone.items())), used.tobytes())
             cached = _TONED_LUT32
             if cached is not None and cached[0] == key:
                 lut32 = cached[1]
@@ -200,7 +203,7 @@ def _rgb565_to_image(rgb565: bytes, w: int, h: int, tone: dict = None):
 def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
                             preload=False, cached_only=False, supersample=1.0,
                             road_thickness=1.0, tone=None, max_fetch_zoom=None,
-                            lazy=False, stats=None):
+                            lazy=False, stats=None, tile_px=256):
     """Rasterise the view through libcarto.
 
     `stats`, if given, receives `misses`: how many tiles the fetch could not
@@ -233,13 +236,15 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
     fetch_z = z if max_fetch_zoom is None else min(int(z), int(max_fetch_zoom))
     rgb565, drawn = renderer.render_viewport(
         lat, lon, z, px_w, px_h, counted_fetch,
-        style=style,
+        style=style, tile_px=int(tile_px),
         road_width_scale=(max(1.0, float(supersample))
                           * max(0.05, float(road_thickness))),
         fetch_z=fetch_z,
     )
     if preload:
-        renderer.prefetch_ring(lat, lon, fetch_z, px_w, px_h, base_fetch, ring=1)
+        renderer.prefetch_ring(lat, lon, fetch_z,
+                               max(1, round(px_w * 256 / tile_px)),
+                               max(1, round(px_h * 256 / tile_px)), base_fetch, ring=1)
     if drawn == 0:
         return None
     if lazy:

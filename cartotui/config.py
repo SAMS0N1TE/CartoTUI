@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import platform
@@ -73,7 +74,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sharpen_threshold": 3,
         "edge_boost": False,
         "invert": False,
-        "subpixel_threshold": "adaptive",
+        "subpixel_threshold": "stable",
         "subpixel_percentile": 55,
         "shaded_blocks": False,
         "vector_overlay": True,
@@ -95,7 +96,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "road_highlight": False,
         "raster_tint": "none",
         "dynamic_quality": True,
-        "color_depth": "truecolor",
+        "color_depth": "auto",
     },
     "prefetch": {
         "enable": True,
@@ -222,12 +223,12 @@ def default_config_path() -> str:
     return os.path.join(_config_home(), "config.json")
 
 def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(a)
+    out = copy.deepcopy(a)
     for k, v in b.items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
             out[k] = _deep_merge(out[k], v)
         else:
-            out[k] = v
+            out[k] = copy.deepcopy(v)
     return out
 
 def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
@@ -363,7 +364,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["edge_boost"] = _coerce_bool(r.get("edge_boost"), DEFAULT_CONFIG["render"]["edge_boost"])
     r["invert"]    = _coerce_bool(r.get("invert"), DEFAULT_CONFIG["render"]["invert"])
     r["subpixel_threshold"] = _coerce_choice(
-        r.get("subpixel_threshold"), ("adaptive", "fixed", "percentile", "edge"),
+        r.get("subpixel_threshold"), ("stable", "adaptive", "fixed", "percentile", "edge"),
         DEFAULT_CONFIG["render"]["subpixel_threshold"])
     r["subpixel_percentile"] = _coerce_int(r.get("subpixel_percentile"), 55, (5, 95))
     r["shaded_blocks"] = _coerce_bool(r.get("shaded_blocks"), DEFAULT_CONFIG["render"]["shaded_blocks"])
@@ -388,7 +389,7 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["road_highlight"] = _coerce_bool(r.get("road_highlight"), False)
     r["raster_tint"] = _coerce_choice(r.get("raster_tint"), ("none", "theme"), "none")
     r["dynamic_quality"] = _coerce_bool(r.get("dynamic_quality"), True)
-    r["color_depth"] = _coerce_choice(r.get("color_depth"), ("truecolor", "256", "16"), "truecolor")
+    r["color_depth"] = _coerce_choice(r.get("color_depth"), ("auto", "truecolor", "256", "16"), "auto")
 
     pf = c["prefetch"]
     pf["enable"]       = _coerce_bool(pf.get("enable"), DEFAULT_CONFIG["prefetch"]["enable"])

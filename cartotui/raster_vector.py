@@ -111,6 +111,7 @@ def rasterise_view(
     road_thickness: float = 1.0,
     label_px: int = 0,
     marker_scale: float = 1.0,
+    tile_px: float = 256.0,
 ) -> Image.Image:
     """Rasterise the vector map.
 
@@ -128,20 +129,24 @@ def rasterise_view(
 
     xt, yt = latlon_to_tile_xy(lat, lon, z)
     extent = 4096
-    tile_size_px = 256.0 * scale
+    # How many pixels a tile is worth. Supersampling raises it alongside the
+    # pixel count, so more detail is drawn over the same ground rather than
+    # more ground being pulled into the frame.
+    unit_px = max(1.0, float(tile_px))
+    tile_size_px = unit_px * scale
 
     cx_px = width_px / 2.0
     cy_px = height_px / 2.0
 
-    world_left_px = (xt * 256.0) - cx_px
-    world_top_px = (yt * 256.0) - cy_px
+    world_left_px = (xt * unit_px) - cx_px
+    world_top_px = (yt * unit_px) - cy_px
     world_right_px = world_left_px + width_px
     world_bot_px = world_top_px + height_px
 
-    f_left = world_left_px / 256.0 / scale
-    f_top  = world_top_px  / 256.0 / scale
-    f_right = world_right_px / 256.0 / scale
-    f_bot   = world_bot_px   / 256.0 / scale
+    f_left = world_left_px / unit_px / scale
+    f_top  = world_top_px  / unit_px / scale
+    f_right = world_right_px / unit_px / scale
+    f_bot   = world_bot_px   / unit_px / scale
 
     n = 2 ** fetch_z
     tx_min = max(0, math.floor(f_left))
@@ -199,6 +204,7 @@ def rasterise_view(
             aircraft_overlay,
             z=z,
             world_left_px=world_left_px,
+            unit_px=unit_px,
             world_top_px=world_top_px,
             width_px=width_px,
             height_px=height_px,
@@ -538,12 +544,12 @@ def last_aircraft_hitboxes() -> List[Tuple[str, float, float, float, float]]:
 
 def _aircraft_canvas_xy(
     lat: float, lon: float, z: int,
-    world_left_px: float, world_top_px: float,
+    world_left_px: float, world_top_px: float, unit_px: float = 256.0,
 ) -> Tuple[float, float]:
+    # Same units the canvas origin was measured in, which is `unit_px` per
+    # tile once supersampling is in play -- not a hard-coded 256.
     tx, ty = latlon_to_tile_xy(lat, lon, z)
-    wx = tx * 256.0
-    wy = ty * 256.0
-    return (wx - world_left_px, wy - world_top_px)
+    return (tx * unit_px - world_left_px, ty * unit_px - world_top_px)
 
 def _aircraft_marker(
     draw,
@@ -593,6 +599,7 @@ def _draw_aircraft(
     style: VectorStyle,
     selected_icao: Optional[str] = None,
     scale: float = 1.0,
+    unit_px: float = 256.0,
 ):
     global _LAST_HITBOXES
     _LAST_HITBOXES = []
@@ -619,7 +626,7 @@ def _draw_aircraft(
         if not ac.has_position():
             continue
         cx, cy = _aircraft_canvas_xy(
-            ac.lat, ac.lon, z, world_left_px, world_top_px,
+            ac.lat, ac.lon, z, world_left_px, world_top_px, unit_px,
         )
         if cx < -margin or cy < -margin:
             continue

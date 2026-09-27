@@ -109,7 +109,7 @@ Full documentation is in [`docs/wiki`](docs/wiki/Home.md).
 | [Configuration](docs/wiki/Configuration.md) | Everything in config.json |
 | [ADS-B](docs/wiki/ADS-B.md) | Live aircraft, sources, receivers |
 | [Overlays](docs/wiki/Overlays.md) | Weather radar |
-| [Widgets](docs/wiki/Widgets.md) | The floating panels |
+| [Settings](docs/wiki/Widgets.md) | Unified settings and tools, including keyboard navigation |
 | [Snapshots](docs/wiki/Snapshots.md) | PNG and HTML export |
 | [Troubleshooting](docs/wiki/Troubleshooting.md) | When something is wrong |
 | [Architecture](docs/wiki/Architecture.md) | How the code fits together |

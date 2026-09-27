@@ -40,7 +40,7 @@ Covered in [Rendering](Rendering.md) and [Image adjust](Image-adjust.md).
 | `black_point` `white_point` | 0.0, 1.0 |
 | `sharpen_percent` `sharpen_radius` `sharpen_threshold` | 150, 1.5, 3 |
 | `edge_boost` `invert` | false |
-| `subpixel_threshold` | `adaptive` |
+| `subpixel_threshold` | `stable` (also `adaptive`, `percentile`, `edge`, `fixed`) |
 | `subpixel_percentile` | 55 |
 | `shaded_blocks` | false |
 | `vector_overlay` | true (place names, `N` toggles it) |
@@ -55,7 +55,7 @@ Covered in [Rendering](Rendering.md) and [Image adjust](Image-adjust.md).
 | `road_highlight` | false |
 | `raster_tint` | `none`, or `theme` to recolour raster into the theme |
 | `dynamic_quality` | true |
-| `color_depth` | `truecolor`, `256`, `16` |
+| `color_depth` | `auto` (default), `truecolor`, `256`, `16` |
 
 ## aircraft
 

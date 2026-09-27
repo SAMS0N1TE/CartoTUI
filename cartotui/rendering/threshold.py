@@ -193,6 +193,32 @@ def _quantise(signal: np.ndarray, levels: int) -> np.ndarray:
 
 _DEFAULT_GAMMA = 1.2
 
+
+def _stable_signal(signal: np.ndarray, floor: float = 0.06) -> np.ndarray:
+    """Bounded local detail enhancement in sample space, independent of frame statistics.
+
+    Two neighbourhoods preserve both thin distant roads and wider near features.
+    Fixed contrast knees avoid amplifying tiny compression/noise differences into
+    full blocks. A smooth absolute component retains broad filled regions.
+    The finite radius also makes shared pixels invariant to distant viewport edits.
+    """
+    signal = np.asarray(signal, dtype=np.float32)
+    h, w = signal.shape
+    pad = np.pad(signal, 2, mode="edge")
+    near = signal.copy()
+    wide = signal.copy()
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        np.minimum(near, pad[2 + dy:2 + dy + h, 2 + dx:2 + dx + w], out=near)
+    for dy in (-2, 0, 2):
+        for dx in (-2, 0, 2):
+            np.minimum(wide, pad[2 + dy:2 + dy + h, 2 + dx:2 + dx + w], out=wide)
+    detail = np.maximum(signal - near, (signal - wide) * 0.75)
+    detail = np.maximum(detail - max(0.0, floor) * 0.25, 0.0)
+    detail /= detail + 0.10
+    base = np.maximum(signal - 0.06, 0.0)
+    base /= base + 0.12
+    return np.maximum(base, detail)
+
 def compute_fill_levels(
     lum: np.ndarray,
     levels: int,
@@ -225,7 +251,9 @@ def compute_fill_levels(
 
     p = _params_for(threshold_mode)
 
-    if p.use_local_stretch:
+    if threshold_mode == "stable":
+        sig = _stable_signal(sig, signal_floor)
+    elif p.use_local_stretch:
         sig = _adaptive_local_stretch(
             sig, tile_grid=tile_grid,
             black_pct=p.black_pct, white_pct=p.white_pct,
@@ -268,7 +296,9 @@ def compute_binary_fill(
     sig = _orient_signal(lum, orientation)
     p = _params_for(threshold_mode)
 
-    if p.use_local_stretch:
+    if threshold_mode == "stable":
+        sig = _stable_signal(sig, signal_floor)
+    elif p.use_local_stretch:
         sig = _adaptive_local_stretch(
             sig, tile_grid=tile_grid,
             black_pct=p.black_pct, white_pct=p.white_pct,

@@ -97,37 +97,6 @@ class ThemeWidget(Widget):
         for label, key in _EDIT_FIELDS:
             self._color_row(label, key, data, width)
 
-        self.add_section("Preset (live)", width)
-        st = self.ctx.state
-        if self.add_fold("Tone", width, self._tone_open, self._toggle_tone,
-                         summary=f"{st.brightness:.2f}/{st.contrast:.2f}"):
-            for label, knob, step in (
-                ("Brightness", "brightness", 0.1),
-                ("Contrast", "contrast", 0.1),
-                ("Gamma", "gamma", 0.1),
-                ("Saturation", "saturation", 0.1),
-                ("Black pt", "black_point", 0.02),
-                ("White pt", "white_point", 0.02),
-            ):
-                self.add_adjust(label, f"{getattr(st, knob):.2f}", width,
-                                (lambda k=knob, s=step: self._adj_tone(k, -s)),
-                                (lambda k=knob, s=step: self._adj_tone(k, +s)))
-            self.add_button("Reset tone", width, self._reset_tone)
-        self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
-        self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
-        self.add_kv("View", st.render_mode, width, action=self._cycle_view)
-        r = self.ctx.cfg["render"]
-        self.add_adjust("Road width", f"{float(r.get('road_thickness', 1.0)):.2f}x", width,
-                        lambda: self._adj_road(-0.1), lambda: self._adj_road(0.1))
-        _mode = st.render_mode
-        _bm = r.get("road_thickness_by_mode") or {}
-        self.add_adjust(f"  in {_mode}", f"{float(_bm.get(_mode, 1.0)):.2f}x", width,
-                        lambda: self._adj_road_mode(-0.1), lambda: self._adj_road_mode(0.1))
-        self.add_kv("Roads", "highlight" if r.get("road_highlight") else "normal",
-                    width, action=self._toggle_roads)
-        self.add_kv("Raster", "tint" if r.get("raster_tint") == "theme" else "real",
-                    width, action=self._toggle_tint)
-
         self.add_section("Manage", width)
         self.add_button("Save preset to this theme", width, self._save_preset)
         self.add_button("Save as new theme", width, self._duplicate)

@@ -163,6 +163,40 @@ def _hex_to_rgb(s) -> Tuple[int, int, int]:
     return theme_loader._hex_to_rgb(s)
 
 
+def _draw_cell_glyph(draw, ch, x, y, w, h, fg, bg, font):
+    """Draw terminal geometry without depending on a font's block coverage."""
+    code = ord(ch)
+    if 0x2800 <= code <= 0x28ff:
+        bits = ((1, 8), (2, 16), (4, 32), (64, 128))
+        radius = max(1, min(w // 5, h // 10))
+        for row, pair in enumerate(bits):
+            for col, bit in enumerate(pair):
+                if (code - 0x2800) & bit:
+                    cx = x + (2 * col + 1) * w // 4
+                    cy = y + (2 * row + 1) * h // 8
+                    draw.ellipse((cx-radius, cy-radius, cx+radius-1, cy+radius-1), fill=fg)
+        return
+    quadrants = " ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█"
+    if ch in quadrants:
+        mask = quadrants.index(ch)
+        for bit, col, row in ((8, 0, 0), (4, 1, 0), (2, 0, 1), (1, 1, 1)):
+            if mask & bit:
+                draw.rectangle((x+col*w//2, y+row*h//2,
+                                x+(col+1)*w//2-1, y+(row+1)*h//2-1), fill=fg)
+        return
+    if 0x2581 <= code <= 0x2587:
+        top = y + h - max(1, h * (code - 0x2580) // 8)
+        draw.rectangle((x, top, x+w-1, y+h-1), fill=fg)
+        return
+    if ch in "░▒▓":
+        weight = ("░▒▓".index(ch) + 1) / 4
+        color = tuple(round(a * weight + b * (1-weight)) for a, b in zip(fg, bg))
+        draw.rectangle((x, y, x+w-1, y+h-1), fill=color)
+        return
+    if ch != " " and font is not None:
+        draw.text((x, y), ch, font=font, fill=fg)
+
+
 def frame_to_png(
     rows: List[List[Run]],
     theme_name: str,
@@ -210,9 +244,8 @@ def frame_to_png(
             for ch in text:
                 px, py = x * fw, y * fh
                 if bg_rgb != page_bg:
-                    d.rectangle([px, py, px + fw, py + fh], fill=bg_rgb)
-                if ch != " " and font is not None:
-                    d.text((px, py), ch, font=font, fill=fg_rgb)
+                    d.rectangle([px, py, px + fw - 1, py + fh - 1], fill=bg_rgb)
+                _draw_cell_glyph(d, ch, px, py, fw, fh, fg_rgb, bg_rgb, font)
                 x += 1
     return img
 

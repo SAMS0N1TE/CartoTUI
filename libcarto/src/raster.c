@@ -35,6 +35,17 @@ void carto_fill_rect(carto_framebuffer *fb, int x, int y, int w, int h, carto_rg
     int y0 = y < 0 ? 0 : y;
     int x1 = x + w; if (x1 > fb->width)  x1 = fb->width;
     int y1 = y + h; if (y1 > fb->height) y1 = fb->height;
+    if (x0 >= x1 || y0 >= y1) return;
+    if (fb->format == CARTO_FMT_RGB565) {
+        /* Pack once per span/rectangle, not once per pixel. This is the
+         * terminal framebuffer's hot path for land, water and thick roads. */
+        uint16_t color = carto_rgb565(c);
+        for (int yy = y0; yy < y1; ++yy) {
+            uint16_t *row = (uint16_t *)(fb->pixels + (size_t)yy * fb->stride);
+            for (int xx = x0; xx < x1; ++xx) row[xx] = color;
+        }
+        return;
+    }
     for (int yy = y0; yy < y1; ++yy)
         for (int xx = x0; xx < x1; ++xx)
             carto_put_px(fb, xx, yy, c);
@@ -56,7 +67,7 @@ void carto_draw_line(carto_framebuffer *fb, int x0, int y0, int x1, int y1,
         if (width == 1) carto_put_px(fb, x0, y0, c);
         else            carto_fill_rect(fb, x0 - half, y0 - half, width, width, c);
         if (x0 == x1 && y0 == y1) break;
-        int e2 = err << 1;
+        int e2 = err * 2;
         if (e2 > -dy) { err -= dy; x0 += sx; }
         if (e2 <  dx) { err += dx; y0 += sy; }
     }
@@ -102,7 +113,7 @@ void carto_fill_polygon(carto_framebuffer *fb, const carto_ipt *pts, int n, cart
             int xa = xints[k], xb = xints[k + 1];
             if (xa < 0) xa = 0;
             if (xb >= fb->width) xb = fb->width - 1;
-            for (int x = xa; x <= xb; ++x) carto_put_px(fb, x, y, c);
+            carto_fill_rect(fb, xa, y, xb - xa + 1, 1, c);
         }
     }
 }

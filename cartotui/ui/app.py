@@ -14,6 +14,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
 from prompt_toolkit.styles import DynamicStyle
 
+from cartotui import winperf
 from cartotui.cache import TileCache
 from cartotui.config import Config
 from cartotui.rendering.renderer import Renderer, default_palettes
@@ -21,12 +22,11 @@ from cartotui.sources import build_source_list
 from cartotui.themes import make_style
 from cartotui.traffic import AircraftRegistry
 from cartotui.traffic import build_source as build_traffic_source
-from cartotui import winperf
 from cartotui.ui.compass import Compass
 from cartotui.ui.goto import GotoPrompt
 from cartotui.ui.helppane import HelpPane
 from cartotui.ui.map_control import MapControl
-from cartotui.ui.sidebar import Sidebar
+from cartotui.ui.settings import SettingsSidebar as Sidebar
 from cartotui.ui.state import MapState
 from cartotui.ui.statusbar import StatusBar
 from cartotui.ui.titlebar import TitleBar
@@ -129,6 +129,7 @@ class CartoTUIApp:
             palettes=palettes,
             on_theme_changed=self._reload_theme,
             on_cycle_source=self._cycle_source,
+            on_settings=lambda: self._open_settings("home"),
         )
 
         self.map_window = Window(
@@ -156,6 +157,8 @@ class CartoTUIApp:
             order=DEFAULT_WIDGET_ORDER,
         )
         self.map_control.widget_manager = self.widget_manager
+        self.sidebar.control.manager = self.widget_manager
+        self.widget_manager.open_settings = self._open_settings
 
         from cartotui.radar import RadarSource
         self.radar_source = RadarSource(user_agent=ncfg["user_agent"])
@@ -628,6 +631,11 @@ class CartoTUIApp:
         self.state.set_info("Looks gallery")
         self.app.invalidate()
 
+    def _open_settings(self, page="home") -> None:
+        self.sidebar.control.open_page(page)
+        self.app.layout.focus(self.sidebar.window)
+        self.app.invalidate()
+
     def _build_key_bindings(self) -> KeyBindings:
         kb = KeyBindings()
         step = int(self.cfg["ui"].get("pan_step_cells", 6))
@@ -656,7 +664,9 @@ class CartoTUIApp:
         @kb.add("tab", filter=active)
         def _(event):
             self.state.toggle_sidebar()
-            if not self.state.sidebar_visible:
+            if self.state.sidebar_visible:
+                event.app.layout.focus(self.sidebar.window)
+            else:
                 try:
                     event.app.layout.focus(self.map_window)
                 except Exception:

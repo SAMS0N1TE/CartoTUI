@@ -16,6 +16,10 @@ from cartotui.rendering.threshold import (
 
 log = logging.getLogger("cartotui.render")
 
+# Geographic footprint is independent of glyph sampling and rendering quality.
+REFERENCE_SCALE = 3
+CELL_MAP_PX = (REFERENCE_SCALE, REFERENCE_SCALE * 2)
+
 StyleRun = Tuple[str, str]
 LineFrag = List[StyleRun]
 FrameFrag = List[LineFrag]
@@ -216,6 +220,8 @@ def _thresh_params(mode: str, percentile: float):
         return 1, 0.0, 100.0
     if mode == "percentile":
         return 1, 8.0, float(np.clip(40.0 + percentile, 80.0, 99.0))
+    if mode == "stable":
+        return 3, 0.0, 100.0
     if mode == "edge":
         return None          # needs the sobel pass; not worth duplicating
     return 1, 8.0, 96.0
@@ -226,7 +232,10 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
     r = _native_renderer()
     if r is None:
         return None
-    params = _thresh_params(threshold_mode, percentile)
+    if threshold_mode == "stable" and mode != "half" and not getattr(r, "has_stable_cells", False):
+        return None
+    # Half blocks encode RGB directly; threshold modes cannot affect them.
+    params = _thresh_params("fixed" if mode == "half" else threshold_mode, percentile)
     if params is None:
         return None
     thresh, black_pct, white_pct = params
@@ -430,7 +439,7 @@ class QuadrantBackend:
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
         fill = compute_fill_levels(
-            lum, levels,
+            lum, 256 if self.threshold_mode == "stable" else levels,
             threshold_mode=self.threshold_mode,
             percentile=self.percentile,
             overlay_lum=None if ov is None else ov.lum,
@@ -454,6 +463,15 @@ class QuadrantBackend:
             ((tl > thr) << 3) | ((tr > thr) << 2)
             | ((bl > thr) << 1) | (br > thr)
         ).astype(np.uint8)
+
+        if self.threshold_mode == "stable":
+            # Decide coverage before reducing to a display palette. A per-cell
+            # mean turns even tiny differences into arbitrary quadrant shapes.
+            codes = (((tl >= 80) << 3) | ((tr >= 80) << 2)
+                     | ((bl >= 80) << 1) | (br >= 80)).astype(np.uint8)
+            cell_avg = np.rint(cell_avg * ((levels - 1) / 255.0)).astype(np.int32)
+            cell_max = np.rint(cell_max * ((levels - 1) / 255.0)).astype(np.int32)
+            cell_min = np.rint(cell_min * ((levels - 1) / 255.0)).astype(np.int32)
 
         flat = (cell_max == cell_min)
         full = (cell_min >= levels - 1)
@@ -546,7 +564,7 @@ class BrailleBackend:
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
         fill = compute_fill_levels(
-            lum, levels,
+            lum, 256 if self.threshold_mode == "stable" else levels,
             threshold_mode=self.threshold_mode,
             percentile=self.percentile,
             overlay_lum=None if ov is None else ov.lum,
@@ -558,8 +576,13 @@ class BrailleBackend:
 
         cell_avg = fill.reshape(term_h, 4, term_w, 2).mean(axis=(1, 3))
 
-        thr = np.repeat(np.repeat(cell_avg, 4, axis=0), 2, axis=1)
-        filled = (fill > thr).astype(np.uint8)
+        if self.threshold_mode == "stable":
+            filled = (fill >= 80).astype(np.uint8)
+            cell_avg *= (levels - 1) / 255.0
+        else:
+            # Broadcast the cell mean instead of allocating two repeated arrays.
+            filled = (fill.reshape(term_h, 4, term_w, 2)
+                      > cell_avg[:, None, :, None]).reshape(target_h, target_w).astype(np.uint8)
 
         codes = np.zeros((term_h, term_w), dtype=np.uint8)
         for ry in range(4):
@@ -768,13 +791,17 @@ class Renderer:
         return next(iter(self.palettes.values()), " .")
 
     def cell_pixel_size(self, mode: str) -> Tuple[int, int]:
+        return CELL_MAP_PX
+
+    @staticmethod
+    def subcells(mode: str) -> Tuple[int, int]:
         if mode == "quadrant":
-            return 2, 4
+            return 2, 2
         if mode == "braille":
             return 2, 4
         if mode == "half":
             return 1, 2
-        return 1, 2
+        return 1, 1
 
     def _resolve_mode(self, mode: str, source_kind: Optional[str]) -> str:
         if mode != "braille":

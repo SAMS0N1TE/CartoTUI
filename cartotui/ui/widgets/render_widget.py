@@ -19,22 +19,13 @@ class RenderWidget(Widget):
     def build(self, width: int) -> None:
         st = self.ctx.state
         r = self.ctx.cfg["render"]
-        self.add_section("Vector", width)
-        self.add_kv("Engine", r.get("vector_engine", "libcarto"), width, action=self._toggle_engine)
+        self.add_section("Map", width)
+        self.add_kv("Source", st.source, width, action=self._toggle_source)
         self.add_kv("View", st.render_mode, width, action=self._cycle_mode)
         self.add_kv("Boundaries", "on" if r.get("boundaries", True) else "off",
                     width, action=self._toggle_boundaries)
         self.add_kv("Raster", "theme tint" if r.get("raster_tint") == "theme" else "real colours",
                     width, action=self._toggle_tint)
-        self.add_kv("Pan quality", "dynamic" if r.get("dynamic_quality", True) else "full",
-                    width, action=self._toggle_dynamic)
-        self.add_kv("Colours", {"truecolor": "truecolor", "256": "256 (faster)",
-                                "16": "16 (fastest)"}.get(r.get("color_depth", "truecolor"),
-                                                          r.get("color_depth", "truecolor")),
-                    width, action=self._cycle_depth)
-        scale = int(r.get("vector_scale", 6))
-        self.add_kv("Quality", _QUALITY.get(scale, str(scale)), width, action=self._cycle_quality)
-
         self.add_section("Roads", width)
         self.add_adjust("Thickness", f"{float(r.get('road_thickness', 1.0)):.2f}x", width,
                         lambda: self._adj_thickness(-0.1), lambda: self._adj_thickness(+0.1))
@@ -52,8 +43,16 @@ class RenderWidget(Widget):
         self.add_section("Image", width)
         self.add_kv("Color", "on" if st.color else "off", width, action=self._toggle_color)
         self.add_kv("Labels", "on" if st.labels else "off", width, action=self._toggle_labels)
-        self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
-        self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
+        if st.render_mode == "half":
+            self.add_dim("Half blocks show pixel colours directly.", width)
+        else:
+            self.add_kv("Detail", st.threshold_mode, width, action=self._cycle_threshold)
+            self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
+            if st.render_mode == "ascii":
+                self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
+            else:
+                self.add_kv("Shading", "on" if st.shaded_blocks else "off", width,
+                            action=self._toggle_shaded)
 
         if self.add_fold("Tone", width, self._tone_open, self._toggle_tone,
                          summary=f"{st.brightness:.2f}/{st.contrast:.2f}"):
@@ -76,6 +75,22 @@ class RenderWidget(Widget):
                             lambda: self._adj("white_point", -0.02),
                             lambda: self._adj("white_point", +0.02))
             self.add_button("Reset tone", width, self._reset_tone)
+
+    def performance_body(self, width):
+        self._lines, self._hits = [], []
+        r = self.ctx.cfg["render"]
+        self.add_section("Speed and terminal", width)
+        self.add_kv("Engine", r.get("vector_engine", "libcarto"), width, action=self._toggle_engine)
+        self.add_kv("Pan quality", "dynamic" if r.get("dynamic_quality", True) else "full",
+                    width, action=self._toggle_dynamic)
+        self.add_kv("Colours", {"auto": "auto (terminal)", "truecolor": "truecolor", "256": "256 (faster)",
+                                "16": "16 (fastest)"}.get(r.get("color_depth", "truecolor"),
+                                                          r.get("color_depth", "truecolor")),
+                    width, action=self._cycle_depth)
+        scale = int(r.get("vector_scale", 6))
+        self.add_kv("Quality", _QUALITY.get(scale, str(scale)), width, action=self._cycle_quality)
+
+        return self._lines, self._hits
 
     def _apply(self, patch: dict) -> None:
         self.ctx.cfg.update(patch)
@@ -131,7 +146,7 @@ class RenderWidget(Widget):
         self._apply({"render": {"dynamic_quality": not cur}})
 
     def _cycle_depth(self) -> None:
-        order = ["truecolor", "256", "16"]
+        order = ["auto", "truecolor", "256", "16"]
         cur = self.ctx.cfg["render"].get("color_depth", "truecolor")
         i = order.index(cur) if cur in order else 0
         self.ctx.cfg.update({"render": {"color_depth": order[(i + 1) % len(order)]}})
@@ -174,4 +189,16 @@ class RenderWidget(Widget):
 
     def _cycle_dither(self) -> None:
         self.ctx.state.cycle_dither()
+        self.ctx.rerender()
+
+    def _cycle_threshold(self) -> None:
+        self.ctx.state.cycle_threshold()
+        self.ctx.rerender()
+
+    def _toggle_shaded(self) -> None:
+        self.ctx.state.toggle_shaded()
+        self.ctx.rerender()
+
+    def _toggle_source(self) -> None:
+        self.ctx.state.toggle_source()
         self.ctx.rerender()

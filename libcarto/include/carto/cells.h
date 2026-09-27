@@ -26,8 +26,12 @@ typedef enum {
 typedef enum {
     CARTO_THRESH_ADAPTIVE = 0,  /* per-tile stretch, bilinearly blended */
     CARTO_THRESH_GLOBAL   = 1,  /* one stretch over the whole grid */
-    CARTO_THRESH_FIXED    = 2   /* no stretch, just clamp */
+    CARTO_THRESH_FIXED    = 2,  /* no stretch, just clamp */
+    CARTO_THRESH_STABLE   = 3   /* bounded local feature contrast */
 } carto_thresh_mode;
+
+/* Capability query: older shared libraries must fall back for new modes. */
+int carto_cells_version(void);
 
 typedef enum {
     CARTO_ORIENT_DARK   = 0,  /* light ink on a dark ground */

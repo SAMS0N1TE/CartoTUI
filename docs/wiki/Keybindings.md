@@ -9,7 +9,7 @@ One-press visual presets. Start here.
 | Key | Action |
 | --- | --- |
 | `l` | Next Look |
-| `L` | Looks gallery, click one to apply |
+| `L` | Looks page; arrows and Enter or click to apply |
 
 ## Navigation
 
@@ -44,7 +44,7 @@ One-press visual presets. Start here.
 | `s` | Shaded blocks (quadrant and braille only) |
 | `c` | Colour on or off |
 | `N` | Map labels, meaning place names |
-| `u` | Threshold: adaptive, percentile, edge, fixed |
+| `u` | Detail: stable, adaptive, percentile, edge, fixed |
 
 ## Image adjust
 
@@ -69,25 +69,29 @@ See [Image adjust](Image-adjust.md) for what these actually do.
 | `G` | Ground traffic on or off |
 | `f` | Follow the selected aircraft |
 
-## Sidebar
+## Settings
 
 | Key | Action |
 | --- | --- |
-| `Tab` | Show or hide |
-| `F2` | Move focus between map and sidebar |
-| `F3` `F4` | Previous or next tab, works anywhere |
-| `F5`..`F8` | Jump to tab 1 to 4 |
-| `Ctrl+←` `Ctrl+→` | Previous or next tab, if your terminal sends it |
-| `Esc` then arrow | Same, as an Alt+arrow alias |
-| `1`..`4` | Jump to tab, when the sidebar has focus |
+| `Tab` | Open settings and focus it, or close it and return to the map |
+| `w` | Settings home |
+| Up / Down | Select an action |
+| Enter / Right | Activate the selected action |
+| Escape / Left | Back to Home; close when already at Home |
+| Page Up / Page Down | Move eight actions |
+| `F2` | Focus map or settings without closing it |
+| `F3` / `F4` | Previous / next page |
+| `F5`..`F9` | Home, Search, Help, Live aircraft, Performance |
+| `Ctrl+Left` / `Ctrl+Right` | Previous / next page if sent by the terminal |
 
-Tabs are Settings, Search, Controls, Integration, Performance.
+In Search, ordinary text is entered into the search field and Backspace edits it.
+Map shortcuts stay active while the map has focus.
 
 ## App
 
 | Key | Action |
 | --- | --- |
-| `w` | Widgets launcher |
+| `w` | Settings home |
 | `x` | Save a PNG |
 | `Ctrl+S` | Save profile, restored on next start |
 | `h` `?` | Help |

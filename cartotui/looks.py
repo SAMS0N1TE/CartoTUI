@@ -12,7 +12,7 @@ __all__ = [
 
 _MODES = ("ascii", "quadrant", "braille", "half")
 _DITHERS = ("none", "bayer", "atkinson", "floyd")
-_THRESHOLDS = ("adaptive", "percentile", "edge", "fixed")
+_THRESHOLDS = ("stable", "adaptive", "percentile", "edge", "fixed")
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Look:
     palette: str = "shades"
     color: bool = True
     dither: str = "none"
-    threshold: str = "adaptive"
+    threshold: str = "stable"
     shaded: bool = False
     brightness: float = 1.0
     contrast: float = 1.05
@@ -44,7 +44,7 @@ class Look:
         bits.append("colour" if self.color else "mono")
         if self.render_mode == "ascii" and self.dither != "none":
             bits.append(self.dither)
-        if self.threshold != "adaptive":
+        if self.threshold != "stable":
             bits.append(self.threshold)
         if self.theme:
             bits.append(f"@{self.theme}")
@@ -56,7 +56,7 @@ LOOKS: Tuple[Look, ...] = (
         key="terminal", name="Terminal",
         desc="Balanced colour map. Safe default.",
         render_mode="quadrant", palette="shades", color=True,
-        threshold="adaptive", tags=("colour", "everyday"),
+        threshold="stable", tags=("colour", "everyday"),
     ),
     Look(
         key="photo", name="Hi-Fi Photo",
@@ -74,7 +74,7 @@ LOOKS: Tuple[Look, ...] = (
         key="classic", name="Classic ASCII",
         desc="Clean grey-scale character map.",
         render_mode="ascii", palette="shades", color=False,
-        threshold="adaptive", tags=("mono", "text"),
+        threshold="stable", tags=("mono", "text"),
     ),
     Look(
         key="newsprint", name="Newsprint",
@@ -92,7 +92,7 @@ LOOKS: Tuple[Look, ...] = (
         key="braille", name="Fine Braille",
         desc="High-res braille line art.",
         render_mode="braille", palette="shades", color=False,
-        threshold="adaptive", tags=("mono", "detail"),
+        threshold="stable", tags=("mono", "detail"),
     ),
     Look(
         key="amber_crt", name="Amber CRT",
