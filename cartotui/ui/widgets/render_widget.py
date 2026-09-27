@@ -89,8 +89,20 @@ class RenderWidget(Widget):
                     width, action=self._cycle_depth)
         scale = int(r.get("vector_scale", 6))
         self.add_kv("Quality", _QUALITY.get(scale, str(scale)), width, action=self._cycle_quality)
+        rate = float(r.get("output_mbps", 0) or 0)
+        self.add_kv("Link budget", f"{rate:g} Mbps" if rate else "automatic", width,
+                    action=self._cycle_output_budget)
+        state = self.ctx.state
+        self.add_kv("Encode", f"{getattr(state, 'last_encode_ms', 0):.1f} ms", width)
+        self.add_kv("Last output", f"{getattr(state, 'last_output_bytes', 0) / 1024:.1f} KiB", width)
 
         return self._lines, self._hits
+
+    def _cycle_output_budget(self):
+        rates = [0, 1, 5, 10, 25, 100]
+        value = float(self.ctx.cfg["render"].get("output_mbps", 0) or 0)
+        self._apply({"render": {"output_mbps": rates[(rates.index(value) + 1) % len(rates)]
+                               if value in rates else 0}})
 
     def _apply(self, patch: dict) -> None:
         self.ctx.cfg.update(patch)

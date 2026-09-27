@@ -14,12 +14,13 @@ after rather than before is what keeps a panel that has just moved from leaving
 a hole: prompt_toolkit blanks the vacated cells, then this fills them in the
 same frame.
 
-Off by default; `render.direct_paint` turns it on.
+Enabled by default on VT-capable outputs; `render.direct_paint` controls it.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from functools import lru_cache
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -271,20 +272,25 @@ class DirectPaintRenderer(_PTRenderer):
     def render(self, app, layout, is_done: bool = False) -> None:
         if self._last_screen is None:
             self._paint_previous = None
+            self._packed_previous = None
         self._paint_depth = app.color_depth
         super().render(app, layout, is_done)
         if is_done or self.map_source is None or self.map_window is None:
             return
         try:
+            t0 = time.perf_counter()
             blob = self._map_blob()
+            self.map_source.state.last_encode_ms = (time.perf_counter() - t0) * 1000
         except Exception as e:  # never let painting break the frame
             log.debug("direct paint failed (%s); leaving the frame as drawn", e)
             return
         if not blob:
             return
         output = app.output
+        t0 = time.perf_counter()
         output.write_raw(blob)
         output.flush()
+        self.map_source.note_output(time.perf_counter() - t0, len(blob.encode("utf8")))
 
     def _map_blob(self) -> Optional[str]:
         screen = self._last_screen
@@ -312,6 +318,25 @@ class DirectPaintRenderer(_PTRenderer):
             blocked.append((ox0, oy0, ox1, oy1))
         depth = getattr(self, "_paint_depth", ColorDepth.DEPTH_24_BIT)
         signature = (mx0, my0, wp.width, wp.height, tuple(blocked), base_fg, base_bg, depth)
+        from cartotui.rendering.packed import PackedFrame, encoder
+        if isinstance(rows, PackedFrame) and depth in (ColorDepth.DEPTH_8_BIT, ColorDepth.DEPTH_24_BIT):
+            if not hasattr(self, "_native_encoder"):
+                self._native_encoder = encoder()
+            if self._native_encoder is not None:
+                previous = getattr(self, "_packed_previous", None)
+                old = previous[1] if previous and previous[0] == signature else None
+                try:
+                    blob, cells = self._native_encoder.paint(
+                        rows, mx0, my0, blocked, base_fg, base_bg,
+                        8 if depth == ColorDepth.DEPTH_8_BIT else 24, old)
+                except Exception as exc:
+                    log.warning("native terminal encoder unavailable (%s); using fragments", exc)
+                    self._native_encoder = None
+                else:
+                    self._packed_previous = (signature, cells)
+                    self._paint_previous = None
+                    return blob
+        self._packed_previous = None
         previous = getattr(self, "_paint_previous", None)
         old_rows = previous[1] if previous and previous[0] == signature else None
         blob = paint_rows(rows, mx0, my0, wp.width, wp.height, blocked,

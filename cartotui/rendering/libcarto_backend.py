@@ -137,7 +137,17 @@ class NativeFrame:
 
 
 def _image_from(v, w, h, lut32):
+    import numpy as np
     from PIL import Image
+    try:
+        renderer = _get_renderer()
+        if renderer.has_expand_rgb565 and v.flags.c_contiguous and lut32.flags.c_contiguous:
+            rgb = np.empty((h, w, 3), np.uint8)
+            renderer.lib.carto_expand_rgb565(v.ctypes.data, lut32.ctypes.data,
+                                             rgb.ctypes.data, v.size)
+            return Image.fromarray(rgb, "RGB")
+    except (AttributeError, OSError, RuntimeError):
+        pass
     out32 = lut32[v]
     return Image.frombuffer("RGBA", (w, h), out32, "raw", "RGBA", 0, 1).convert("RGB")
 
@@ -211,6 +221,14 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
     means the frame has holes and the caller must come back for them.
     """
     renderer = _get_renderer()
+    if stats is None:
+        stats = {}
+    cache_key = (vector_source, lat, lon, z, px_w, px_h, repr(style),
+                 supersample, road_thickness, repr(tone), max_fetch_zoom, tile_px)
+    cached = getattr(renderer, "_retained_view", None)
+    if lazy and cached and cached[0] == cache_key and cached[1] == renderer.tile_generation:
+        stats["retained_view"] = True
+        return cached[2]
 
     def base_fetch(zz, xx, yy):
         raw = vector_source.get_raw(zz, xx, yy, cached_only=cached_only)
@@ -233,6 +251,9 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
             with _load_lock:
                 _load_pending -= 1
 
+    base_fetch.cache_namespace = vector_source
+    counted_fetch.cache_namespace = vector_source
+
     fetch_z = z if max_fetch_zoom is None else min(int(z), int(max_fetch_zoom))
     rgb565, drawn = renderer.render_viewport(
         lat, lon, z, px_w, px_h, counted_fetch,
@@ -250,5 +271,8 @@ def rasterise_view_libcarto(vector_source, lat, lon, z, px_w, px_h, style=None,
     if lazy:
         import numpy as np
         v = np.frombuffer(rgb565, dtype="<u2").reshape(px_h, px_w)
-        return NativeFrame(v, px_w, px_h, _lut_for(v, tone))
+        frame = NativeFrame(v, px_w, px_h, _lut_for(v, tone))
+        if not stats.get("misses"):
+            renderer._retained_view = (cache_key, renderer.tile_generation, frame)
+        return frame
     return _rgb565_to_image(rgb565, px_w, px_h, tone)

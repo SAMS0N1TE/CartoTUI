@@ -81,7 +81,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "boundaries": True,
         "vector_engine": "libcarto",
         "native_cells": True,
-        "direct_paint": False,
+        "direct_paint": True,
+        "output_mbps": 0.0,
         "vector_scale": 6,
         "vector_render_mode": "quadrant",
         "raster_render_mode": "ascii",
@@ -349,6 +350,9 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cc["prune_watermark"] = _coerce_num(cc.get("prune_watermark"), 0.85, (0.5, 0.99))
 
     r = c["render"]
+    r["output_mbps"] = _coerce_num(r.get("output_mbps"), 0.0, (0.0, 10000.0))
+    for option in ("native_cells", "direct_paint"):
+        r[option] = _coerce_bool(r.get(option), DEFAULT_CONFIG["render"][option])
     r["color"]     = _coerce_bool(r.get("color"), DEFAULT_CONFIG["render"]["color"])
     r["dither"]    = _coerce_choice(r.get("dither"), ("none", "atkinson", "bayer", "floyd"),
                                      DEFAULT_CONFIG["render"]["dither"])

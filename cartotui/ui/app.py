@@ -219,6 +219,9 @@ class CartoTUIApp:
         try:
             from cartotui.ui.direct_paint import DirectPaintRenderer
             old = self.app.renderer
+            if old.output.__class__.__name__ not in ("Vt100_Output", "Windows10_Output", "ConEmuOutput"):
+                log.info("using standard rendering for output without VT escape support")
+                return
             r = DirectPaintRenderer(
                 style=old.style,
                 output=old.output,

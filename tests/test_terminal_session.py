@@ -15,8 +15,8 @@ from cartotui.ui.app import CartoTUIApp
 from cartotui.ui.map_control import _Frame
 
 
-@pytest.mark.parametrize("direct", [False, True])
-def test_keyboard_settings_over_vt100(direct):
+@pytest.mark.parametrize("direct, packed", [(False, False), (True, False), (True, True)])
+def test_keyboard_settings_over_vt100(direct, packed):
     async def run():
         stream = io.StringIO()
         output = Vt100_Output(
@@ -50,6 +50,17 @@ def test_keyboard_settings_over_vt100(direct):
 
             try:
                 await until(lambda: app.app.is_running)
+                if packed:
+                    import numpy as np
+
+                    from cartotui.rendering.packed import PackedFrame
+                    w, h = app.map_control._last_w, app.map_control._last_h
+                    cells = PackedFrame(np.full((h,w), 0x2580, np.uint32),
+                                        np.full((h,w), 0x20386a, np.uint32),
+                                        np.zeros((h,w), np.uint32), w, h)
+                    app.map_control._last_frame = _Frame(w, h, cells, ())
+                    app.app.invalidate()
+                    await until(lambda: hasattr(app.app.renderer, "_native_encoder"))
                 pipe.send_text("w")
                 await until(lambda: app.state.sidebar_visible)
                 await until(lambda: bool(getattr(app.sidebar.control, "_actions", [])))

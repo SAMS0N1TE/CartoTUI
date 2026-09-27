@@ -56,6 +56,9 @@ class RadarSource:
         self._prefetch_sig = None
         self._prefetch_cur_sig = None
         self._cache = {}
+        self._cache_bytes = 0
+        self._generation = 0
+        self._retained_layer = None
         self._lru = []
         self._lock = threading.Lock()
         self._inflight = 0
@@ -94,6 +97,9 @@ class RadarSource:
         with self._lock:
             self._cache.clear()
             self._lru.clear()
+            self._cache_bytes = 0
+            self._generation += 1
+            self._retained_layer = None
 
     def force_refresh(self) -> None:
         self.clear_cache()
@@ -179,11 +185,20 @@ class RadarSource:
             log.debug("radar tile fetch failed: %s", e)
             tile = None
         with self._lock:
+            old = self._cache.get(key)
+            if old is not None:
+                self._cache_bytes -= old.width * old.height * 4
+            if key in self._lru:
+                self._lru.remove(key)
             self._cache[key] = tile
+            self._cache_bytes += tile.width * tile.height * 4 if tile is not None else 0
+            self._generation += 1
             self._lru.append(key)
-            if len(self._lru) > 2048:
+            while len(self._lru) > 2048 or self._cache_bytes > 64 * 1024 * 1024:
                 old = self._lru.pop(0)
-                self._cache.pop(old, None)
+                removed = self._cache.pop(old, None)
+                if removed is not None:
+                    self._cache_bytes -= removed.width * removed.height * 4
         return tile
 
     def _get_tile(self, z, x, y, color, smooth, snow):
@@ -400,6 +415,13 @@ class RadarSource:
             else:
                 self._maybe_prefetch_current(lat, lon, z, px_w, px_h, color, smooth, snow)
         getter = self._get_cached if cached_only else self._get_tile
+        with self._lock:
+            generation = self._generation
+            layer_key = (lat, lon, z, px_w, px_h, opacity, color, smooth, snow,
+                         self._frame_time, self._frame_path, self.tile_size, self.max_px, generation)
+            retained = self._retained_layer
+            if retained is not None and retained[0] == layer_key:
+                return retained[1]
 
         tp = self.tile_size
         rz, scale, rpx_w, rpx_h = self._radar_plan(z, px_w, px_h)
@@ -433,6 +455,10 @@ class RadarSource:
             layer = layer.resize((px_w, px_h), Image.BILINEAR)
         if opacity < 1.0:
             layer.putalpha(layer.getchannel("A").point(lambda a: int(a * opacity)))
+        layer._cartotui_retained = True
+        with self._lock:
+            if generation == self._generation:
+                self._retained_layer = (layer_key, layer)
         return layer
 
     def composite_onto(self, base: Image.Image, lat: float, lon: float, z: int,

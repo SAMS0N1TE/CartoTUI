@@ -129,6 +129,18 @@ class Renderer:
     def __init__(self, dll_path=None):
         self.lib = ctypes.CDLL(dll_path or _DEFAULT_DLL)
         L = self.lib
+        self.has_expand_rgb565 = hasattr(L, "carto_expand_rgb565")
+        if self.has_expand_rgb565:
+            L.carto_expand_rgb565.argtypes = [c_void_p, c_void_p, c_void_p, c_size_t]
+            L.carto_expand_rgb565.restype = None
+        self.has_pixel_kernels = hasattr(L, "carto_braille_colors")
+        if self.has_pixel_kernels:
+            L.carto_luminance_rgb.argtypes = [c_void_p, c_void_p, c_size_t]
+            L.carto_luminance_rgb.restype = None
+            L.carto_blend_rgb.argtypes = [c_void_p] * 4 + [c_size_t]
+            L.carto_blend_rgb.restype = None
+            L.carto_braille_colors.argtypes = [c_void_p, c_void_p, c_uint32, c_uint32, c_void_p]
+            L.carto_braille_colors.restype = None
         L.carto_fb_init.argtypes = [POINTER(CartoFB), c_int, c_int, c_int, c_void_p]
         L.carto_fb_init.restype = c_int
         L.carto_style_default.argtypes = [POINTER(CartoStyle)]
@@ -173,6 +185,8 @@ class Renderer:
         L.carto_style_default(byref(self._style))
 
         self._tile_cache = {}
+        self._tile_bytes = 0
+        self.tile_generation = 0
         self._tile_lru = []
         self._tile_cache_max = 512
         self._cache_lock = threading.Lock()
@@ -223,17 +237,31 @@ class Renderer:
             except Exception:
                 pass
 
+    @staticmethod
+    def _tile_key(fetch, z, x, y):
+        namespace = getattr(fetch, "cache_namespace", None)
+        return (namespace, z, x, y) if namespace is not None else (z, x, y)
+
     def _store_tile(self, k, raw):
         buf = None
         if raw:
             arr = (c_ubyte * len(raw)).from_buffer_copy(raw)
             buf = (arr, len(raw))
+        if buf is None:
+            return None  # Missing tiles must be retried after prefetch completes.
         with self._cache_lock:
+            old = self._tile_cache.get(k)
+            if old is not None:
+                self._tile_bytes -= old[1]
+                self._tile_lru.remove(k)
             self._tile_cache[k] = buf
+            self._tile_bytes += buf[1]
+            self.tile_generation += 1
             self._tile_lru.append(k)
-            if len(self._tile_lru) > self._tile_cache_max:
+            while (len(self._tile_lru) > self._tile_cache_max or
+                   self._tile_bytes > 64 * 1024 * 1024):
                 old = self._tile_lru.pop(0)
-                self._tile_cache.pop(old, None)
+                self._tile_bytes -= self._tile_cache.pop(old)[1]
         return buf
 
     def _fetch_pool(self, name, workers):
@@ -314,8 +342,8 @@ class Renderer:
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
                     if (0 <= tx < n and 0 <= ty < n
-                            and (z, tx, ty) not in self._tile_cache):
-                        missing.append((z, tx, ty))
+                            and self._tile_key(fetch, z, tx, ty) not in self._tile_cache):
+                        missing.append(self._tile_key(fetch, z, tx, ty))
         if not missing:
             return
 
@@ -328,7 +356,7 @@ class Renderer:
 
         def one(k):
             try:
-                self._store_tile(k, fetch(k[0], k[1], k[2]))
+                self._store_tile(k, fetch(*k[-3:]))
             except Exception:
                 pass
             finally:
@@ -395,14 +423,14 @@ class Renderer:
                 if 0 <= tx < n and 0 <= ty < n:
                     tiles.append((tx, ty))
 
-        missing = [(z, tx, ty) for (tx, ty) in tiles if (z, tx, ty) not in self._tile_cache]
+        missing = [self._tile_key(fetch, z, tx, ty) for (tx, ty) in tiles if self._tile_key(fetch, z, tx, ty) not in self._tile_cache]
         if len(missing) > 1:
             ex = self._fetch_pool("viewport", 8)
-            for k, raw in ex.map(lambda kk: (kk, fetch(kk[0], kk[1], kk[2])), missing):
+            for k, raw in ex.map(lambda kk: (kk, fetch(*kk[-3:])), missing):
                 self._store_tile(k, raw)
         elif missing:
             k = missing[0]
-            self._store_tile(k, fetch(k[0], k[1], k[2]))
+            self._store_tile(k, fetch(*k[-3:]))
 
         with self._render_lock:
             if style is not None:
@@ -418,7 +446,7 @@ class Renderer:
 
             drawn = 0
             for (tx, ty) in tiles:
-                buf = self._tile_cache.get((z, tx, ty))
+                buf = self._tile_cache.get(self._tile_key(fetch, z, tx, ty))
                 if buf:
                     arr, ln = buf
                     L.carto_render_tile(ctx, arr, ln, tx, ty, z)

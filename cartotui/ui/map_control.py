@@ -286,7 +286,13 @@ class MapControl(UIControl):
             # it as usual; DirectPaintRenderer draws these rows underneath them
             # afterwards. Keeping the real cells out of its Screen is the whole
             # point -- diffing them is what costs.
-            self._paint_rows = [get_line(i) for i in range(height)]
+            from cartotui.rendering.packed import PackedFrame
+            if isinstance(rows, PackedFrame):
+                self._paint_rows = rows.copy() if cross_row is not None else rows
+                if cross_row is not None:
+                    self._paint_rows[chy] = cross_row
+            else:
+                self._paint_rows = [get_line(i) for i in range(height)]
             self._paint_size = (width, height)
             blank = [("", " " * width)]
             return UIContent(
@@ -531,6 +537,10 @@ class MapControl(UIControl):
 
     def _render_worker(self) -> None:
         while not self._stop.is_set():
+            delay = getattr(self, "_next_render_at", 0) - time.monotonic()
+            if delay > 0:
+                self._stop.wait(min(delay, 0.1))
+                continue
             try:
                 job = self._req_q.get(timeout=0.1)
             except queue.Empty:
@@ -571,7 +581,7 @@ class MapControl(UIControl):
             )
 
             r = self.cfg["render"]
-            t0 = time.time()
+            t0 = time.perf_counter()
             img = None
             ac_overlay = []
             sel_icao = self.state.selected_aircraft_icao
@@ -762,12 +772,22 @@ class MapControl(UIControl):
 
             effective_color = bool(color)
 
+            # A settings/source/mode change makes this result invalid. Camera
+            # motion may still present a recent intermediate frame to avoid
+            # starving the display during continuous key repeat.
+            current = self.state.snapshot()
+            if current[3:] != snap[3:]:
+                with self._dedup_lock:
+                    self._inflight_key = None
+                continue
+
             orientation = (_theme_orientation(style) if source == "vector" else None)
 
             try:
                 rows = self.renderer.render(
                     img, w, h, effective_color, render_mode, palette, dither,
                     overlay=radar_layer, orientation=orientation,
+                    packed=self.direct_paint,
                 )
             except Exception as e:
                 log.warning("Render failed: %s", e)
@@ -824,7 +844,11 @@ class MapControl(UIControl):
                 except Exception as e:
                     log.debug("Aircraft post-render overlay failed: %s", e)
 
-            self.state.last_render_ms = (time.time() - t0) * 1000.0
+            if self.state.snapshot()[3:] != snap[3:]:
+                with self._dedup_lock:
+                    self._inflight_key = None
+                continue
+            self.state.last_render_ms = (time.perf_counter() - t0) * 1000.0
 
             frame = _Frame(
                 w, h, rows,
@@ -869,6 +893,16 @@ class MapControl(UIControl):
     def _cell_pixel_size(self) -> Tuple[int, int]:
         return self.renderer.cell_pixel_size(self.state.render_mode)
 
+    def note_output(self, elapsed, size):
+        """Coalesce map work under output backpressure; never reduce quality."""
+        self.state.last_output_ms = elapsed * 1000
+        self.state.last_output_bytes = size
+        rate = max(0.0, float(self.cfg["render"].get("output_mbps", 0) or 0))
+        previous = getattr(self, "_write_cost", 0.0)
+        self._write_cost = max(elapsed, previous * 0.8)
+        budget = size * 8 / (rate * 1_000_000) if rate else 0
+        self._next_render_at = time.monotonic() + max(self._write_cost, budget)
+
     def _radar_layer(self, lat, lon, z, px_w, px_h, cached_only: bool = True, tile_px=256):
         """The radar as a separate RGBA layer for the renderer, or None.
 
@@ -891,7 +925,14 @@ class MapControl(UIControl):
                 cached_only=cached_only,
             )
             if layer is not None and layer.size != (px_w, px_h):
-                layer = layer.resize((px_w, px_h), Image.Resampling.BILINEAR)
+                cached = getattr(self, "_scaled_radar", None)
+                if cached and cached[0] is layer and cached[1] == (px_w, px_h):
+                    layer = cached[2]
+                else:
+                    original = layer
+                    layer = layer.resize((px_w, px_h), Image.Resampling.BILINEAR)
+                    layer._cartotui_retained = True
+                    self._scaled_radar = (original, (px_w, px_h), layer)
             return layer
         except Exception as e:
             log.debug("radar overlay failed: %s", e)

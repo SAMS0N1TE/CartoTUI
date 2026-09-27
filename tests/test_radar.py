@@ -41,6 +41,28 @@ def test_build_layer_returns_none_when_nothing_cached():
     assert rs.build_layer(43.2, -71.5, 8, 200, 200) is None
 
 
+def test_retained_layer_invalidates_on_arrival_options_and_frame():
+    rs = _stub()
+    rs._get_cached = lambda *a, **k: _red_tile()
+    try:
+        def layer(**options):
+            return rs.build_layer(43.2, -71.5, 8, 200, 200, **options)
+        a = layer()
+        assert layer() is a
+        assert layer(opacity=.3) is not a
+        a = layer()
+        rs._generation += 1  # A newly downloaded tile must invalidate partial composites.
+        assert layer() is not a
+        a = layer()
+        rs._past = [{"time": 2000, "path": "/new"}]
+        assert layer() is not a
+        rs.clear_cache()
+        assert rs._retained_layer is None
+        assert rs._cache_bytes == 0
+    finally:
+        rs.close()
+
+
 def test_composite_cached_only_draws_from_cache():
     rs = _stub()
     rs._get_cached = lambda *a, **k: _red_tile()

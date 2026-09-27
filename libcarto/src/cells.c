@@ -10,6 +10,7 @@
  * rint for np.round's round-half-to-even, and truncation where numpy casts. */
 
 #define CARTO_BRAILLE_BASE 0x2800u
+int carto_pure_braille_version(void) { return 1; }
 
 int carto_cells_version(void) { return 2; }
 
@@ -475,7 +476,14 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                 if (code == 0 || code == 0xFF) {
                     int32_t fi = (int32_t)palette_avg;  /* astype(int32) truncates */
                     if (fi < 0) fi = 0; else if (fi > levels - 1) fi = levels - 1;
-                    gl = pal[fi];
+                    if (o->shaded) gl = pal[fi];
+                    else {
+                        static const uint32_t dots[9] = {0,1,129,133,165,167,231,239,255};
+                        int density = (int)floor(palette_avg * 8.0 / (levels - 1) + 0.5);
+                        if (density < 0) density = 0;
+                        if (density > 8) density = 8;
+                        gl = CARTO_BRAILLE_BASE + dots[density];
+                    }
                 }
                 if (o->shaded && lit >= 6) {
                     int32_t si = (int32_t)palette_avg;

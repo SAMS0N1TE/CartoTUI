@@ -3,18 +3,20 @@ from __future__ import annotations
 
 import logging
 import math
+import weakref
 from collections import OrderedDict
+from functools import lru_cache
 from typing import List, Optional, Tuple
 
 from cartotui.admin1 import TILE_ADMIN1_MIN_Z, admin1_lines
 from cartotui.geodesy import latlon_to_tile_xy
-
-log = logging.getLogger("cartotui.overlay")
-_LAYERS_LOGGED: set = set()
 from cartotui.ui.aircraft_overlay import (
     _stamp_cells_batch,
     _stamp_label,
 )
+
+log = logging.getLogger("cartotui.overlay")
+_LAYERS_LOGGED: set = set()
 
 StyleRun = Tuple[str, str]
 LineFrag = List[StyleRun]
@@ -122,10 +124,12 @@ _FALLBACK_MIN_ZOOM_BY_RANK = {
 }
 
 def _extract_labels(tile) -> List[Tuple[int, int, str, Tuple[float, float]]]:
-    key = (tile.z, tile.x, tile.y)
-    if key in _TILE_LABEL_CACHE:
+    # Keep the tile alive with this bounded entry: object identity cannot collide
+    # across providers or a replaced tile generation.
+    key = id(tile)
+    if key in _TILE_LABEL_CACHE and _TILE_LABEL_CACHE[key][0]() is tile:
         _TILE_LABEL_CACHE.move_to_end(key)
-        return _TILE_LABEL_CACHE[key]
+        return _TILE_LABEL_CACHE[key][1]
 
     out: List[Tuple[int, int, str, Tuple[float, float]]] = []
     for layer_name, layer in tile.layers.items():
@@ -166,7 +170,7 @@ def _extract_labels(tile) -> List[Tuple[int, int, str, Tuple[float, float]]]:
             out.append((rank, min_zoom, str(name), (float(cx), float(cy))))
 
     out.sort(key=lambda t: t[0])
-    _TILE_LABEL_CACHE[key] = out
+    _TILE_LABEL_CACHE[key] = (weakref.ref(tile), out)
     if len(_TILE_LABEL_CACHE) > _TILE_LABEL_CACHE_MAX:
         _TILE_LABEL_CACHE.popitem(last=False)
     return out
@@ -256,7 +260,7 @@ def draw_boundary_lines(
     for tx in range(tx_min, tx_max + 1):
         for ty in range(ty_min, ty_max + 1):
             try:
-                tile = vector_source.get_tile(fetch_z, tx, ty)
+                tile = getattr(vector_source, "get_overlay_tile", vector_source.get_tile)(fetch_z, tx, ty)
             except Exception:
                 continue
             if tile is None:
@@ -315,6 +319,7 @@ def draw_boundary_lines(
     _stamp_cells_batch(rows, term_w, stamps[:max_cells])
     return len(stamps[:max_cells])
 
+@lru_cache(maxsize=4)
 def _admin1_stamps(*, z, term_w, term_h, canvas_left, canvas_top,
                    px_per_cell_x, px_per_cell_y, base_style, boundary_style):
     out: List[Tuple[int, int, str, str]] = []
@@ -344,7 +349,41 @@ def _admin1_stamps(*, z, term_w, term_h, canvas_left, canvas_top,
             prev_vis = vis
     return out
 
-def apply_vector_overlay(
+def apply_vector_overlay(rows, vector_source, **kwargs):
+    """Retain projected stamps while only radar or aircraft content changes."""
+    if vector_source is None or not hasattr(vector_source, "overlay_missing"):
+        return _apply_vector_overlay(rows, vector_source, **kwargs)
+    key = repr(kwargs)
+    cached = getattr(vector_source, "_projected_overlay", None)
+    if cached is not None and cached[0] == key:
+        stamps, result, plan = cached[1:]
+    else:
+        class Recorder:
+            def __init__(self):
+                self.stamps = []
+            def __len__(self):
+                return kwargs["term_h"]
+            def stamp(self, x, y, text, style):
+                self.stamps.append((x, y, text, style))
+        recorder = Recorder()
+        missing = vector_source.overlay_missing
+        result = _apply_vector_overlay(recorder, vector_source, **kwargs)
+        stamps = recorder.stamps
+        from cartotui.rendering.packed import compile_stamps
+        plan = compile_stamps(stamps, kwargs["term_w"], kwargs["term_h"])
+        if missing == vector_source.overlay_missing and len(stamps) <= 100000:
+            vector_source._projected_overlay = (key, stamps, result, plan)
+    if hasattr(rows, "apply_stamps"):
+        rows.apply_stamps(plan)
+        return result
+    # Preserve order: boundaries first, then labels with their original backgrounds.
+    _stamp_cells_batch(rows, kwargs["term_w"],
+                       [(x+i, y, ch, style) for x, y, text, style in stamps
+                        for i, ch in enumerate(text)])
+    return result
+
+
+def _apply_vector_overlay(
     rows: FrameFrag,
     vector_source,
     *,
@@ -410,7 +449,7 @@ def apply_vector_overlay(
     for tx in range(tx_min, tx_max + 1):
         for ty in range(ty_min, ty_max + 1):
             try:
-                tile = vector_source.get_tile(fetch_z, tx, ty)
+                tile = getattr(vector_source, "get_overlay_tile", vector_source.get_tile)(fetch_z, tx, ty)
             except Exception:
                 continue
             if tile is None:

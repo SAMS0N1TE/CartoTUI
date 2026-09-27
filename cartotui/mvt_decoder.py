@@ -15,7 +15,7 @@ _GEOM_POINT = 1
 _GEOM_LINESTRING = 2
 _GEOM_POLYGON = 3
 
-def decode(data: bytes, y_coord_down: bool = True) -> Dict[str, dict]:
+def decode(data: bytes, y_coord_down: bool = True, layer_names=None) -> Dict[str, dict]:
     layers: Dict[str, dict] = {}
     pos = 0
     end = len(data)
@@ -24,8 +24,12 @@ def decode(data: bytes, y_coord_down: bool = True) -> Dict[str, dict]:
         field, wire = tag >> 3, tag & 0x7
         if field == 3 and wire == _WT_LENGTH:
             length, pos = _read_varint(data, pos)
+            if length > end - pos:
+                raise ValueError("Truncated MVT layer")
             layer_blob = data[pos:pos + length]
             pos += length
+            if layer_names is not None and _layer_name(layer_blob) not in layer_names:
+                continue
             layer = _decode_layer(layer_blob, y_coord_down=y_coord_down)
             if layer is not None:
                 name, body = layer
@@ -33,6 +37,25 @@ def decode(data: bytes, y_coord_down: bool = True) -> Dict[str, dict]:
         else:
             pos = _skip(data, pos, wire)
     return layers
+
+
+def _layer_name(buf: bytes) -> Optional[str]:
+    """Scan metadata without materializing irrelevant feature geometry."""
+    pos = 0
+    name = None
+    while pos < len(buf):
+        tag, pos = _read_varint(buf, pos)
+        if tag == 10:
+            length, pos = _read_varint(buf, pos)
+            if length > len(buf) - pos:
+                raise ValueError("Truncated MVT layer name")
+            name = buf[pos:pos + length].decode("utf-8", "replace")
+            pos += length
+        else:
+            pos = _skip(buf, pos, tag & 7)
+        if pos > len(buf):
+            raise ValueError("Truncated MVT field")
+    return name
 
 def _decode_layer(buf: bytes, y_coord_down: bool) -> Optional[Tuple[str, dict]]:
     name: Optional[str] = None
@@ -286,7 +309,7 @@ def _read_varint(buf: bytes, pos: int) -> Tuple[int, int]:
     shift = 0
     while True:
         if pos >= len(buf):
-            return result, pos
+            raise ValueError("Truncated protobuf varint")
         b = buf[pos]
         pos += 1
         result |= (b & 0x7F) << shift
@@ -294,7 +317,7 @@ def _read_varint(buf: bytes, pos: int) -> Tuple[int, int]:
             return result, pos
         shift += 7
         if shift > 63:
-            return result, pos
+            raise ValueError("Oversized protobuf varint")
 
 def _read_packed_varints(buf: bytes, pos: int, length: int):
     end = pos + length

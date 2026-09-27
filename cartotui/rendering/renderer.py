@@ -60,6 +60,12 @@ def _resample(img: Image.Image, tw: int, th: int) -> Image.Image:
     return img.resize((tw, th), Image.LANCZOS)
 
 def _luminance(arr_u8: np.ndarray) -> np.ndarray:
+    native = _native_renderer()
+    if native is not None and getattr(native, "has_pixel_kernels", False):
+        arr = np.ascontiguousarray(arr_u8, dtype=np.uint8)
+        result = np.empty(arr.shape[:2], np.float32)
+        native.lib.carto_luminance_rgb(arr.ctypes.data, result.ctypes.data, result.size)
+        return result
     return (
         0.299 * arr_u8[..., 0]
         + 0.587 * arr_u8[..., 1]
@@ -82,6 +88,15 @@ class _Overlay:
 
     def over(self, base_u8: np.ndarray) -> np.ndarray:
         """Alpha-composite onto `base_u8` -- colour output only."""
+        native = _native_renderer()
+        if native is not None and getattr(native, "has_pixel_kernels", False):
+            base = np.ascontiguousarray(base_u8, dtype=np.uint8)
+            overlay = np.ascontiguousarray(self.rgb, dtype=np.uint8)
+            alpha = np.ascontiguousarray(self.alpha, dtype=np.float32)
+            result = np.empty_like(base)
+            native.lib.carto_blend_rgb(base.ctypes.data, overlay.ctypes.data,
+                                       alpha.ctypes.data, result.ctypes.data, alpha.size)
+            return result
         a = self.alpha[..., None]
         out = base_u8.astype(np.float32) * (1.0 - a) + self.rgb.astype(np.float32) * a
         return np.clip(out, 0.0, 255.0).astype(np.uint8)
@@ -227,10 +242,12 @@ def _thresh_params(mode: str, percentile: float):
     return 1, 8.0, 96.0
 
 def _native_cells(img, term_w, term_h, use_color, mode, palette,
-                  orientation, threshold_mode, percentile, shaded):
+                  orientation, threshold_mode, percentile, shaded, packed=False):
     """Reduce an image to cells in C. Returns None if the fast path cannot run."""
     r = _native_renderer()
     if r is None:
+        return None
+    if mode == "braille" and not shaded and not hasattr(r.lib, "carto_pure_braille_version"):
         return None
     if threshold_mode == "stable" and mode != "half" and not getattr(r, "has_stable_cells", False):
         return None
@@ -303,6 +320,9 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
         log.debug("carto_cellify failed (%s); using the python backend", e)
         return None
 
+    if packed:
+        from cartotui.rendering.packed import PackedFrame
+        return PackedFrame(glyph, fg, bg, term_w, term_h)
     text = _glyph_text(glyph)
     frame: FrameFrag = []
     if mode == "half":
@@ -595,7 +615,13 @@ class BrailleBackend:
         palette_codes = np.array([ord(c) for c in palette_chars], dtype=np.int32)
         flat_idx = np.clip(cell_avg.astype(np.int32), 0, levels - 1)
         flat_glyphs = palette_codes[flat_idx]
-        glyphs_int = np.where(flat, flat_glyphs, glyphs_int)
+        if self.shaded:
+            glyphs_int = np.where(flat, flat_glyphs, glyphs_int)
+        else:
+            # Uniform areas still carry tone, but stay in the braille alphabet.
+            density = np.clip(np.floor(cell_avg * 8 / (levels - 1) + 0.5), 0, 8).astype(np.int32)
+            dots = np.array([0, 1, 129, 133, 165, 167, 231, 239, 255], np.int32)
+            glyphs_int = np.where(flat, 0x2800 + dots[density], glyphs_int)
 
         if self.shaded and palette:
             popcount = np.unpackbits(codes[..., None], axis=-1).sum(axis=-1)
@@ -605,6 +631,16 @@ class BrailleBackend:
 
         frame: FrameFrag = []
         if use_color:
+            native = _native_renderer()
+            if (getattr(self, "packed_output", False) and native is not None
+                    and getattr(native, "has_pixel_kernels", False)):
+                from cartotui.rendering.packed import PackedFrame
+                rgb = np.ascontiguousarray(arr, dtype=np.uint8)
+                mask = np.ascontiguousarray(filled, dtype=np.uint8)
+                fg = np.empty((term_h, term_w), np.uint32)
+                native.lib.carto_braille_colors(rgb.ctypes.data, mask.ctypes.data,
+                                                term_w, term_h, fg.ctypes.data)
+                return PackedFrame(glyphs_int, fg, None, term_w, term_h)
             fr = filled.reshape(term_h, 4, term_w, 2).astype(np.float32)
             cnt = fr.sum(axis=(1, 3))
             inv = 1.0 / np.maximum(cnt, 1.0)
@@ -620,6 +656,11 @@ class BrailleBackend:
             cell_rgb = np.stack(
                 [_cell_color(0), _cell_color(1), _cell_color(2)], axis=-1
             ).clip(0, 255).astype(np.uint8)
+            if getattr(self, "packed_output", False):
+                from cartotui.rendering.packed import PackedFrame
+                c = cell_rgb.astype(np.uint32)
+                fg = (c[..., 0] << 16) | (c[..., 1] << 8) | c[..., 2]
+                return PackedFrame(glyphs_int, fg, None, term_w, term_h)
             text = _glyph_text(glyphs_int)
             for y in range(term_h):
                 off = y * term_w
@@ -722,6 +763,13 @@ class HalfBlockBackend:
         top = arr[0::2]
         bot = arr[1::2]
         n = min(top.shape[0], bot.shape[0])
+        if getattr(self, "packed_output", False):
+            from cartotui.rendering.packed import PackedFrame
+            def rgb24(a):
+                a = a.astype(np.uint32)
+                return (a[..., 0] << 16) | (a[..., 1] << 8) | a[..., 2]
+            return PackedFrame(np.full((n, term_w), 0x2580, np.uint32),
+                               rgb24(top[:n]), rgb24(bot[:n]), term_w, n)
         frame: FrameFrag = []
         for y in range(n):
             frame.append(_emit_halfblock_row(top[y], bot[y]))
@@ -824,6 +872,7 @@ class Renderer:
         source_kind: Optional[str] = None,
         overlay: Optional[Image.Image] = None,
         orientation: Optional[str] = None,
+        packed: bool = False,
     ) -> FrameFrag:
         """Render `img` to terminal cells.
 
@@ -837,6 +886,16 @@ class Renderer:
         """
         effective_mode = self._resolve_mode(mode, source_kind)
         self.last_effective_mode = effective_mode
+        key = (term_w, term_h, use_color, effective_mode, self.get_palette(palette_name),
+               dither, orientation, self.subpixel_threshold, self.subpixel_percentile,
+               self.shaded_blocks, self.use_native_cells)
+        retained_input = img if hasattr(img, "indices") else None
+        retain = packed and retained_input is not None and (
+            overlay is None or getattr(overlay, "_cartotui_retained", False))
+        key += (id(overlay),)
+        cached = getattr(self, "_retained_cells", None)
+        if retain and cached and cached[0] is img and cached[1] == key:
+            return cached[2].copy()
 
         # libcarto does this whole reduction in one pass when nothing needs the
         # python-only extras -- a translucent overlay to composite, a dither, or
@@ -849,14 +908,18 @@ class Renderer:
                 self.get_palette(palette_name), orientation,
                 self.subpixel_threshold, self.subpixel_percentile,
                 self.shaded_blocks,
+                packed=packed,
             )
             if frame is not None:
+                if retain:
+                    self._retained_cells = (img, key, frame.copy(), overlay)
                 return frame
 
         if hasattr(img, "image"):
             img = img.image()
         backend = self._backends.get(effective_mode) or self._backends["ascii"]
-        return backend.render(
+        backend.packed_output = packed
+        frame = backend.render(
             img,
             term_w,
             term_h,
@@ -866,3 +929,6 @@ class Renderer:
             overlay=overlay,
             orientation=orientation,
         )
+        if retain and hasattr(frame, "stamp"):
+            self._retained_cells = (retained_input, key, frame.copy(), overlay)
+        return frame

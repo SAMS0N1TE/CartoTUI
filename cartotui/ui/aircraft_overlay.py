@@ -196,6 +196,9 @@ def _stamp_cell(
         return False
     if cell_x < 0 or cell_x >= width:
         return False
+    if hasattr(rows, "stamp"):
+        rows.stamp(cell_x, cell_y, glyph, style)
+        return True
     styles, chars = _row_to_chars(rows[cell_y], width)
     styles[cell_x] = _with_bg(style, styles[cell_x])
     chars[cell_x] = glyph
@@ -208,6 +211,10 @@ def _stamp_cells_batch(
     cells: Sequence[Tuple[int, int, str, str]],
 ) -> None:
     if not cells:
+        return
+    if hasattr(rows, "stamp"):
+        for cx, cy, glyph, style in cells:
+            rows.stamp(cx, cy, glyph, style)
         return
     by_row: Dict[int, List[Tuple[int, str, str]]] = {}
     for cx, cy, glyph, style in cells:
@@ -233,6 +240,9 @@ def _stamp_label(
     style: str,
 ) -> None:
     if cell_y < 0 or cell_y >= len(rows):
+        return
+    if hasattr(rows, "stamp"):
+        rows.stamp(cell_x, cell_y, label, style)
         return
     styles, chars = _row_to_chars(rows[cell_y], width)
     for i, ch in enumerate(label):

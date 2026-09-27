@@ -4,6 +4,7 @@ from __future__ import annotations
 import gzip
 import logging
 import math
+import sys
 import threading
 import zlib
 from collections import OrderedDict
@@ -38,6 +39,27 @@ __all__ = ["VectorTileSource", "VectorTile"]
 # dense one, so the cache has to be capped by weight rather than tile count.
 _DECODED_BUDGET_BYTES = 192 * 1024 * 1024
 _DECODED_BYTES_PER_RAW = 80          # measured ratio, decoded : compressed
+_OVERLAY_BUDGET_BYTES = 32 * 1024 * 1024
+OVERLAY_LAYERS = frozenset(("places", "place_labels", "place", "boundary_labels",
+                          "admin_labels", "place_labels_admin", "boundaries",
+                          "boundary", "admin", "admin_boundaries"))
+
+
+def _object_bytes(value, seen=None):
+    """Account retained decoded objects once, including shared property values."""
+    if seen is None:
+        seen = set()
+    identity = id(value)
+    if identity in seen:
+        return 0
+    seen.add(identity)
+    size = sys.getsizeof(value)
+    if isinstance(value, dict):
+        size += sum(_object_bytes(k, seen) + _object_bytes(v, seen)
+                    for k, v in value.items())
+    elif isinstance(value, (tuple, list)):
+        size += sum(_object_bytes(v, seen) for v in value)
+    return size
 
 # Bounds how fast a pan can cover fresh ground: N workers move N/rtt tiles a
 # second, and a pan that outruns them reaches tiles that have not landed.
@@ -69,6 +91,11 @@ class VectorTileSource:
         self._decoded: OrderedDict = OrderedDict()
         self._decoded_sizes: Dict[Tuple[int, int, int], int] = {}
         self._decoded_bytes = 0
+        self._overlay_cache = OrderedDict()
+        self._overlay_bytes = 0
+        self.overlay_cache_hits = 0
+        self.overlay_cache_misses = 0
+        self.overlay_missing = 0
         self._max_cached = 256       # a ceiling; the byte budget binds first
         self._prefetch_inflight: set = set()
         self._prefetch_lock = threading.Lock()
@@ -135,6 +162,44 @@ class VectorTileSource:
             self._decoded_bytes -= self._decoded_sizes.pop(old_key, 0)
         if not self._decoded:
             self._decoded_bytes = 0
+
+    def get_overlay_tile(self, z: int, x: int, y: int) -> Optional[VectorTile]:
+        """Decode only overlay layers into a separate source-owned byte LRU."""
+        key = (z, x, y)
+        with self._lock:
+            found = self._overlay_cache.get(key)
+            if found is not None:
+                self._overlay_cache.move_to_end(key)
+                self.overlay_cache_hits += 1
+                return found[0]
+            self.overlay_cache_misses += 1
+        raw = self.get_raw(z, x, y)
+        if raw is None:
+            self.overlay_missing += 1
+            return None
+        try:
+            layers = _pure_decode(self._decompress_if_needed(raw),
+                                  y_coord_down=True, layer_names=OVERLAY_LAYERS)
+        except Exception:
+            # Preserve support for unusual provider encodings through the existing fallback.
+            full = self._decode(raw)
+            if full is None:
+                self.overlay_missing += 1
+                return None
+            layers = {k: v for k, v in full.items() if k in OVERLAY_LAYERS}
+        tile = VectorTile(z=z, x=x, y=y, extent=4096, layers=layers)
+        size = _object_bytes(layers) + sys.getsizeof(tile) + 256
+        with self._lock:
+            old = self._overlay_cache.pop(key, None)
+            self._overlay_bytes -= old[1] if old else 0
+            if size <= _OVERLAY_BUDGET_BYTES:
+                self._overlay_cache[key] = (tile, size)
+                self._overlay_bytes += size
+            while self._overlay_cache and (self._overlay_bytes > _OVERLAY_BUDGET_BYTES
+                                           or len(self._overlay_cache) > 256):
+                _, (_, weight) = self._overlay_cache.popitem(last=False)
+                self._overlay_bytes -= weight
+        return tile
 
     _MISSES_BEFORE_CAPPING = 3
 

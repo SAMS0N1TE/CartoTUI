@@ -15,6 +15,7 @@ set(CARTO_SOURCES
     src/mvt.c
     src/carto.c
     src/cells.c
+    src/terminal.c
 )
 
 add_library(carto SHARED ${CARTO_SOURCES})
@@ -27,6 +28,8 @@ if(MSVC)
     target_compile_options(carto PRIVATE /W3 $<$<BOOL:${CARTO_WERROR}>:/WX>)
 else()
     target_compile_options(carto PRIVATE -Wall -Wextra $<$<BOOL:${CARTO_WERROR}>:-Werror>)
+    # Pixel kernels deliberately match NumPy's separate rounding operations.
+    set_source_files_properties(src/terminal.c PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
 find_library(CARTO_M m)
