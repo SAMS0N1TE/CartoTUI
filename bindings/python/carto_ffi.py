@@ -423,14 +423,20 @@ class Renderer:
                 if 0 <= tx < n and 0 <= ty < n:
                     tiles.append((tx, ty))
 
-        missing = [self._tile_key(fetch, z, tx, ty) for (tx, ty) in tiles if self._tile_key(fetch, z, tx, ty) not in self._tile_cache]
+        # Pin this frame's working set even when it exceeds the cache budget.
+        # Eviction bounds retained memory, never the geometry visible in a frame.
+        with self._cache_lock:
+            visible_buffers = {self._tile_key(fetch, z, tx, ty):
+                               self._tile_cache.get(self._tile_key(fetch, z, tx, ty))
+                               for tx, ty in tiles}
+        missing = [key for key, buf in visible_buffers.items() if buf is None]
         if len(missing) > 1:
             ex = self._fetch_pool("viewport", 8)
             for k, raw in ex.map(lambda kk: (kk, fetch(*kk[-3:])), missing):
-                self._store_tile(k, raw)
+                visible_buffers[k] = self._store_tile(k, raw)
         elif missing:
             k = missing[0]
-            self._store_tile(k, fetch(*k[-3:]))
+            visible_buffers[k] = self._store_tile(k, fetch(*k[-3:]))
 
         with self._render_lock:
             if style is not None:
@@ -446,7 +452,8 @@ class Renderer:
 
             drawn = 0
             for (tx, ty) in tiles:
-                buf = self._tile_cache.get(self._tile_key(fetch, z, tx, ty))
+                key = self._tile_key(fetch, z, tx, ty)
+                buf = visible_buffers.get(key) or self._tile_cache.get(key)
                 if buf:
                     arr, ln = buf
                     L.carto_render_tile(ctx, arr, ln, tx, ty, z)

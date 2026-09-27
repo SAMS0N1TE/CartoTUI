@@ -418,7 +418,8 @@ class RadarSource:
         with self._lock:
             generation = self._generation
             layer_key = (lat, lon, z, px_w, px_h, opacity, color, smooth, snow,
-                         self._frame_time, self._frame_path, self.tile_size, self.max_px, generation)
+                         self._frame_time, self._frame_path, self.tile_size, self.max_px,
+                         cached_only, generation)
             retained = self._retained_layer
             if retained is not None and retained[0] == layer_key:
                 return retained[1]

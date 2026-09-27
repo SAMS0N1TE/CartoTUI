@@ -72,3 +72,20 @@ def test_output_budget_coalesces_work_without_changing_quality():
     assert 0.31 < control._next_render_at - start < 0.4
     assert control.cfg["render"]["vector_scale"] == 6
     assert control.state.last_output_bytes == 400000
+
+
+def test_native_frame_keeps_visible_tiles_when_lru_is_too_small(monkeypatch):
+    try:
+        native = _get_renderer()
+    except RuntimeError:
+        pytest.skip("native library unavailable")
+    monkeypatch.setattr(native, "_tile_cache_max", 1)
+    calls = []
+    def fetch(z, x, y):
+        calls.append((z, x, y))
+        return b"\x1a\x07\x0a\x05water"
+    fetch.cache_namespace = object()
+    _, drawn = native.render_viewport(0,0,2,300,300,fetch)
+    assert len(calls) > 1
+    assert drawn == len(calls)
+    assert len(native._tile_cache) == 1
