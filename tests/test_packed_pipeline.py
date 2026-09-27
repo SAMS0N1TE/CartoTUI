@@ -72,8 +72,9 @@ def test_unshaded_braille_never_substitutes_blocks(native, threshold):
     for radar in (None, Image.new("RGBA", image.size, (0, 200, 255, 100))):
         rows = r.render(image, 128, 8, True, mode="braille", overlay=radar)
         chars = "".join(text for row in rows for _, text in row)
-        assert all(0x2800 <= ord(ch) <= 0x28FF for ch in chars)
-        assert len(set(chars)) > 2  # flat tones retain differing dot densities
+        assert all(ch == " " or 0x2800 <= ord(ch) <= 0x28FF for ch in chars)
+        assert set(chars) == {" "}  # smooth tones use colour, never invented dot texture
+        assert len({style for row in rows for style, _ in row}) > 2
 
 
 def test_native_rgb_expansion_is_byte_exact():

@@ -90,11 +90,12 @@ class ThemeWidget(Widget):
             self.add_button("Rename preset...", width, self._rename)
         if self._undo is not None:
             self.add_button("Undo colour edits", width, self._revert)
+        data = self._editable_data(self._current())
         for group, title, fields in (("map", "Map colours", MAP_FIELDS), ("ui", "Interface colours", UI_FIELDS)):
             if self.add_fold(title, width, self._group == group,
                              lambda g=group: self._set_group(g)):
                 for label, key in fields:
-                    value = self._value(group, key)
+                    value = data[group].get(key, "#808080")
                     self.add_kv(label, value, width,
                                 action=lambda g=group, k=key, label=label: self._open_picker(g, k, label))
         self.add_section("Labels", width)

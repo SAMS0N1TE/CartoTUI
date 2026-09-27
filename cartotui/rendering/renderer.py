@@ -247,12 +247,15 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
     r = _native_renderer()
     if r is None:
         return None
+    if mode == "braille" and use_color and not shaded and not hasattr(r.lib, "carto_color_braille_version"):
+        return None
     if mode == "braille" and not shaded and not hasattr(r.lib, "carto_pure_braille_version"):
         return None
     if threshold_mode == "stable" and mode != "half" and not getattr(r, "has_stable_cells", False):
         return None
-    # Half blocks encode RGB directly; threshold modes cannot affect them.
-    params = _thresh_params("fixed" if mode == "half" else threshold_mode, percentile)
+    # Direct colour encoders need no luminance threshold analysis.
+    direct_color = mode == "half" or (mode == "braille" and use_color and not shaded)
+    params = _thresh_params("fixed" if direct_color else threshold_mode, percentile)
     if params is None:
         return None
     thresh, black_pct, white_pct = params
@@ -303,7 +306,7 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
     glyph = np.empty(n, dtype=np.uint32)
     want_color = bool(opts.want_color)
     fg = np.empty(n, dtype=np.uint32) if want_color else None
-    bg = np.empty(n, dtype=np.uint32) if mode == "half" else None
+    bg = np.empty(n, dtype=np.uint32) if mode == "half" or (mode == "braille" and use_color and not shaded) else None
     fgp = fg.ctypes.data if fg is not None else 0
     bgp = bg.ctypes.data if bg is not None else 0
     try:
@@ -325,7 +328,7 @@ def _native_cells(img, term_w, term_h, use_color, mode, palette,
         return PackedFrame(glyph, fg, bg, term_w, term_h)
     text = _glyph_text(glyph)
     frame: FrameFrag = []
-    if mode == "half":
+    if bg is not None:
         fg2 = fg.reshape(term_h, term_w)
         bg2 = bg.reshape(term_h, term_w)
         for y in range(term_h):
@@ -544,6 +547,38 @@ _BRAILLE_BITS = np.array(
     dtype=np.uint8,
 )
 
+def _color_braille(arr, term_w, term_h):
+    """Fit each 2x4 sample to two RGB colours; dots encode real detail.
+
+    Flat fills get a blank cell with their actual background colour. Unlike
+    density glyphs, this never invents dots across uniform land or water.
+    Integer means and deterministic ties match the portable C implementation.
+    """
+    from cartotui.rendering.packed import PackedFrame
+    p = arr.reshape(term_h, 4, term_w, 2, 3).transpose(0, 2, 1, 3, 4).reshape(-1, 8, 3).astype(np.int32)
+    spread = p.max(1) - p.min(1)
+    channel = spread.argmax(1)
+    v = np.take_along_axis(p, channel[:, None, None], 2)[..., 0]
+    idx = np.arange(len(p))
+    low, high = p[idx, v.argmin(1)], p[idx, v.argmax(1)]
+    for _ in range(2):
+        mask = ((p-high[:, None])**2).sum(2) < ((p-low[:, None])**2).sum(2)
+        n = mask.sum(1)
+        high = (p*mask[..., None]).sum(1) // np.maximum(n, 1)[:, None]
+        low = (p*~mask[..., None]).sum(1) // np.maximum(8-n, 1)[:, None]
+    swap = n > 4
+    fg = np.where(swap[:, None], low, high)
+    bg = np.where(swap[:, None], high, low)
+    mask ^= swap[:, None]
+    flat = spread.max(1) < 12
+    bg[flat] = p[flat].sum(1) // 8
+    fg[flat] = bg[flat]
+    mask[flat] = False
+    code = (mask*np.array([1, 8, 2, 16, 4, 32, 64, 128])).sum(1).astype(np.uint32)
+    glyph = np.where(code == 0, 32, 0x2800 + code)
+    return PackedFrame(glyph, _pack_rgb(fg), _pack_rgb(bg), term_w, term_h)
+
+
 class BrailleBackend:
     name = "braille"
 
@@ -578,8 +613,19 @@ class BrailleBackend:
         if img.width != target_w or img.height != target_h:
             img = _resample(img, target_w, target_h)
         arr = np.asarray(img, dtype=np.uint8)
-        lum = _luminance(arr)
         ov = _prep_overlay(overlay, target_w, target_h)
+        if use_color and not self.shaded:
+            if ov is not None:
+                arr = ov.over(arr)
+            packed = getattr(self, "packed_output", False)
+            native = (_native_cells(Image.fromarray(arr), term_w, term_h, True,
+                      "braille", palette, orientation, "fixed", self.percentile,
+                      False, packed=packed) if getattr(self, "native_enabled", True) else None)
+            if native is not None:
+                return native
+            frame = _color_braille(arr, term_w, term_h)
+            return frame if packed else list(frame)
+        lum = _luminance(arr)
 
         palette_chars = list(palette) if palette else list(" ░▒▓█")
         levels = max(2, len(palette_chars))
@@ -919,6 +965,7 @@ class Renderer:
             img = img.image()
         backend = self._backends.get(effective_mode) or self._backends["ascii"]
         backend.packed_output = packed
+        backend.native_enabled = self.use_native_cells
         frame = backend.render(
             img,
             term_w,

@@ -92,6 +92,8 @@ def main():
     parser.add_argument("--gallery-only", action="store_true", help="Rebuild the gallery from existing results, without rendering")
     parser.add_argument("--themes", default=",".join(available_themes()))
     parser.add_argument("--zooms", default="0,5,8,13,16,19")
+    parser.add_argument("--modes", default="ascii,quadrant,braille,half")
+    parser.add_argument("--geometries", default="standard,solid,vector-only")
     parser.add_argument("--lat", type=float, default=42.36)
     parser.add_argument("--lon", type=float, default=-71.06)
     parser.add_argument("--full", action="store_true")
@@ -118,7 +120,7 @@ def main():
             img = rasterise_view_libcarto(source, args.lat, args.lon, zoom, w*6, h*12, style=style, supersample=6, max_fetch_zoom=min(zoom,14), lazy=True)
             if img is None:
                 raise RuntimeError(f"Missing tiles: {theme} z{zoom}")
-            for mode, geometry, variant, dither in itertools.product(("ascii", "quadrant", "braille", "half"), ("standard", "solid", "vector-only"), variants, args.dithers.split(",")):
+            for mode, geometry, variant, dither in itertools.product(args.modes.split(","), args.geometries.split(","), variants, args.dithers.split(",")):
                 palette, threshold, shaded, color = variant
                 renderer.update_options(subpixel_threshold=threshold, shaded_blocks=shaded)
                 start = time.perf_counter()

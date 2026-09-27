@@ -251,3 +251,18 @@ def test_empty_tile_completion_requests_repaint():
     rs._tile_done(f)
     assert called == [True]
     rs.close()
+
+
+def test_prefetched_animation_frames_do_not_force_visible_repaints():
+    from concurrent.futures import Future
+    rs = _stub()
+    active = (1000, 7, 1, 1, 4, 1, 1, 256)
+    rs._visible_keys = {active}
+    calls = []
+    rs._signal_ready = lambda: calls.append(True)
+    for time in range(990, 1001):
+        f = Future()
+        f.set_result(0)  # dry completions still repaint when actually visible
+        rs._tile_done(f, (time, 7, 1, 1, 4, 1, 1, 256))
+    assert calls == [True]
+    rs.close()

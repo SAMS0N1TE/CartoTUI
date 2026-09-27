@@ -11,6 +11,7 @@
 
 #define CARTO_BRAILLE_BASE 0x2800u
 int carto_pure_braille_version(void) { return 1; }
+int carto_color_braille_version(void) { return 1; }
 
 int carto_cells_version(void) { return 2; }
 
@@ -343,6 +344,59 @@ static uint32_t pack(int32_t r, int32_t g, int32_t b) {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
+/* Two-colour fitting preserves quiet fills and uses dots only for detail.
+ * It requires neither frame histograms nor threshold scratch buffers. */
+static void color_braille(const uint8_t *rgb, int w, int cols, int rows,
+                          uint32_t *glyph, uint32_t *fg, uint32_t *bg) {
+    for (int y = 0; y < rows; ++y) for (int x = 0; x < cols; ++x) {
+        int p[8][3], lo[3] = {255,255,255}, hi[3] = {0,0,0}, total[3] = {0,0,0};
+        for (int i = 0; i < 8; ++i) for (int k = 0; k < 3; ++k) {
+            int v = rgb[((size_t)(4*y+i/2)*w+2*x+i%2)*3+k];
+            p[i][k] = v; total[k] += v;
+            if (v < lo[k]) lo[k] = v;
+            if (v > hi[k]) hi[k] = v;
+        }
+        int channel = 0;
+        for (int k = 1; k < 3; ++k)
+            if (hi[k]-lo[k] > hi[channel]-lo[channel]) channel = k;
+        int c = y*cols+x;
+        if (hi[channel]-lo[channel] < 12) {
+            glyph[c] = 32;
+            fg[c] = bg[c] = pack(total[0]/8,total[1]/8,total[2]/8);
+            continue;
+        }
+        int min_i = 0, max_i = 0;
+        for (int i = 1; i < 8; ++i) {
+            if (p[i][channel] < p[min_i][channel]) min_i = i;
+            if (p[i][channel] > p[max_i][channel]) max_i = i;
+        }
+        memcpy(lo,p[min_i],sizeof(lo)); memcpy(hi,p[max_i],sizeof(hi));
+        int mask[8], n = 0;
+        for (int pass = 0; pass < 2; ++pass) {
+            int sum[3] = {0,0,0}; n = 0;
+            for (int i = 0; i < 8; ++i) {
+                int dl = 0, dh = 0;
+                for (int k = 0; k < 3; ++k) {
+                    int a = p[i][k]-lo[k], b = p[i][k]-hi[k];
+                    dl += a*a; dh += b*b;
+                }
+                mask[i] = dh < dl;
+                if (mask[i]) { ++n; for (int k = 0; k < 3; ++k) sum[k] += p[i][k]; }
+            }
+            for (int k = 0; k < 3; ++k) {
+                hi[k] = sum[k]/(n ? n : 1);
+                lo[k] = (total[k]-sum[k])/(n < 8 ? 8-n : 1);
+            }
+        }
+        uint32_t code = 0;
+        for (int i = 0; i < 8; ++i)
+            if (mask[i] != (n > 4)) code |= CARTO_BRAILLE_BITS[i/2][i%2];
+        int *f = n > 4 ? lo : hi, *b = n > 4 ? hi : lo;
+        glyph[c] = code ? CARTO_BRAILLE_BASE+code : 32;
+        fg[c] = pack(f[0],f[1],f[2]); bg[c] = pack(b[0],b[1],b[2]);
+    }
+}
+
 int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
                   const carto_cell_opts *o,
                   uint32_t *glyph, uint32_t *fg, uint32_t *bg) {
@@ -353,6 +407,11 @@ int carto_cellify(const uint8_t *rgb, int32_t w, int32_t h,
 
     const int32_t cols = o->cols, rows = o->rows;
     const int32_t want_color = o->want_color && fg;
+
+    if (o->mode == CARTO_CELL_BRAILLE && want_color && bg && !o->shaded) {
+        color_braille(rgb, w, cols, rows, glyph, fg, bg);
+        return 0;
+    }
 
     /* Half block needs no tone analysis at all: the two subcells are the two
      * colours, and the glyph never varies. */

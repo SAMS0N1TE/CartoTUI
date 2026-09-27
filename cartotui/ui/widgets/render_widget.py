@@ -55,6 +55,9 @@ class RenderWidget(Widget):
         self.add_kv("Labels", "on" if st.labels else "off", width, action=self._toggle_labels)
         if st.render_mode == "half":
             self.add_dim("Half blocks show pixel colours directly.", width)
+        elif st.render_mode == "braille" and st.color and not st.shaded_blocks:
+            self.add_dim("Braille fits two colours per cell.", width)
+            self.add_kv("Shading", "off", width, action=self._toggle_shaded)
         else:
             self.add_kv("Detail", st.threshold_mode, width, action=self._cycle_threshold)
             self.add_kv("Palette", st.palette, width, action=self._cycle_palette)

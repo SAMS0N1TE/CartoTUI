@@ -58,7 +58,7 @@ typedef struct {
 } carto_cell_opts;
 
 /* `rgb` is cols*cell_w by rows*cell_h, 3 bytes per pixel, tightly packed.
- * `glyph` receives cols*rows codepoints. `fg` (and `bg`, half mode only)
+ * `glyph` receives cols*rows codepoints. `fg` (and `bg`, half and colour braille)
  * receive cols*rows colours packed 0x00RRGGBB; either may be NULL when
  * want_color is 0.
  *
@@ -89,6 +89,7 @@ void carto_histogram_u16(const uint16_t *src, int64_t n, int64_t *bins);
 /* Subcell size for a mode, so callers can scale the grid to match. */
 void carto_cell_geometry(int32_t mode, int32_t *cell_w, int32_t *cell_h);
 int carto_pure_braille_version(void);
+int carto_color_braille_version(void);
 
 #ifdef __cplusplus
 }

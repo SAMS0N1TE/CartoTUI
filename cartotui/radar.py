@@ -58,6 +58,7 @@ class RadarSource:
         self._generation = 0
         self._retained_layer = None
         self._presented_layer = None
+        self._visible_keys = None
         self._lru = []
         self._lock = threading.Lock()
         self._inflight = 0
@@ -311,7 +312,8 @@ class RadarSource:
         pool = self._pool()
         for args in todo:
             try:
-                pool.submit(one, *args).add_done_callback(self._tile_done)
+                pool.submit(one, *args).add_done_callback(
+                    lambda fut, key=args[0]: self._tile_done(fut, key))
             except RuntimeError:        # pool shut down under us
                 with self._lock:
                     self._inflight -= 1
@@ -320,12 +322,16 @@ class RadarSource:
     def _retry_ready(self):
         with self._lock:
             self._retry_timer = None
-        self._signal_ready()
+            visible_retry = self._visible_keys is None or bool(self._visible_keys.intersection(self._retry_after))
+        if visible_retry:
+            self._signal_ready()
 
-    def _tile_done(self, fut) -> None:
+    def _tile_done(self, fut, key=None) -> None:
         try:
             fut.result()
-            self._signal_ready()
+            # Loading other animation frames must not redraw the visible map.
+            if key is None or self._visible_keys is None or key in self._visible_keys:
+                self._signal_ready()
         except Exception:
             pass
 
@@ -393,7 +399,8 @@ class RadarSource:
         frames = self._frames_all
         if not frames:
             return
-        self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow, list(frames))
+        frames = sorted(frames, key=lambda f: f.get("time") != self._frame_time)
+        self._prefetch(lat, lon, z, px_w, px_h, color, smooth, snow, frames)
 
     def _maybe_prefetch_current(self, lat, lon, z, px_w, px_h, color, smooth, snow):
         """Static: only the currently shown frame needs to be loaded."""
@@ -419,6 +426,9 @@ class RadarSource:
         self._frame_time = frame.get("time")
         self._frame_path = frame.get("path")
 
+        rz_check, coords = self._tile_coords(lat, lon, z, px_w, px_h)
+        self._visible_keys = {(self._frame_time, rz_check, x, y, color, smooth, snow, self.tile_size)
+                              for x, y in coords}
         if cached_only:
             if self.animate:
                 self._maybe_prefetch(lat, lon, z, px_w, px_h, color, smooth, snow)
@@ -429,7 +439,6 @@ class RadarSource:
         # after a zoom, pan or resize.
         view_key = (lat, lon, z, px_w, px_h, opacity, color, smooth, snow,
                     self.tile_size, self.max_px)
-        rz_check, coords = self._tile_coords(lat, lon, z, px_w, px_h)
         with self._lock:
             complete = all((self._frame_time, rz_check, x, y, color, smooth,
                             snow, self.tile_size) in self._cache for x, y in coords)
