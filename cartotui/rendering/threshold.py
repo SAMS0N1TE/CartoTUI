@@ -158,6 +158,8 @@ def _blend_overlay(
     signal: np.ndarray,
     overlay_lum: np.ndarray,
     overlay_alpha: np.ndarray,
+    *,
+    stable: bool = False,
 ) -> np.ndarray:
     """Lay a translucent overlay onto an already-normalised map signal.
 
@@ -170,6 +172,13 @@ def _blend_overlay(
     covered = a > 0.0
     if not covered.any():
         return signal
+
+    if stable:
+        # A viewport-relative percentile moves weather bands when panning.
+        # Keep the mapping fixed, including uniform precipitation frames.
+        own = np.clip(overlay_lum, 0.0, 1.0)
+        band = _OVERLAY_FLOOR + own * (1.0 - _OVERLAY_FLOOR)
+        return np.clip(signal * (1.0 - a) + band * a, 0.0, 1.0).astype(np.float32)
 
     vals = overlay_lum[covered]
     lo = float(np.percentile(vals, 5.0))
@@ -199,7 +208,7 @@ def _stable_signal(signal: np.ndarray, floor: float = 0.06) -> np.ndarray:
 
     Two neighbourhoods preserve both thin distant roads and wider near features.
     Fixed contrast knees avoid amplifying tiny compression/noise differences into
-    full blocks. A smooth absolute component retains broad filled regions.
+    full blocks. A linear absolute component keeps broad fills below bright roads.
     The finite radius also makes shared pixels invariant to distant viewport edits.
     """
     signal = np.asarray(signal, dtype=np.float32)
@@ -216,7 +225,7 @@ def _stable_signal(signal: np.ndarray, floor: float = 0.06) -> np.ndarray:
     detail = np.maximum(detail - max(0.0, floor) * 0.25, 0.0)
     detail /= detail + 0.10
     base = np.maximum(signal - 0.06, 0.0)
-    base /= base + 0.12
+    base = np.minimum(base / 0.75, 1.0)
     return np.maximum(base, detail)
 
 def compute_fill_levels(
@@ -266,7 +275,7 @@ def compute_fill_levels(
         sig = _global_stretch(sig, p.black_pct, white_pct)
 
     if overlay_alpha is not None and overlay_lum is not None:
-        sig = _blend_overlay(sig, overlay_lum, overlay_alpha)
+        sig = _blend_overlay(sig, overlay_lum, overlay_alpha, stable=threshold_mode == "stable")
 
     sig = _tone_curve(sig, signal_gamma)
 
@@ -311,6 +320,6 @@ def compute_binary_fill(
         sig = _global_stretch(sig, p.black_pct, white_pct)
 
     if overlay_alpha is not None and overlay_lum is not None:
-        sig = _blend_overlay(sig, overlay_lum, overlay_alpha)
+        sig = _blend_overlay(sig, overlay_lum, overlay_alpha, stable=threshold_mode == "stable")
 
     return (sig > 0.5).astype(np.uint8)

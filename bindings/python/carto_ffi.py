@@ -158,7 +158,7 @@ class Renderer:
         if hasattr(L, "carto_cells_version"):
             L.carto_cells_version.argtypes = []
             L.carto_cells_version.restype = c_int
-            self.has_stable_cells = L.carto_cells_version() >= 2
+            self.has_stable_cells = L.carto_cells_version() >= 3
         if self.has_cells:
             L.carto_cellify.argtypes = [c_void_p, c_int32, c_int32,
                                         POINTER(CartoCellOpts),

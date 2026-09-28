@@ -64,3 +64,59 @@ def test_half_is_independent_of_threshold():
     for mode in ("stable", "fixed", "edge", "percentile"):
         r.update_options(subpixel_threshold=mode)
         assert r.render(img, 10, 10, True, "half") == baseline
+
+
+@pytest.mark.parametrize("orientation", ["dark", "bright"])
+def test_broad_fill_leaves_contrast_for_roads(orientation):
+    # Typical dark-map tones: water/park versus minor/major roads.
+    values = np.array([[0.30, 0.40, 0.58, 0.80]], dtype=np.float32)
+    signal = np.repeat(np.repeat(values, 16, axis=0), 16, axis=1)
+    lum = signal if orientation == "dark" else 1.0 - signal
+    fill = compute_fill_levels(lum, 256, "stable", orientation=orientation)[8, 8::16]
+    assert fill[1] < 110
+    assert int(fill[3]) - int(fill[0]) > 150
+    assert np.all(np.diff(fill.astype(int)) > 30)
+
+
+def test_pan_preserves_weather_and_map_in_shared_area():
+    # A distant rain cell entering view must not change an existing weather band.
+    base = np.full((40, 100), .30, np.float32)
+    rain = np.full_like(base, .35)
+    alpha = np.full_like(base, .65)
+    changed = rain.copy()
+    changed[:, 60:] = .95
+    args = dict(levels=256, threshold_mode="stable", orientation="dark", overlay_alpha=alpha)
+    np.testing.assert_array_equal(
+        compute_fill_levels(base, overlay_lum=rain, **args)[:, :50],
+        compute_fill_levels(base, overlay_lum=changed, **args)[:, :50],
+    )
+
+
+@pytest.mark.parametrize("mode", ["ascii", "braille"])
+def test_panning_shared_cells_matches_fresh_frame(mode):
+    # Shift by whole cells; exclude the local filter's two-sample edge radius.
+    rng = np.random.default_rng(81)
+    pixels = rng.integers(0, 256, (96, 160, 3), dtype=np.uint8)
+    r = Renderer(default_palettes(), subpixel_threshold="stable")
+    sx, sy = r.subcells(mode)
+    first = r.render(Image.fromarray(pixels[:, :120]), 120 // sx, 96 // sy,
+                     True, mode, palette_name="dos5", orientation="dark", packed=True)
+    second = r.render(Image.fromarray(pixels[:, 8:128]), 120 // sx, 96 // sy,
+                      True, mode, palette_name="dos5", orientation="dark", packed=True)
+    np.testing.assert_array_equal(first.glyph[:, 8 // sx + 3:-3], second.glyph[:, 3:-8 // sx - 3])
+
+
+def test_stable_tone_is_independent_of_distant_colours():
+    from cartotui.composite import apply_image_adjustments
+    from cartotui.rendering.libcarto_backend import _rgb565_to_image
+    tone = dict(brightness=1.0, contrast=1.4, gamma=1.0, saturation=1.0,
+                black_point=0.0, white_point=1.0, contrast_pivot=0.5)
+    first = np.full((16, 64), 0x4A69, np.uint16)
+    second = first.copy()
+    second[:, 32:] = 0xFFFF
+    native_a = np.asarray(_rgb565_to_image(first.tobytes(), 64, 16, tone))
+    native_b = np.asarray(_rgb565_to_image(second.tobytes(), 64, 16, tone))
+    np.testing.assert_array_equal(native_a[:, :32], native_b[:, :32])
+    for indices, expected in ((first, native_a), (second, native_b)):
+        raw = _rgb565_to_image(indices.tobytes(), 64, 16)
+        np.testing.assert_array_equal(np.asarray(apply_image_adjustments(raw, **tone)), expected)

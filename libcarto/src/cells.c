@@ -13,7 +13,7 @@
 int carto_pure_braille_version(void) { return 1; }
 int carto_release_braille_version(void) { return 1; }
 
-int carto_cells_version(void) { return 2; }
+int carto_cells_version(void) { return 3; }
 
 static int clamp_index(int v, int size) {
     return v < 0 ? 0 : (v >= size ? size - 1 : v);
@@ -45,7 +45,8 @@ static void stable_signal(float *sig, int w, int h, float *scratch, float floor)
             if (detail < 0.0f) detail = 0.0f;
             detail /= detail + 0.10f;
             float base = s > 0.06f ? s - 0.06f : 0.0f;
-            base /= base + 0.12f;
+            base /= 0.75f;
+            if (base > 1.0f) base = 1.0f;
             sig[y * w + x] = base > detail ? base : detail;
         }
     }

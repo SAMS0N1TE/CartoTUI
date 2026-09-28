@@ -127,6 +127,7 @@ def _tone(
     saturation: float,
     black_point: float,
     white_point: float,
+    contrast_pivot: float | None = None,
 ) -> Image.Image:
     """Exposure -> contrast -> gamma -> output levels -> saturation.
 
@@ -137,7 +138,8 @@ def _tone(
     if img.mode != "RGB":
         img = img.convert("RGB")
     rgb = np.asarray(img, dtype=np.uint8)
-    pivot = float((rgb.astype(np.float32) / 255.0 @ _LUMA).mean())
+    pivot = (float((rgb.astype(np.float32) / 255.0 @ _LUMA).mean())
+             if contrast_pivot is None else float(contrast_pivot))
     out = tone_colors(
         rgb, pivot,
         brightness=brightness, contrast=contrast, gamma=gamma,
@@ -220,6 +222,7 @@ def apply_image_adjustments(
     sharpen_radius: float = 1.5,
     sharpen_threshold: int = 3,
     edge_boost: bool = False,
+    contrast_pivot: float | None = None,
     invert: bool = False,
 ) -> Image.Image:
     """Apply the tone knobs, then sharpen/edge/invert, in a fixed order."""
@@ -230,7 +233,7 @@ def apply_image_adjustments(
             img = _tone(
                 img, brightness=brightness, contrast=contrast, gamma=gamma,
                 saturation=saturation, black_point=black_point,
-                white_point=white_point,
+                white_point=white_point, contrast_pivot=contrast_pivot,
             )
         except Exception as e:
             log.debug("tone adjust failed: %s", e)

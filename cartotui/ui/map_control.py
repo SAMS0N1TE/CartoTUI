@@ -631,6 +631,9 @@ class MapControl(UIControl):
                         white_point=white_point)
             if not tone_active(**tone):
                 tone = None
+            if tone is not None and self.renderer.subpixel_threshold == "stable":
+                # Stable texture must not move when distant map colours enter view.
+                tone["contrast_pivot"] = 0.5
             tone_done = False
             fetch_z = z
 

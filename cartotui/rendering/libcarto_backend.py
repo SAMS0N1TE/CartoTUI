@@ -173,6 +173,8 @@ def _lut_for(v, tone):
 
     lut32 = None
     if tone:
+        tone = dict(tone)
+        fixed_pivot = tone.pop("contrast_pivot", None)
         # The pivot is the frame's mean luminance, taken off a 65536-bin
         # histogram of the colour indices rather than off the pixels: the same
         # sum, without materialising a float image to reduce.
@@ -180,7 +182,8 @@ def _lut_for(v, tone):
         total = int(counts.sum())
         if total:
             used = np.flatnonzero(counts)
-            pivot = float((counts * _lum565()).sum() / total)
+            pivot = (float((counts * _lum565()).sum() / total)
+                     if fixed_pivot is None else float(fixed_pivot))
             # Sparse tables are valid only for the colours populated in them.
             # A pan can introduce new colours without changing the mean luma.
             key = (pivot, tuple(sorted(tone.items())), used.tobytes())
