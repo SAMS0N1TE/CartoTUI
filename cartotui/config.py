@@ -74,7 +74,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sharpen_threshold": 3,
         "edge_boost": False,
         "invert": False,
-        "subpixel_threshold": "stable",
+        "subpixel_threshold": "adaptive",
         "subpixel_percentile": 55,
         "shaded_blocks": False,
         "vector_overlay": True,

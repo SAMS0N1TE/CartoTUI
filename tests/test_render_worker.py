@@ -24,6 +24,25 @@ from cartotui.ui.app import CartoTUIApp
 MODES = ("half", "quadrant", "braille", "ascii")
 
 
+@pytest.mark.parametrize("mode, expected", [("braille", 3), ("quadrant", 3), ("ascii", 6), ("half", 6)])
+def test_release_road_width_is_preserved_at_fixed_extent(monkeypatch, mode, expected):
+    from PIL import Image
+    from cartotui.rendering import libcarto_backend
+    calls = []
+    def raster(source, lat, lon, z, width, height, **kwargs):
+        calls.append((kwargs["supersample"], width / kwargs["tile_px"]))
+        return Image.new("RGB", (width, height), (20, 30, 40))
+    monkeypatch.setattr(libcarto_backend, "rasterise_view_libcarto", raster)
+    app = _app(vector_render_mode=mode, vector_scale=6, vector_engine="libcarto")
+    app.map_control._panning = lambda: False
+    try:
+        assert _drain(app) is not None
+        assert calls and all(scale == expected for scale, _ in calls)
+        assert all(extent == 240 / 256 for _, extent in calls)
+    finally:
+        app.map_control.shutdown()
+
+
 @pytest.mark.parametrize("panning, expected", [(True, (120, 72, 128)), (False, (240, 144, 256))])
 def test_dynamic_pan_reduces_pixels_without_changing_extent(monkeypatch, panning, expected):
     from PIL import Image

@@ -618,11 +618,11 @@ class MapControl(UIControl):
             road_thickness = float(_rc.get("road_thickness", 1.0) or 1.0)
             road_thickness *= float(
                 (_rc.get("road_thickness_by_mode") or {}).get(render_mode, 1.0) or 1.0)
-            # Pixels per terminal cell, which is what road widths scale with so
-            # they keep their apparent thickness. Mode-independent now that the
-            # frame is: how a mode divides a cell into subcells is its own
-            # business and must not change how wide a road looks.
-            supersample = px_w / max(1, w)
+            # Preserve release road coverage per cell while keeping the new
+            # mode-independent geographic footprint. Braille/quadrant have two
+            # horizontal samples; scaling by a whole cell doubled their roads.
+            sample_columns = self.renderer.subcells(render_mode)[0]
+            supersample = px_w / max(1, w * sample_columns)
 
             from cartotui.composite import tone_active
             v_gamma = 1.0 if panning else float(gamma)

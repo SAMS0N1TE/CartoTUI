@@ -3,31 +3,31 @@ import pytest
 from PIL import Image
 
 from cartotui.rendering.renderer import Renderer, default_palettes
+from cartotui.rendering.packed import DEFAULT
 
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("background", [(12, 15, 20), (239, 230, 205), (90, 120, 70)])
-def test_uniform_braille_has_no_dot_wall(native, background):
+def test_uniform_braille_inherits_terminal_background(native, background):
     r = Renderer(default_palettes(), use_native_cells=native)
     image = Image.new("RGB", (40, 40), background)
     frame = r.render(image, 20, 10, True, "braille", packed=True)
-    assert np.all(frame.glyph == 32)
-    color = (background[0] << 16) | (background[1] << 8) | background[2]
-    assert np.all(frame.bg == color)
+    assert np.all(frame.bg == DEFAULT)
+    assert set(map(chr, frame.glyph.flat)) <= set(default_palettes()["shades"])
 
 
 @pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("background,ink", [((10, 20, 30), (240, 210, 100)),
-                                           ((240, 230, 210), (20, 40, 80)),
-                                           ((0, 100, 0), (200, 0, 0))])
-def test_single_subcell_detail_survives_on_dark_light_and_equal_luminance(native, background, ink):
+def test_colour_braille_honours_palette_and_threshold(native):
     r = Renderer(default_palettes(), use_native_cells=native)
-    image = Image.new("RGB", (2, 4), background)
-    image.putpixel((1, 2), ink)
-    frame = r.render(image, 1, 1, True, "braille", packed=True)
-    assert frame.glyph[0, 0] == 0x2820
-    assert frame.fg[0, 0] == (ink[0] << 16) | (ink[1] << 8) | ink[2]
-    assert frame.bg[0, 0] == (background[0] << 16) | (background[1] << 8) | background[2]
+    a = np.repeat(np.arange(256, dtype=np.uint8)[None, :, None], 3, axis=2)
+    image = Image.fromarray(np.repeat(a, 32, axis=0))
+    def glyphs(palette):
+        rows = r.render(image, 128, 8, True, "braille", palette_name=palette, orientation="dark")
+        return "".join(text for row in rows for _, text in row)
+    original = glyphs("dos5")
+    assert original != glyphs("shades")
+    r.update_options(subpixel_threshold="stable")
+    assert original != glyphs("dos5")
 
 
 def test_native_and_portable_braille_agree_with_radar():

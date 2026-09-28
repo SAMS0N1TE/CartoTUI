@@ -26,7 +26,7 @@ class Look:
     palette: str = "shades"
     color: bool = True
     dither: str = "none"
-    threshold: str = "stable"
+    threshold: str = "adaptive"
     shaded: bool = False
     brightness: float = 1.0
     contrast: float = 1.05
@@ -36,8 +36,6 @@ class Look:
     white_point: float = 1.0
     theme: Optional[str] = None
     tags: Tuple[str, ...] = ()
-    map_colors: Tuple[Tuple[str, str], ...] = ()
-    road_thickness: float = 0.7
 
     def summary(self) -> str:
         bits = [self.render_mode]
@@ -46,7 +44,7 @@ class Look:
         bits.append("colour" if self.color else "mono")
         if self.render_mode == "ascii" and self.dither != "none":
             bits.append(self.dither)
-        if self.threshold != "stable":
+        if self.threshold != "adaptive":
             bits.append(self.threshold)
         if self.theme:
             bits.append(f"@{self.theme}")
@@ -55,15 +53,14 @@ class Look:
 
 LOOKS: Tuple[Look, ...] = (
     Look(
-        key="terminal", name="Clean Map",
-        desc="Quiet dark land, clear water and roads.",
-        theme="dark", render_mode="half", road_thickness=0.5, palette="shades", color=True,
-        threshold="stable", tags=("colour", "everyday"),
+        key="terminal", name="Terminal",
+        desc="Balanced colour map. Safe default.",
+        render_mode="quadrant", palette="shades", color=True,
+        threshold="adaptive", tags=("colour", "everyday"),
     ),
     Look(
-        key="photo", name="Day Map",
-        desc="Bright neutral land and blue water.",
-        theme="light", road_thickness=0.5,
+        key="photo", name="Hi-Fi Photo",
+        desc="Half-block colour. Maximum detail.",
         render_mode="half", palette="shades", color=True,
         tags=("colour", "detail"),
     ),
@@ -77,7 +74,7 @@ LOOKS: Tuple[Look, ...] = (
         key="classic", name="Classic ASCII",
         desc="Clean grey-scale character map.",
         render_mode="ascii", palette="shades", color=False,
-        threshold="stable", tags=("mono", "text"),
+        threshold="adaptive", tags=("mono", "text"),
     ),
     Look(
         key="newsprint", name="Newsprint",
@@ -95,7 +92,7 @@ LOOKS: Tuple[Look, ...] = (
         key="braille", name="Fine Braille",
         desc="High-res braille line art.",
         render_mode="braille", palette="shades", color=False,
-        threshold="stable", tags=("mono", "detail"),
+        threshold="adaptive", tags=("mono", "detail"),
     ),
     Look(
         key="amber_crt", name="Amber CRT",
@@ -111,18 +108,15 @@ LOOKS: Tuple[Look, ...] = (
     ),
     Look(
         key="paper", name="Paper Map",
-        desc="Light land and restrained atlas colours.",
-        render_mode="half", palette="shades", color=True,
-        theme="paper", road_thickness=0.5, tags=("colour", "light"),
+        desc="Light printed-atlas look.",
+        render_mode="quadrant", palette="shades", color=True,
+        theme="paper", tags=("colour", "light"),
     ),
     Look(
-        key="night", name="Night Map",
-        desc="Muted colours with readable labels.",
-        render_mode="half", palette="shades", color=True,
-        theme="dark", brightness=0.9, road_thickness=0.5, tags=("colour", "dark"),
-        map_colors=(("bg", "#0d141b"), ("water", "#132b42"), ("park", "#17251f"),
-                    ("building", "#24313e"), ("road", "#899aaa"), ("label", "#c4ced6"),
-                    ("halo", "#0d141b"), ("boundary", "#51616e")),
+        key="night", name="Night Ops",
+        desc="Muted dark palette for night.",
+        render_mode="quadrant", palette="shades", color=True,
+        theme="night", tags=("colour", "dark"),
     ),
     Look(
         key="hicon", name="High Contrast",
@@ -189,14 +183,8 @@ def apply_look(state, cfg, look: Look) -> bool:
         state.theme = look.theme
         theme_changed = True
 
-    cfg.data["theme"] = dict(look.map_colors)
     render_patch = {
         "geometry_mode": "standard",
-        "road_thickness": look.road_thickness,
-        "road_thickness_by_mode": {mode: 1.0 for mode in _MODES},
-        "road_highlight": False,
-        "raster_tint": "none",
-        "label_background": "theme",
         "color": bool(look.color),
         "dither": state.dither,
         "brightness": round(float(look.brightness), 3),

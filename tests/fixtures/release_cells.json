@@ -1,0 +1,2537 @@
+[
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "853dd94ba97ce7ef3bf2658b7f99f04f0573892e38b08c829f0c0e87e93d3912"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "853dd94ba97ce7ef3bf2658b7f99f04f0573892e38b08c829f0c0e87e93d3912"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "46259b5ce65391962e24af9d8a2c606c900d9d3f6ca0fbd392b7b9981250e27e"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "46259b5ce65391962e24af9d8a2c606c900d9d3f6ca0fbd392b7b9981250e27e"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "c4a9da1e76f1f56e5d60781034aed8d0a076f1fcd139609d4539913e209cd3a1"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "c4a9da1e76f1f56e5d60781034aed8d0a076f1fcd139609d4539913e209cd3a1"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "84364153efcecb249b62a05c28e26ae17b7bb48cf43c22f0ea8d3b20f9d36ae7"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "84364153efcecb249b62a05c28e26ae17b7bb48cf43c22f0ea8d3b20f9d36ae7"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "3a1ca8c739eca82128995b332684db9cabf3e24d0ec21f61bda804815bb98684"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "3a1ca8c739eca82128995b332684db9cabf3e24d0ec21f61bda804815bb98684"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "c8f02206011593c9f5fcf4f982e36d9cf62eaf09075a4ee9a455841f89160771"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "c8f02206011593c9f5fcf4f982e36d9cf62eaf09075a4ee9a455841f89160771"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "6ece6434d0654954b96aab807c4782a722b74f918ba1b87bf4888af710980412"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "6ece6434d0654954b96aab807c4782a722b74f918ba1b87bf4888af710980412"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "20b438a180eab1be458e325da14117c878ebb49ce0f6585952a5c2f4635892b0"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "20b438a180eab1be458e325da14117c878ebb49ce0f6585952a5c2f4635892b0"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "9c18abd1e081d478e244bea58612ca00351cd341fe457f01394e44f0126c2293"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "9c18abd1e081d478e244bea58612ca00351cd341fe457f01394e44f0126c2293"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "5d5ebe07016c8a242799c89f01dddf75dfac54587995d297ae6956bab4eea21f"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "5d5ebe07016c8a242799c89f01dddf75dfac54587995d297ae6956bab4eea21f"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "ef8a61f1855463b05a6b2c194ee19ed68517878a101e2ec4ca36e3e0b50f885f"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "ef8a61f1855463b05a6b2c194ee19ed68517878a101e2ec4ca36e3e0b50f885f"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "2599b4b6a3c4231de787168b9506115a3ca0ead0c0b9f1a8b776a012b8ff3366"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "2599b4b6a3c4231de787168b9506115a3ca0ead0c0b9f1a8b776a012b8ff3366"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "9cb6eb63dc9e43278535765c38400490310154c15d422a9c9f0973a34319591d"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "9cb6eb63dc9e43278535765c38400490310154c15d422a9c9f0973a34319591d"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "cf8efc0078cbd84f4059e8a0069c6d985c4eba78e568421170c04bcb4feac555"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "cf8efc0078cbd84f4059e8a0069c6d985c4eba78e568421170c04bcb4feac555"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "46fdac614f99be61e6b6d06d3ff9b75f70983fe11bb8a4b81771ad3aca11de66"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "46fdac614f99be61e6b6d06d3ff9b75f70983fe11bb8a4b81771ad3aca11de66"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "08b5d320ffe5153bddc821fdb5e1942bf4a07fbca5a13e3b18ba856b9d8ada70"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "08b5d320ffe5153bddc821fdb5e1942bf4a07fbca5a13e3b18ba856b9d8ada70"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "85d6f0562a743b684a823ec8dde967dfbe262e5bd579bae27bf139510713e10d"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "85d6f0562a743b684a823ec8dde967dfbe262e5bd579bae27bf139510713e10d"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "62e9219fb792ed2f38bee503080e1af8b672b379a8ed7f82b33bcbe58aa021e9"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "62e9219fb792ed2f38bee503080e1af8b672b379a8ed7f82b33bcbe58aa021e9"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "742b7d2dc8946357ef3c37e85dfcef932e2e00ddf52c6c113116fdf2f6191674"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "742b7d2dc8946357ef3c37e85dfcef932e2e00ddf52c6c113116fdf2f6191674"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "04663334fd66dda163a7a44105ca139a17582644611bb884a2b2a556b5f8c3c5"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "04663334fd66dda163a7a44105ca139a17582644611bb884a2b2a556b5f8c3c5"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "4758a18f466682dbd60cdf79c2b3ff816ca73728a6b038a848395075dbd63637"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "4758a18f466682dbd60cdf79c2b3ff816ca73728a6b038a848395075dbd63637"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "7687ce5664482fe2ef44b8516fb999935b9933da27e0031265f933b666e57054"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "7687ce5664482fe2ef44b8516fb999935b9933da27e0031265f933b666e57054"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "fb8902dbae4fb051d54ebc017cf7c2bd905172737c2cb3100f7fc6ba7e6a9d3b"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "fb8902dbae4fb051d54ebc017cf7c2bd905172737c2cb3100f7fc6ba7e6a9d3b"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "213af0b191ce9b66a41973b7249c9323696f9603c71eeb22ac58c9d6a237b623"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "213af0b191ce9b66a41973b7249c9323696f9603c71eeb22ac58c9d6a237b623"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "21e6a6633ea92141607e002b95b1d2bba531a030ba72bdfa154e8e4260d20bb7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "21e6a6633ea92141607e002b95b1d2bba531a030ba72bdfa154e8e4260d20bb7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "6eac42339606fb56ad8b3fa467d9d798073c9f64bf0753f8712d8828dd8540b6"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "6eac42339606fb56ad8b3fa467d9d798073c9f64bf0753f8712d8828dd8540b6"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "b86af329cb727645cc564e5f749e68d43b6253791f20dc6358ee792690ddcf74"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "b86af329cb727645cc564e5f749e68d43b6253791f20dc6358ee792690ddcf74"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "ec11c3495a15ab3cbf2f5e37c9a24cb3ceae9b8297a457c062770b5c203dd69a"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "ec11c3495a15ab3cbf2f5e37c9a24cb3ceae9b8297a457c062770b5c203dd69a"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "8838fb8af3d488c55c4cedf0666a0cb8ec36297c5db3c8dcd57657c328b21a19"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "8838fb8af3d488c55c4cedf0666a0cb8ec36297c5db3c8dcd57657c328b21a19"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "4c3efa5254d0c911dfd61479594a357da57ab81a259dcd5f93def39aecfc986e"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "4c3efa5254d0c911dfd61479594a357da57ab81a259dcd5f93def39aecfc986e"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "fe9a90ac0379eaf4374caa472c518740701223b281bb10a7da6b1adf1ba7c5a7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "fe9a90ac0379eaf4374caa472c518740701223b281bb10a7da6b1adf1ba7c5a7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "638d03a640fff44ea7a107037542ec3b656a2820a0ad5a77c58c3d29c0c13b12"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "638d03a640fff44ea7a107037542ec3b656a2820a0ad5a77c58c3d29c0c13b12"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "891e2c71179e47bd1549cd077ec487c5769e9ffb55024dae22a1d3ec1f595362"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "891e2c71179e47bd1549cd077ec487c5769e9ffb55024dae22a1d3ec1f595362"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "a9192454e6eafa30197abe593aa6e749e0539d45b0451b24d8f27ae653846bdb"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "a9192454e6eafa30197abe593aa6e749e0539d45b0451b24d8f27ae653846bdb"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "78201905a8687eb57a4c79e5ab2f08d2fe49c4e3845c90db909965ed758c2f37"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "78201905a8687eb57a4c79e5ab2f08d2fe49c4e3845c90db909965ed758c2f37"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "455456936beed64f8cefa6d4aa3ef5b325f43e271f603f48ffc3660deb10a8f5"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "455456936beed64f8cefa6d4aa3ef5b325f43e271f603f48ffc3660deb10a8f5"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "e89515660ae0c55dda019b861627f7c1a37975b5de190ff9a6de3b325e83deeb"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "e89515660ae0c55dda019b861627f7c1a37975b5de190ff9a6de3b325e83deeb"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "6338e479a32906143b5b0380cde289a39e28fa79e50fb6fdfaac787aba852bef"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "6338e479a32906143b5b0380cde289a39e28fa79e50fb6fdfaac787aba852bef"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "f053a4f4650fcbfbb659f8217f254f9224ff8ee23b6385317f42304e7f22ddb7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "f053a4f4650fcbfbb659f8217f254f9224ff8ee23b6385317f42304e7f22ddb7"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "a915acde2807065375efd8fcd029f78c1f57ab268f60d32ce5b70f6d9eebdc53"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "a915acde2807065375efd8fcd029f78c1f57ab268f60d32ce5b70f6d9eebdc53"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "fd0ef8028b16e2a6726144a0a65255fd439fe70d222ed70279594b46773979b0"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "fd0ef8028b16e2a6726144a0a65255fd439fe70d222ed70279594b46773979b0"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "0f5e19bc73040f653076ac61711a4f206b189cef6c0e94550105aa36889fe095"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "0f5e19bc73040f653076ac61711a4f206b189cef6c0e94550105aa36889fe095"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "4bf020158403eabe987c46ff2495e9257bd2554006ea6e22c024f5f8c4095fba"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "4bf020158403eabe987c46ff2495e9257bd2554006ea6e22c024f5f8c4095fba"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "99346718ec0e00f0abb1627ee4b416b0630f46b15bcca8133e2fdb4fc546bb2e"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "99346718ec0e00f0abb1627ee4b416b0630f46b15bcca8133e2fdb4fc546bb2e"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "294f193c478e0a342e6fe3e441fcbf9d7e082703cebb9b07aa8137a101ffee66"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "294f193c478e0a342e6fe3e441fcbf9d7e082703cebb9b07aa8137a101ffee66"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "30a639fe188ea5fb5ba8ccaf084f855fa1525d0c78ddf5c1bebc8975ba01dc78"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "30a639fe188ea5fb5ba8ccaf084f855fa1525d0c78ddf5c1bebc8975ba01dc78"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "dfadf1ddad6e8a2974dc7b27ce4edccf5b6d670ce9bf6afdb7fee769b7b69da6"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "dfadf1ddad6e8a2974dc7b27ce4edccf5b6d670ce9bf6afdb7fee769b7b69da6"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "82b02fa24ea3238c60d6012722d94f1b885d9a8c0b8c4b40ebe1a3e375f711fa"
+  },
+  {
+    "case": {
+      "mode": "quadrant",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "82b02fa24ea3238c60d6012722d94f1b885d9a8c0b8c4b40ebe1a3e375f711fa"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "2fb9b53b0f4f5dc9ab805dc0cd2033cb91335891946653fd5b69da84bc17dd56"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "2fb9b53b0f4f5dc9ab805dc0cd2033cb91335891946653fd5b69da84bc17dd56"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "5b5e09cac3a5a3f8cd0a94b04a773a74fda5b3764f39435efa8a83e4a554a19e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "5b5e09cac3a5a3f8cd0a94b04a773a74fda5b3764f39435efa8a83e4a554a19e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "7e0544478a5e63b9f5084cb0b118c48663087455b0e1f52c3f3f3c3a0144a03d"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "7e0544478a5e63b9f5084cb0b118c48663087455b0e1f52c3f3f3c3a0144a03d"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "6bc3af62f27b83bd414a34ab36bcbe40785f6a7346330aa87072a93c0b6204e9"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "6bc3af62f27b83bd414a34ab36bcbe40785f6a7346330aa87072a93c0b6204e9"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "d84ee8beba3d1a9ac079e29830c259d51e250294ba4f4b4c648a0b1f380d581b"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "d84ee8beba3d1a9ac079e29830c259d51e250294ba4f4b4c648a0b1f380d581b"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "e59712d9ea2ef3924916229ebfd0b29d2ae11f9c189d912971f664291d3793db"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "e59712d9ea2ef3924916229ebfd0b29d2ae11f9c189d912971f664291d3793db"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "322f4755b775c373de88df15609e18c3bac6f20ee8ada71d267376cb59ee25ec"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "322f4755b775c373de88df15609e18c3bac6f20ee8ada71d267376cb59ee25ec"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "5cd0cad2258b2982888ef97abaf19a18c3596dc6b06beba08fed7694342d2c45"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "5cd0cad2258b2982888ef97abaf19a18c3596dc6b06beba08fed7694342d2c45"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "97f8452129484322d2ebbbd3171faab6a7e142a7895fe38bd470bf1104583673"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "97f8452129484322d2ebbbd3171faab6a7e142a7895fe38bd470bf1104583673"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "429d4035495e39e9777ff697cd06c4a83a1f76629374187e1575d6210ec77a89"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "429d4035495e39e9777ff697cd06c4a83a1f76629374187e1575d6210ec77a89"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "3f0e0c5cf774d525a1a7889364c180aa6354af900820e8ca0f2b1519042233fc"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "3f0e0c5cf774d525a1a7889364c180aa6354af900820e8ca0f2b1519042233fc"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "95f4e8385d8cdb6f51db2ac9da9496f0c9521110fdc1a6c967671c805d6075b4"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "95f4e8385d8cdb6f51db2ac9da9496f0c9521110fdc1a6c967671c805d6075b4"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "d4c63c7f02bffa3870ee9dbf9a87e95f9143927683bdb2f7eb03fa7d6b023a8e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "d4c63c7f02bffa3870ee9dbf9a87e95f9143927683bdb2f7eb03fa7d6b023a8e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "9fb08b881cf5b45ef1d2ff511baa3eeb420541f44afff74de30dd909f8a7b942"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "9fb08b881cf5b45ef1d2ff511baa3eeb420541f44afff74de30dd909f8a7b942"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "0ca62cf2c56127fd66af4d3f5d676b78f5fdde5a3eef9f0a7b577bc8f7b7904b"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "0ca62cf2c56127fd66af4d3f5d676b78f5fdde5a3eef9f0a7b577bc8f7b7904b"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "8a42c3c9488378a16edd3b83b4c04c0412ccbc932bbe7242169925f737e5c358"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": false,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "8a42c3c9488378a16edd3b83b4c04c0412ccbc932bbe7242169925f737e5c358"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "f512806fc959ddadb668aa9b90fa2d1da4d3cae6ace8cba858195db4832af46e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "f512806fc959ddadb668aa9b90fa2d1da4d3cae6ace8cba858195db4832af46e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "1923a227d49cc1567702b5d19cec9ef5c5f0cdfd5cd77f6613a7aacd5a9b5f42"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "1923a227d49cc1567702b5d19cec9ef5c5f0cdfd5cd77f6613a7aacd5a9b5f42"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "ebcfaa3aa7cd1e2655fe0dc6595d882710eacc1fe7c1698e1e3f2e1d235dd363"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "ebcfaa3aa7cd1e2655fe0dc6595d882710eacc1fe7c1698e1e3f2e1d235dd363"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "679ecce9a6d9b6d8f471e1aad68e71ba340fec049881141096760dbd766a9114"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "679ecce9a6d9b6d8f471e1aad68e71ba340fec049881141096760dbd766a9114"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "2b9b65d8bd89789c8d58c71a324bdedf1c7cdee27786ab4a3f2aceaf3bd77fc6"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "2b9b65d8bd89789c8d58c71a324bdedf1c7cdee27786ab4a3f2aceaf3bd77fc6"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "0c50f3120b5a07b3a4318db63c7db924640a9f8f6856bd98e54f92381b356f95"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "0c50f3120b5a07b3a4318db63c7db924640a9f8f6856bd98e54f92381b356f95"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "fa46e12be691dbc9202d2122e561eb3bfd589e246fa644f2e2e92f6b3c8f93a6"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "fa46e12be691dbc9202d2122e561eb3bfd589e246fa644f2e2e92f6b3c8f93a6"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "d4b48cae48e35164f17df9ede4d917bcbe7d11882abbeb8d7f9c2f164259eb5d"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "d4b48cae48e35164f17df9ede4d917bcbe7d11882abbeb8d7f9c2f164259eb5d"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "06d08b25e6c0dbf92716a506f9622fab8f0376923c2f0297881a2d055ee86fc8"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "06d08b25e6c0dbf92716a506f9622fab8f0376923c2f0297881a2d055ee86fc8"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "eccd5711fcc86f46164b1547bfe64b9306bc1f1b5fdcb56804ac37bb859a0220"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "eccd5711fcc86f46164b1547bfe64b9306bc1f1b5fdcb56804ac37bb859a0220"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "3ccae112e4f107dbdf935771f5f4d0258b52ad56bfbbc6dd1b5238e4e5d71d30"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "3ccae112e4f107dbdf935771f5f4d0258b52ad56bfbbc6dd1b5238e4e5d71d30"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "2884c5513ead77e21ac290b0e39ac32c0356481e19c4fbdd13b9144405f31dfa"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "2884c5513ead77e21ac290b0e39ac32c0356481e19c4fbdd13b9144405f31dfa"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "b1d1cf0f3c494c1c0225ed6f70dea6b74f104c31258d7aa16bb7354e661176ad"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "b1d1cf0f3c494c1c0225ed6f70dea6b74f104c31258d7aa16bb7354e661176ad"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "86334749a71177078c08e6b938f3fd16b59f9b8aa2c1f095323a31cb141c957c"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "86334749a71177078c08e6b938f3fd16b59f9b8aa2c1f095323a31cb141c957c"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "c8ac869cad67f0c6de7036a3d2fb2e1184986997bde3f8ed2c7ba876d26d989e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "c8ac869cad67f0c6de7036a3d2fb2e1184986997bde3f8ed2c7ba876d26d989e"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "4b9c43fa8065eb4ecdb1bbafc8d97cbea455d6964c90ebf4508776f4fb20a579"
+  },
+  {
+    "case": {
+      "mode": "braille",
+      "color": true,
+      "shaded": true,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "4b9c43fa8065eb4ecdb1bbafc8d97cbea455d6964c90ebf4508776f4fb20a579"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "b203a2f020949e71ccbf979658e4a0ee20c438b88d77d687a1a927e3b5399c64"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "b203a2f020949e71ccbf979658e4a0ee20c438b88d77d687a1a927e3b5399c64"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "113e41882fb44bf6e183b4043d1c78532b739f05c6710ad91975c463ed7d46f9"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "113e41882fb44bf6e183b4043d1c78532b739f05c6710ad91975c463ed7d46f9"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "0a4ea700c3020774bba6a4eaa0827eca62dca157baebfb0437ccafbcd99d56af"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "0a4ea700c3020774bba6a4eaa0827eca62dca157baebfb0437ccafbcd99d56af"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "1f9773e291fecf90f84ad4876a5f06eca9c697c46a5cf31aaa7f6c179173f352"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "1f9773e291fecf90f84ad4876a5f06eca9c697c46a5cf31aaa7f6c179173f352"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "b203a2f020949e71ccbf979658e4a0ee20c438b88d77d687a1a927e3b5399c64"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "b203a2f020949e71ccbf979658e4a0ee20c438b88d77d687a1a927e3b5399c64"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "113e41882fb44bf6e183b4043d1c78532b739f05c6710ad91975c463ed7d46f9"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "113e41882fb44bf6e183b4043d1c78532b739f05c6710ad91975c463ed7d46f9"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "0a4ea700c3020774bba6a4eaa0827eca62dca157baebfb0437ccafbcd99d56af"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "0a4ea700c3020774bba6a4eaa0827eca62dca157baebfb0437ccafbcd99d56af"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "1f9773e291fecf90f84ad4876a5f06eca9c697c46a5cf31aaa7f6c179173f352"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": false,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "1f9773e291fecf90f84ad4876a5f06eca9c697c46a5cf31aaa7f6c179173f352"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "5c57637bfa1553c387fa7cabacb683f3679ffd8fad80fcefdc2a78584e658c49"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "5c57637bfa1553c387fa7cabacb683f3679ffd8fad80fcefdc2a78584e658c49"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "1bef8f2bda98eead9f67e42752455955997b700fd6f577559443b9b523b34470"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "1bef8f2bda98eead9f67e42752455955997b700fd6f577559443b9b523b34470"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "9dc57b842dec53be49d167e436a55b30e21ded9fc854c9470cdb6183950a11ca"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "9dc57b842dec53be49d167e436a55b30e21ded9fc854c9470cdb6183950a11ca"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "822896f05cf2017bd59877a44dfe62a4a358360b4ba6864ec2d0ee6cf3b2945b"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "shades",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "822896f05cf2017bd59877a44dfe62a4a358360b4ba6864ec2d0ee6cf3b2945b"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "5c57637bfa1553c387fa7cabacb683f3679ffd8fad80fcefdc2a78584e658c49"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "5c57637bfa1553c387fa7cabacb683f3679ffd8fad80fcefdc2a78584e658c49"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "1bef8f2bda98eead9f67e42752455955997b700fd6f577559443b9b523b34470"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "1bef8f2bda98eead9f67e42752455955997b700fd6f577559443b9b523b34470"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "9dc57b842dec53be49d167e436a55b30e21ded9fc854c9470cdb6183950a11ca"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": false,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "9dc57b842dec53be49d167e436a55b30e21ded9fc854c9470cdb6183950a11ca"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": false,
+      "dither": "none"
+    },
+    "sha256": "822896f05cf2017bd59877a44dfe62a4a358360b4ba6864ec2d0ee6cf3b2945b"
+  },
+  {
+    "case": {
+      "mode": "half",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": true,
+      "radar": true,
+      "native": true,
+      "dither": "none"
+    },
+    "sha256": "822896f05cf2017bd59877a44dfe62a4a358360b4ba6864ec2d0ee6cf3b2945b"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "bayer"
+    },
+    "sha256": "ab923cf33a7aec3c1de628623ce6594319f969a8dce584d1cf51f4a847c8ccc6"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "atkinson"
+    },
+    "sha256": "e4d00351f3bd1bf71feaf1c4d5c26147b536cc6f92282a22c9be9b04af8337f3"
+  },
+  {
+    "case": {
+      "mode": "ascii",
+      "color": true,
+      "shaded": false,
+      "palette": "dos5",
+      "bright": false,
+      "radar": true,
+      "native": true,
+      "dither": "floyd"
+    },
+    "sha256": "4a88b49179023cfb01f755f74dc1ac50b7c1ff15737edc19c3615bf8cb5de5fb"
+  }
+]

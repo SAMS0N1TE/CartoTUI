@@ -50,7 +50,7 @@ luminance maps onto fill levels.
 
 | Mode | What it does |
 | --- | --- |
-| `stable` | Default for new configurations. Bounded local contrast at two sample scales; fixed coverage decisions independent of viewport percentiles |
+| `stable` | Optional bounded local contrast at two sample scales; fixed coverage decisions independent of viewport percentiles |
 | `adaptive` | Legacy contrast stretch per tile on a 4x4 grid |
 | `percentile` | One global stretch. `render.subpixel_percentile` sets the white point |
 | `edge` | Sobel edges mixed into the signal. Line-drawing look |
@@ -100,10 +100,12 @@ each subpixel to its own cell average. Distant bright objects cannot change a
 feature's threshold. Resampling, actual feature size and tone adjustments can
 still change its appearance as you zoom; this is not semantic road recognition.
 
-Existing profiles keep their selected threshold. Choose **Map appearance > Detail
-> stable** or apply the Terminal Look to try the new mapping. Legacy modes remain
-available. Updated libcarto runs it natively; older shared libraries fall back to
-Python safely. Half mode bypasses thresholding entirely.
+Adaptive remains the release-compatible default for new configurations and
+existing Looks. Existing profiles keep their selected threshold. Choose **Map
+appearance > Detail > stable** to try the alternate mapping. Updated libcarto
+runs it natively; older shared libraries fall back to Python safely. Half mode
+bypasses thresholding entirely. Braille uses palette glyphs for flat tones and
+inherits the terminal background, preserving the character textures of v0.13.0.
 
 Both terminal output paths use ordinary text and ANSI colours: no graphics
 protocol, GUI or local display server is required on the remote host. With

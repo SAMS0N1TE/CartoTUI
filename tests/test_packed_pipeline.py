@@ -65,15 +65,17 @@ def test_packed_frame_matches_fragment_pixels(depth, mode, radar):
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("threshold", ["stable", "adaptive", "fixed", "percentile"])
-def test_unshaded_braille_never_substitutes_blocks(native, threshold):
+def test_unshaded_braille_preserves_palette_tones(native, threshold):
     r = Renderer(default_palettes(), use_native_cells=native, subpixel_threshold=threshold)
     a = np.repeat(np.arange(256, dtype=np.uint8)[None, :, None], 3, axis=2)
     image = Image.fromarray(np.repeat(a, 32, axis=0))
     for radar in (None, Image.new("RGBA", image.size, (0, 200, 255, 100))):
         rows = r.render(image, 128, 8, True, mode="braille", overlay=radar)
         chars = "".join(text for row in rows for _, text in row)
-        assert all(ch == " " or 0x2800 <= ord(ch) <= 0x28FF for ch in chars)
-        assert set(chars) == {" "}  # smooth tones use colour, never invented dot texture
+        palette = set(default_palettes()["shades"])
+        assert all(ch in palette or 0x2800 <= ord(ch) <= 0x28FF for ch in chars)
+        assert set(chars) & (palette - {" "})
+        assert all("bg:" not in style for row in rows for style, _ in row)
         assert len({style for row in rows for style, _ in row}) > 2
 
 

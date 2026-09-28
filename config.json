@@ -53,7 +53,7 @@
     "sharpen_threshold": 3,
     "edge_boost": false,
     "invert": false,
-    "subpixel_threshold": "stable",
+    "subpixel_threshold": "adaptive",
     "subpixel_percentile": 55,
     "shaded_blocks": false,
     "vector_overlay": true,
