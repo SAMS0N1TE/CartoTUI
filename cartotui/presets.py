@@ -4,7 +4,8 @@ from copy import deepcopy
 
 TONE = ("brightness", "contrast", "gamma", "saturation", "black_point", "white_point")
 OPTIONS = ("road_highlight", "raster_tint", "road_thickness", "road_thickness_by_mode",
-           "geometry_mode", "detail_labels", "boundaries", "boundary_style", "label_background")
+           "geometry_mode", "detail_labels", "boundaries", "boundary_style", "label_background",
+           "crisp_roads", "crisp_boundaries", "crisp_labels")
 
 
 def preset_name(value):

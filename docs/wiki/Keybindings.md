@@ -77,7 +77,8 @@ See [Image adjust](Image-adjust.md) for what these actually do.
 | `w` | Settings home |
 | Up / Down | Select an action |
 | Enter / Right | Activate the selected action |
-| Escape / Left | Back to Home; close when already at Home |
+| Escape | Close the menu and return to the map |
+| Left / Backspace | Back to Home; close when already at Home |
 | Page Up / Page Down | Move eight actions |
 | `F2` | Focus map or settings without closing it |
 | `F3` / `F4` | Previous / next page |

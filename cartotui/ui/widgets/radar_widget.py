@@ -29,6 +29,8 @@ class RadarWidget(Widget):
         animate = bool(rd.get("animate"))
         rs = getattr(self.ctx.map_control, "radar_source", None)
         self.add_kv("Weather radar", "on" if on else "off", width, action=self._toggle)
+        if on and rs is not None:
+            self.add_dim(rs.progress_text(), width)
         self.add_kv("Animate", "on" if animate else "off", width, action=self._toggle_animate)
         if not animate:
             self.add_kv("Frame", rd.get("frame", "latest"), width, action=self._toggle_frame)

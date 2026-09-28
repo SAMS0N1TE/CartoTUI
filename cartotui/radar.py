@@ -75,6 +75,33 @@ class RadarSource:
         self._ready_timer = None
         self._retry_timer = None
         self._closed = False
+        self._meta_loading = False
+        self._meta_error = False
+
+    def progress_text(self) -> str:
+        """Current visible frame only; failed/retrying tiles never count as ready."""
+        with self._lock:
+            if self._meta_loading:
+                spin = "|/-\\"[int(time.monotonic() * 4) % 4]
+                return f"Radar [{spin}] getting frames"
+            if self._meta_error:
+                return "Radar: frame fetch failed; retrying"
+            if not self._frames_all and not self._past:
+                if self._last_meta:
+                    return "Radar: no frames available"
+                return "Radar [........] waiting for frames"
+            keys = self._visible_keys
+            if keys is None:
+                return "Radar [........] preparing view"
+            if not keys:
+                return "Radar: no tiles in view"
+            total = len(keys)
+            done = sum(key in self._cache for key in keys)
+            filled = 8 * done // total
+            bar = "#" * filled + "." * (8 - filled)
+            retrying = any(key in self._retry_after and key not in self._cache for key in keys)
+            suffix = " retrying" if retrying else " ready" if done == total else " tiles"
+            return f"Radar [{bar}] {done}/{total}{suffix}"
 
     def loading(self) -> int:
         """Number of radar tiles currently being fetched in the background."""
@@ -113,6 +140,11 @@ class RadarSource:
         if not force and self._frame_path and (now - self._last_meta) < self.meta_ttl_s:
             return
         self._last_meta = now
+        with self._lock:
+            if self._meta_loading:
+                return
+            self._meta_loading = True
+            self._meta_error = False
         try:
             import requests
             r = requests.get(_MAPS_URL, headers={"User-Agent": self.user_agent}, timeout=8)
@@ -124,7 +156,11 @@ class RadarSource:
             self._nowcast = radar.get("nowcast") or []
             self._frames_all = list(self._past) + list(self._nowcast)
         except Exception as e:
+            self._meta_error = True
             log.debug("radar meta fetch failed: %s", e)
+        finally:
+            with self._lock:
+                self._meta_loading = False
 
     def _static_frame(self, which: str):
         if which == "nowcast" and self._nowcast:

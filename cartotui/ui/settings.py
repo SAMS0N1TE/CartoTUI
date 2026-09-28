@@ -40,7 +40,7 @@ class SettingsControl(SidebarControl):
         self.collapsed = False
         # A pasted or fast key sequence can arrive before the first redraw.
         # Navigation must have actions immediately, not depend on paint timing.
-        self._body(self.width_chars)
+        self._body_length = len(self._body(self.width_chars))
         self._actions = list(self._hits)
 
     def set_tab(self, idx):
@@ -54,11 +54,8 @@ class SettingsControl(SidebarControl):
         return min(max_available_height, self.compact_height())
 
     def compact_height(self):
-        hits = self._hits
-        try:
-            return len(self._body(max(1, self.width_chars - 4))) + 7
-        finally:
-            self._hits = hits
+        # Layout asks repeatedly. Do not rebuild every widget just to size it.
+        return getattr(self, "_body_length", 20) + 7
 
     def pop_out(self):
         if self.manager and self.manager.panel(self.page):
@@ -107,6 +104,7 @@ class SettingsControl(SidebarControl):
         width = max(1, width)
         inner = max(1, width - 4)
         body = self._body(inner)
+        self._body_length = len(body)
         self._actions = list(self._hits)
         self.selected = min(self.selected, max(0, len(self._actions) - 1))
         room = max(1, height - 7)
@@ -128,8 +126,10 @@ class SettingsControl(SidebarControl):
             return [(border, "|"), ("class:settings", " ")] + fitted + [
                 ("class:settings", " "), (border, "|")]
 
-        rows = [rule, framed([("class:settings.title", title.upper())]), rule]
-        self._hits = [(1, 0, width, self.back)]
+        rows = [framed([("class:settings.title", title.upper())]),
+                framed([("class:settings.title", "[ Back ]  [ Close ]")]), rule]
+        self._hits = [(1, 2, min(10, width), self.back),
+                      (1, 12, width - 1, self._hide)]
         for i, line in enumerate(body[self.scroll : self.scroll + room]):
             y = i + self.scroll
             line = Panel._fit_line(line, inner)
@@ -153,7 +153,7 @@ class SettingsControl(SidebarControl):
                 self._hits.append((y - self.scroll + 3, x0 + 2, min(x1 + 2, width - 2), action))
         rows.extend([rule,
                      framed([("class:settings.dim", "Up/Down move  Enter act")]),
-                     framed([("class:settings.hotkey", "Esc back  Tab map"),
+                     framed([("class:settings.hotkey", "Esc close  Left back"),
                              ("class:settings.dim", "   v" if self.scroll + room < len(body) else "")]),
                      rule])
         rows = [Panel._fit_line(line, width) for line in rows[:height]]
@@ -206,7 +206,7 @@ class SettingsSidebar(Sidebar):
             ("pageup", lambda: self.control.move(-8)),
             ("pagedown", lambda: self.control.move(8)),
             ("enter", self.control.activate),
-            ("escape", self.control.back),
+            ("escape", self.control._hide),
             ("left", self.control.back),
             ("right", self.control.activate),
         ):

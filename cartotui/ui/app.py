@@ -164,6 +164,7 @@ class CartoTUIApp:
         from cartotui.radar import RadarSource
         self.radar_source = RadarSource(user_agent=ncfg["user_agent"])
         self.map_control.radar_source = self.radar_source
+        self.statusbar.radar_source = self.radar_source
         self.radar_source.on_tiles_ready = (
             lambda: self.map_control.request_render(force=True))
         self._radar_stop = threading.Event()
@@ -172,7 +173,8 @@ class CartoTUIApp:
 
         floats = [Float(
             content=self.sidebar.container,
-            top=1, right=1, width=self.sidebar.width_chars,
+            top=1, right=1, width=lambda: min(self.sidebar.width_chars,
+                                             max(20, self.widget_manager.screen_w - 2)),
             height=lambda: min(self.sidebar.control.compact_height(),
                                max(8, self.widget_manager.screen_h - 2)),
         )]
@@ -660,7 +662,7 @@ class CartoTUIApp:
             try:
                 app = get_app()
                 if app.layout.current_window is self.sidebar.window:
-                    return False
+                    return self.sidebar.control.page != "search"
             except Exception:
                 pass
             return True

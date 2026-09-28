@@ -70,3 +70,22 @@ def test_batch_clipping_matches_scalar_clipping():
     segments = rng.integers(-10000, 10000, size=(2000, 4)).astype(float)
     expected = [result for segment in segments if (result := clip_segment(*segment, 80, 24)) is not None]
     assert _clip_segments(segments, 80, 24).tolist() == [list(row) for row in expected]
+
+
+def test_crisp_roads_request_only_road_geometry():
+    from cartotui.ui.solid_geometry import ROADS
+    calls = []
+    class Source:
+        overlay_missing = 0
+        def get_overlay_tile(self, *args, **kwargs):
+            calls.append(kwargs["layer_names"])
+            return SimpleNamespace(layers={"roads": {"extent": 4096, "features": [{
+                "properties": {"class": "motorway"},
+                "geometry": {"type": "LineString", "coordinates": [[0, 2048], [4096, 2048]]}}]}})
+    style = theme_vector_style("amber", {})
+    rows = blank_frame(80, 24, style.bg)
+    count = draw_solid_geometry(rows, Source(), center_lat=0, center_lon=0, z=0,
+        term_w=80, term_h=24, canvas_px_w=256, canvas_px_h=256, style=style, roads_only=True)
+    assert count > 0
+    assert calls and all(names == ROADS for names in calls)
+    assert any("─" in text for row in rows for _, text in row)

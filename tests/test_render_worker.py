@@ -24,6 +24,31 @@ from cartotui.ui.app import CartoTUIApp
 MODES = ("half", "quadrant", "braille", "ascii")
 
 
+def test_crisp_overlays_are_independent_of_image_mode(monkeypatch):
+    from PIL import Image
+    from cartotui.rendering import libcarto_backend
+    from cartotui.ui import map_control
+    calls = {}
+    monkeypatch.setattr(libcarto_backend, "rasterise_view_libcarto",
+        lambda *args, **kwargs: Image.new("RGB", (240, 144)))
+    monkeypatch.setattr(map_control, "draw_solid_geometry",
+        lambda *args, **kwargs: calls.update(roads=kwargs))
+    monkeypatch.setattr(map_control, "apply_vector_overlay",
+        lambda *args, **kwargs: calls.update(labels=kwargs))
+    app = _app(vector_render_mode="ascii", crisp_roads=True, crisp_boundaries=True,
+               crisp_labels=True, vector_overlay=False, boundaries=False)
+    app.map_control._panning = lambda: False
+    try:
+        assert _drain(app) is not None
+        assert calls["roads"]["roads_only"] is True
+        assert calls["labels"]["draw_boundaries"] is True
+        assert calls["labels"]["boundary_style"] == "solid"
+        assert calls["labels"]["label_background"] == "theme"
+        assert calls["labels"]["max_labels"] > 0
+    finally:
+        app.map_control.shutdown()
+
+
 @pytest.mark.parametrize("mode, expected", [("braille", 3), ("quadrant", 3), ("ascii", 6), ("half", 6)])
 def test_release_road_width_is_preserved_at_fixed_extent(monkeypatch, mode, expected):
     from PIL import Image

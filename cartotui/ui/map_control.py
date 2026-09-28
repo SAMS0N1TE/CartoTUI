@@ -799,15 +799,16 @@ class MapControl(UIControl):
                 rows = [[("", " " * w)] for _ in range(h)]
 
             r_cfg = self.cfg["render"]
-            if geometry_mode != "standard" and self.vector_source is not None:
+            if (geometry_mode != "standard" or r_cfg.get("crisp_roads")) and self.vector_source is not None:
                 try:
                     draw_solid_geometry(rows, self.vector_source, center_lat=lat, center_lon=lon,
                         z=z, term_w=w, term_h=h, canvas_px_w=view_w, canvas_px_h=view_h,
-                        style=style, max_fetch_zoom=fetch_z, vector_only=geometry_mode == "vector-only")
+                        style=style, max_fetch_zoom=fetch_z, vector_only=geometry_mode == "vector-only",
+                        roads_only=geometry_mode == "standard")
                 except Exception as e:
                     log.warning("Solid geometry failed: %s", e)
-            labels_enabled = bool(labels)
-            boundaries_enabled = bool(r_cfg.get("boundaries", True)) and not panning
+            labels_enabled = bool(labels) or bool(r_cfg.get("crisp_labels"))
+            boundaries_enabled = bool(r_cfg.get("boundaries", True) or r_cfg.get("crisp_boundaries")) and not panning
             if (self.vector_source is not None
                     and (labels_enabled or boundaries_enabled)):
                 try:
@@ -822,9 +823,9 @@ class MapControl(UIControl):
                         pmap_max_zoom=fetch_z,
                         max_labels=max(64, min(240, w * h // 100)) if labels_enabled else 0,
                         detail_labels=bool(r_cfg.get("detail_labels", True)),
-                        label_background=r_cfg.get("label_background", "auto"),
+                        label_background="theme" if r_cfg.get("crisp_labels") else r_cfg.get("label_background", "auto"),
                         draw_boundaries=boundaries_enabled,
-                        boundary_style=str(r_cfg.get("boundary_style", "dots")),
+                        boundary_style="solid" if r_cfg.get("crisp_boundaries") else str(r_cfg.get("boundary_style", "dots")),
                     )
                 except Exception as e:
                     log.debug("Vector overlay failed: %s", e)

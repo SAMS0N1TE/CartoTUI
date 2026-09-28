@@ -26,6 +26,9 @@ class RenderWidget(Widget):
             self.add_kv("View", st.render_mode, width, action=self._cycle_mode)
         if st.source == "vector":
             self.add_kv("Geometry", geometry, width, action=self._cycle_geometry)
+            for key, label in (("crisp_roads", "Crisp roads"), ("crisp_boundaries", "Crisp state borders"), ("crisp_labels", "Crisp place names")):
+                self.add_kv(label, "on" if r.get(key) else "off", width,
+                            action=lambda key=key: self._apply({"render": {key: not self.ctx.cfg["render"].get(key, False)}}))
         self.add_kv("Street / POI labels", "on" if r.get("detail_labels", True) else "off", width, action=self._toggle_details)
         self.add_kv("Boundaries", "on" if r.get("boundaries", True) else "off",
                     width, action=self._toggle_boundaries)

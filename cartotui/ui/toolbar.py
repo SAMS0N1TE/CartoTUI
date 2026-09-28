@@ -14,7 +14,8 @@ _TOOLBAR_ITEMS: List[Tuple[str, str]] = [
     ("Tab", "Settings"),
     ("Q",   "Quit"),
     ("?",   "Help"),
-    ("+/-", "Zoom"),
+    ("-", "Out"),
+    ("+", "In"),
     ("V",   "Src"),
     ("M",   "View"),
     ("G",   "Goto"),
@@ -87,7 +88,9 @@ class Toolbar(UIControl):
         runs.append(("class:toolbar", " "))
         col += 1
 
-        for key, label in _TOOLBAR_ITEMS:
+        items = (_TOOLBAR_ITEMS if w >= 70 else
+                 [("Tab", "Menu"), ("-", ""), ("+", ""), ("M", "View")])
+        for key, label in items:
             disabled = _is_disabled(self.state, key)
             pressed = (not disabled) and self._press_key == key
             hover = (not disabled) and not pressed and self._hover_key == key
@@ -164,8 +167,10 @@ class Toolbar(UIControl):
             self.on_quit()
         elif key == "?":
             self.on_help()
-        elif key == "+/-":
+        elif key in ("+/-", "+"):
             self.map_control.zoom(+1)
+        elif key == "-":
+            self.map_control.zoom(-1)
         elif key == "K":
             if self.on_cycle_source is not None:
                 self.on_cycle_source()

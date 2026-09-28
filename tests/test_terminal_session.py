@@ -67,10 +67,18 @@ def test_keyboard_settings_over_vt100(direct, packed):
                 pipe.send_text("\x1b[B\r")
                 await until(lambda: app.sidebar.control.page == "render")
                 await until(lambda: "MAP APPEARANCE" in stream.getvalue())
-                started = asyncio.get_running_loop().time()
-                pipe.send_text("\x1b")
-                await until(lambda: app.sidebar.control.page == "home")
-                assert asyncio.get_running_loop().time() - started < 0.4
+                before = app.state.render_mode
+                pipe.send_text("m")
+                await until(lambda: app.state.render_mode != before)
+                assert app.state.sidebar_visible
+                before = app.state.palette
+                pipe.send_text("p")
+                await until(lambda: app.state.palette != before)
+                app.sidebar.control.open_page("search")
+                before = app.state.render_mode
+                pipe.send_text("m")
+                await until(lambda: app.sidebar.control.search_text.endswith("m"))
+                assert app.state.render_mode == before
                 started = asyncio.get_running_loop().time()
                 pipe.send_text("\x1b")
                 await until(lambda: not app.state.sidebar_visible)

@@ -8,7 +8,7 @@ import numpy as np
 from cartotui.geodesy import latlon_to_tile_xy
 from cartotui.rendering.packed import PackedFrame, compile_stamps
 from cartotui.ui.aircraft_overlay import _stamp_cells_batch
-from cartotui.ui.map_overlay import _iter_line_coords, _line_cells
+from cartotui.ui.map_overlay import _boundary_glyph, _iter_line_coords, _line_cells
 
 ROADS = frozenset(("roads", "streets", "transportation", "bridges"))
 WATER = frozenset(("water", "water_polygons", "water_lines", "waterway", "ocean", "lakes", "rivers"))
@@ -43,11 +43,11 @@ def clip_segment(x0, y0, x1, y1, width, height):
                                     x0 + high * dx, y0 + high * dy))
 
 
-def _prepared_segments(source, tile, name, layer):
+def _prepared_segments(source, tile, name, layer, roads_only=False):
     cache = getattr(source, "_geometry_segments", None)
     if cache is None:
         cache = source._geometry_segments = OrderedDict()
-    key = (id(tile), name)
+    key = (id(tile), name, roads_only)
     found = cache.get(key)
     if found and found[0]() is tile:
         cache.move_to_end(key)
@@ -59,6 +59,11 @@ def _prepared_segments(source, tile, name, layer):
         kind = str(props.get("class") or props.get("kind") or props.get("pmap:kind") or "")
         gate = (0 if kind in ("motorway", "trunk", "highway") else 8 if kind == "primary"
                 else 13 if kind in ("service", "path", "footway", "track", "steps") else 10) if name in ROADS else 0
+        if roads_only:
+            if props.get("rail") or kind in ("rail", "subway", "light_rail", "runway", "taxiway"):
+                continue
+            gate = (0 if kind in ("motorway", "trunk", "highway") else 8 if kind == "primary"
+                    else 11 if kind == "secondary" else 13 if kind == "tertiary" else 15)
         geom = feat.get("geometry") or {}
         if geom.get("type") not in ("LineString", "MultiLineString", "Polygon", "MultiPolygon"):
             continue
@@ -104,10 +109,10 @@ def _clip_segments(segments, width, height):
 
 def draw_solid_geometry(rows, source, *, center_lat, center_lon, z, term_w, term_h,
                         canvas_px_w, canvas_px_h, style, max_fetch_zoom=14,
-                        vector_only=False):
-    names = ROADS | WATER | (BUILDINGS if vector_only and z >= 15 else frozenset())
+                        vector_only=False, roads_only=False):
+    names = ROADS if roads_only else ROADS | WATER | (BUILDINGS if vector_only and z >= 15 else frozenset())
     key = (center_lat, center_lon, z, term_w, term_h, canvas_px_w, canvas_px_h,
-           repr(style), max_fetch_zoom, vector_only)
+           repr(style), max_fetch_zoom, vector_only, roads_only)
     cache = getattr(source, "_solid_geometry_cache", None)
     if cache is None:
         cache = source._solid_geometry_cache = OrderedDict()
@@ -131,12 +136,16 @@ def draw_solid_geometry(rows, source, *, center_lat, center_lon, z, term_w, term
                 if tile is None:
                     continue
                 for name, layer in tile.layers.items():
+                    if name not in names:
+                        continue
                     road = name in ROADS
                     color = style.road_color if road else style.water if name in WATER else style.building
                     color = readable_color(color, style.bg, 3.0)
                     paint = "fg:#%02x%02x%02x" % tuple(color)
+                    if roads_only:
+                        paint += " bg:#%02x%02x%02x" % tuple(style.bg)
                     extent = layer.get("extent") or 4096
-                    segments, gates = _prepared_segments(source, tile, name, layer)
+                    segments, gates = _prepared_segments(source, tile, name, layer, roads_only)
                     segments = segments[gates <= z]
                     if not len(segments):
                         continue
@@ -153,6 +162,13 @@ def draw_solid_geometry(rows, source, *, center_lat, center_lon, z, term_w, term
             segments[reverse] = segments[reverse][:, [2, 3, 0, 1]]
             for segment in np.unique(segments, axis=0).tolist():
                 diagonal = _line_cells(*segment)
+                if roads_only:
+                    if segment[:2] == segment[2:]:
+                        continue
+                    glyph = _boundary_glyph(*segment, 4, "solid")
+                    for x, y in diagonal:
+                        cells[x, y] = (priority, glyph, paint)
+                    continue
                 path = []
                 for point in diagonal:
                     if path and path[-1][0] != point[0] and path[-1][1] != point[1]:
@@ -173,7 +189,8 @@ def draw_solid_geometry(rows, source, *, center_lat, center_lon, z, term_w, term
                     cells[x, y] = (priority, mask, paint)
         glyphs = {0: "·", 1: "─", 2: "─", 3: "─", 4: "│", 8: "│", 12: "│",
                   5: "┘", 6: "└", 9: "┐", 10: "┌", 7: "┴", 11: "┬", 13: "┤", 14: "├", 15: "┼"}
-        stamps = [(x, y, glyphs[mask], paint) for (x, y), (_, mask, paint) in cells.items()]
+        stamps = [(x, y, mask if roads_only else glyphs[mask], paint)
+                  for (x, y), (_, mask, paint) in cells.items()]
         plan = compile_stamps(stamps, term_w, term_h)
         if missing == getattr(source, "overlay_missing", 0):
             cache[key] = (stamps, plan)

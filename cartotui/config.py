@@ -80,6 +80,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vector_overlay": True,
         "boundaries": True,
         "geometry_mode": "standard",
+        "crisp_roads": False,
+        "crisp_boundaries": False,
+        "crisp_labels": False,
         "detail_labels": True,
         "label_background": "auto",
         "vector_engine": "libcarto",
@@ -378,8 +381,8 @@ def _validate(cfg: Dict[str, Any]) -> Dict[str, Any]:
     r["vector_overlay"] = _coerce_bool(r.get("vector_overlay"), DEFAULT_CONFIG["render"]["vector_overlay"])
     r["label_background"] = _coerce_choice(r.get("label_background"), ("auto", "theme", "none"), "auto")
     r["geometry_mode"] = _coerce_choice(r.get("geometry_mode"), ("standard", "solid", "vector-only"), "standard")
-    for key in ("detail_labels",):
-        r[key] = _coerce_bool(r.get(key), True)
+    for key in ("detail_labels", "crisp_roads", "crisp_boundaries", "crisp_labels"):
+        r[key] = _coerce_bool(r.get(key), DEFAULT_CONFIG["render"][key])
     r["boundaries"] = _coerce_bool(r.get("boundaries"), DEFAULT_CONFIG["render"]["boundaries"])
     r["vector_engine"] = _coerce_choice(r.get("vector_engine"), ("libcarto", "python"),
                                         DEFAULT_CONFIG["render"]["vector_engine"])

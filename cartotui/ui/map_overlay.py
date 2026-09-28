@@ -269,6 +269,10 @@ def draw_boundary_lines(
 
     color = getattr(style, "boundary_color", getattr(style, "label_color", (200, 200, 200)))
     base_style = f"fg:#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+    if boundary_style == "solid":
+        from cartotui.ui.solid_geometry import readable_color
+        color = readable_color(color, style.bg, 4.5)
+        base_style = "fg:#%02x%02x%02x bg:#%02x%02x%02x" % (*color, *style.bg)
 
     stamps: List[Tuple[int, int, str, str]] = []
     dash = 0

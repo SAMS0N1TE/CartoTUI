@@ -13,6 +13,7 @@ class StatusBar(UIControl):
         self.state = state
         self.cfg = cfg
         self._engine: str | None = None
+        self.radar_source = None
 
     def is_focusable(self) -> bool:
         return False
@@ -47,6 +48,9 @@ class StatusBar(UIControl):
             f"{color.upper()} "
         )
         right_parts = []
+        if self.radar_source is not None and self.cfg.get("overlays", {}).get("radar", {}).get("enabled"):
+            # Lead with progress so narrow SSH screens cannot truncate it away.
+            left = self.radar_source.progress_text() + " | " + left
         if show_latency:
             engine = self._engine_tag()
             if engine:
