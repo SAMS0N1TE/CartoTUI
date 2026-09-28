@@ -60,9 +60,10 @@ class RenderWidget(Widget):
             self.add_kv("Palette", st.palette, width, action=self._cycle_palette)
             if st.render_mode == "ascii":
                 self.add_kv("Dither", st.dither, width, action=self._cycle_dither)
-            else:
-                self.add_kv("Shading", "on" if st.shaded_blocks else "off", width,
-                            action=self._toggle_shaded)
+            self.add_kv("Shading", "on" if st.shaded_blocks else "off", width,
+                        action=self._toggle_shaded)
+            if st.render_mode in ("ascii", "braille") and not st.shaded_blocks:
+                self.add_dim("Text textures; solid blocks disabled.", width)
 
         if self.add_fold("Tone", width, self._tone_open, self._toggle_tone,
                          summary=f"{st.brightness:.2f}/{st.contrast:.2f}"):

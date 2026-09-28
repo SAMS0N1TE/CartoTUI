@@ -212,6 +212,8 @@ class CartoTUIApp:
             min_redraw_interval=1.0 / max(5, max_fps),
             refresh_interval=0.5,
         )
+        # Resolve a lone Escape promptly while allowing terminal escape sequences.
+        self.app.ttimeoutlen = 0.05
 
     def _install_direct_paint(self) -> None:
         """Swap in a renderer that paints the map itself.
@@ -697,14 +699,12 @@ class CartoTUIApp:
         )
 
         @kb.add("c-right", filter=sidebar_visible_filter)
-        @kb.add("escape", "right", filter=sidebar_visible_filter)
         @kb.add("f4", filter=sidebar_visible_filter)
         def _(event):
             self.sidebar.control.cycle_tab(+1)
             event.app.invalidate()
 
         @kb.add("c-left", filter=sidebar_visible_filter)
-        @kb.add("escape", "left", filter=sidebar_visible_filter)
         @kb.add("f3", filter=sidebar_visible_filter)
         def _(event):
             self.sidebar.control.cycle_tab(-1)
@@ -977,7 +977,8 @@ class CartoTUIApp:
         sidebar_kb = self.sidebar.keybindings()
         wrapped = KeyBindings()
         for binding in sidebar_kb.bindings:
-            wrapped.add(*binding.keys, filter=sidebar_kb_filter)(binding.handler)
+            wrapped.add(*binding.keys, filter=sidebar_kb_filter,
+                        eager=binding.eager)(binding.handler)
 
         from prompt_toolkit.key_binding import ConditionalKeyBindings
         return ConditionalKeyBindings(merge_key_bindings([kb, wrapped]),

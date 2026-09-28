@@ -16,9 +16,10 @@ The settings/input UI continues to use prompt_toolkit.
   renderer. The native interface is declared in `libcarto/include/carto/terminal.h`.
 - Changes to visibility, origin, dimensions, or terminal colors invalidate previous
   cells. Dense updates choose the smaller full-frame or changed-cell stream.
-- Braille preserves v0.13.0 glyph selection: flat regions use the selected
-  palette (including `dos5`) and inherit the terminal background. Shading also
-  substitutes palette glyphs in high-coverage cells. Adaptive is the default;
+- Unshaded ASCII and braille replace block glyphs in their palette with text
+  density characters. Literal text palettes such as `dos5` are unchanged.
+  Flat braille regions inherit the terminal background. Shading enables the
+  original block palette and substitutes glyphs in high-coverage cells. Adaptive is the default;
   stable is an optional alternate tone mapping. Packed output preserves these
   glyphs and colours rather than changing the rendering algorithm.
 

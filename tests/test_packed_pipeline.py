@@ -72,7 +72,7 @@ def test_unshaded_braille_preserves_palette_tones(native, threshold):
     for radar in (None, Image.new("RGBA", image.size, (0, 200, 255, 100))):
         rows = r.render(image, 128, 8, True, mode="braille", overlay=radar)
         chars = "".join(text for row in rows for _, text in row)
-        palette = set(default_palettes()["shades"])
+        palette = set(default_palettes()["dos5"])
         assert all(ch in palette or 0x2800 <= ord(ch) <= 0x28FF for ch in chars)
         assert set(chars) & (palette - {" "})
         assert all("bg:" not in style for row in rows for style, _ in row)

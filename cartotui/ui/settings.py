@@ -210,7 +210,7 @@ class SettingsSidebar(Sidebar):
             ("left", self.control.back),
             ("right", self.control.activate),
         ):
-            kb.add(key)(lambda event, action=action: action())
+            kb.add(key, eager=(key == "escape"))(lambda event, action=action: action())
 
         @kb.add("backspace")
         def backspace(event):

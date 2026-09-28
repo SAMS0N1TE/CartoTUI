@@ -65,7 +65,13 @@ def digest(rows):
 def test_release_cells(record, packed):
     if record["case"]["native"] and _native_renderer() is None:
         pytest.skip("native library unavailable")
-    assert digest(render(record["case"], packed)) == record["sha256"]
+    case = record["case"]
+    expected = record["sha256"]
+    if case["mode"] in ("ascii", "braille") and not case["shaded"] and case["palette"] == "shades":
+        # Intentional dev5 change: unshaded block ramps use text densities.
+        text_case = dict(case, palette="dos5")
+        expected = next(r["sha256"] for r in json.loads(FIXTURE.read_text()) if r["case"] == text_case)
+    assert digest(render(case, packed)) == expected
 
 
 if __name__ == "__main__":

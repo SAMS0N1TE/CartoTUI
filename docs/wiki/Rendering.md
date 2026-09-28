@@ -104,8 +104,10 @@ Adaptive remains the release-compatible default for new configurations and
 existing Looks. Existing profiles keep their selected threshold. Choose **Map
 appearance > Detail > stable** to try the alternate mapping. Updated libcarto
 runs it natively; older shared libraries fall back to Python safely. Half mode
-bypasses thresholding entirely. Braille uses palette glyphs for flat tones and
-inherits the terminal background, preserving the character textures of v0.13.0.
+bypasses thresholding entirely. With Shading off, ASCII and braille replace block
+palette glyphs with text-density characters, including in flat braille regions.
+Enable Shading to retain the original block glyphs. Text palettes such as dos5
+are unchanged. Braille continues to inherit the terminal background.
 
 Both terminal output paths use ordinary text and ANSI colours: no graphics
 protocol, GUI or local display server is required on the remote host. With

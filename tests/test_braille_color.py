@@ -13,7 +13,7 @@ def test_uniform_braille_inherits_terminal_background(native, background):
     image = Image.new("RGB", (40, 40), background)
     frame = r.render(image, 20, 10, True, "braille", packed=True)
     assert np.all(frame.bg == DEFAULT)
-    assert set(map(chr, frame.glyph.flat)) <= set(default_palettes()["shades"])
+    assert set(map(chr, frame.glyph.flat)) <= set(default_palettes()["dos5"])
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -25,7 +25,7 @@ def test_colour_braille_honours_palette_and_threshold(native):
         rows = r.render(image, 128, 8, True, "braille", palette_name=palette, orientation="dark")
         return "".join(text for row in rows for _, text in row)
     original = glyphs("dos5")
-    assert original != glyphs("shades")
+    assert original != glyphs("hatch")
     r.update_options(subpixel_threshold="stable")
     assert original != glyphs("dos5")
 

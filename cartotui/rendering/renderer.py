@@ -885,7 +885,16 @@ class Renderer:
         """
         effective_mode = self._resolve_mode(mode, source_kind)
         self.last_effective_mode = effective_mode
-        key = (term_w, term_h, use_color, effective_mode, self.get_palette(palette_name),
+        palette = self.get_palette(palette_name)
+        if effective_mode in ("ascii", "braille") and not self.shaded_blocks:
+            # Unshaded character modes must not turn into solid block maps.
+            # Keep ramp order/length and literal text palettes (e.g. dos5),
+            # replacing only block glyphs with equivalent character densities.
+            ramp = " .,:;+=*#%@"
+            replacements = {chr(0x2580 + i): ramp[min(10, max(1, i))] for i in range(32)}
+            replacements.update(dict(zip("░▒▓█", ".+#@")))
+            palette = "".join(replacements.get(ch, ch) for ch in palette)
+        key = (term_w, term_h, use_color, effective_mode, palette,
                dither, orientation, self.subpixel_threshold, self.subpixel_percentile,
                self.shaded_blocks, self.use_native_cells)
         retained_input = img if hasattr(img, "indices") else None
@@ -904,7 +913,7 @@ class Renderer:
                 and effective_mode in _NATIVE_MODES):
             frame = _native_cells(
                 img, term_w, term_h, use_color, effective_mode,
-                self.get_palette(palette_name), orientation,
+                palette, orientation,
                 self.subpixel_threshold, self.subpixel_percentile,
                 self.shaded_blocks,
                 packed=packed,
@@ -924,7 +933,7 @@ class Renderer:
             term_w,
             term_h,
             use_color,
-            self.get_palette(palette_name),
+            palette,
             dither,
             overlay=overlay,
             orientation=orientation,

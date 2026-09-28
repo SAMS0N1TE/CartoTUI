@@ -67,8 +67,14 @@ def test_keyboard_settings_over_vt100(direct, packed):
                 pipe.send_text("\x1b[B\r")
                 await until(lambda: app.sidebar.control.page == "render")
                 await until(lambda: "MAP APPEARANCE" in stream.getvalue())
-                pipe.send_text("\t")
+                started = asyncio.get_running_loop().time()
+                pipe.send_text("\x1b")
+                await until(lambda: app.sidebar.control.page == "home")
+                assert asyncio.get_running_loop().time() - started < 0.4
+                started = asyncio.get_running_loop().time()
+                pipe.send_text("\x1b")
                 await until(lambda: not app.state.sidebar_visible)
+                assert asyncio.get_running_loop().time() - started < 0.4
                 pipe.send_text("\x03")
                 await asyncio.wait_for(task, 3)
                 assert "38;2;" not in stream.getvalue()
