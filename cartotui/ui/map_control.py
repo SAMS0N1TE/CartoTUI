@@ -801,6 +801,11 @@ class MapControl(UIControl):
                 log.warning("Render failed: %s", e)
                 rows = [[("", " " * w)] for _ in range(h)]
 
+            if (source == "vector" and effective_color
+                    and render_mode in ("ascii", "braille") and palette in ("dos", "dos5")):
+                from cartotui.rendering.text_contrast import balance_dos_ink
+                rows = balance_dos_ink(rows, style.bg)
+
             r_cfg = self.cfg["render"]
             if (geometry_mode != "standard" or r_cfg.get("crisp_roads")) and self.vector_source is not None:
                 try:
