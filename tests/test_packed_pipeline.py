@@ -1,6 +1,4 @@
 import re
-import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,8 +10,42 @@ from cartotui.rendering.renderer import Renderer, default_palettes
 from cartotui.ui.aircraft_overlay import _stamp_cells_batch, _stamp_label
 from cartotui.ui.direct_paint import paint_rows
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/experiments"))
-from performance_research import emulate  # noqa: E402
+
+def emulate(blob, w, h, initial=None):
+    """Small independent oracle for emitted CUP/SGR/UTF8, not a general terminal."""
+    cells = list(initial) if initial else [None] * (w * h)
+    x = y = 0
+    fg = bg = None
+    text = blob.decode("utf8")
+    tokens = re.split(r"(\x1b\[[0-9;]*[Hm]|\x1b[78])", text)
+    for token in tokens:
+        if token.startswith("\x1b["):
+            v = [int(t) for t in token[2:-1].split(";") if t]
+            if token.endswith("H"):
+                y, x = v[0] - 1, v[1] - 1
+            else:
+                i = 0
+                while i < len(v):
+                    if v[i] in (38, 48) and v[i + 1] == 5:
+                        if v[i] == 38:
+                            fg = v[i + 2]
+                        else:
+                            bg = v[i + 2]
+                        i += 3
+                    elif v[i] == 0:
+                        fg = bg = None
+                        i += 1
+                    else:
+                        raise AssertionError(("unexpected SGR", v))
+        elif token.startswith("\x1b"):
+            continue
+        else:
+            for ch in token:
+                assert 0 <= x < w and 0 <= y < h, (x, y, w, h)
+                # Every glyph is visually a uniform cell when fg == bg.
+                cells[y * w + x] = (32, bg, bg) if fg == bg else (ord(ch), fg, bg)
+                x += 1
+    return cells
 
 
 def screen(text, w, h, initial=None):

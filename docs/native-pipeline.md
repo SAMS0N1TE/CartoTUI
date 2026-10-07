@@ -63,8 +63,8 @@ Run `python -m pytest`. The regression suite checks native/fragment cell equalit
 truecolor and 256-color encoding, occlusion, sparse changes, cache invalidation,
 decoder bounds, unshaded braille, native rounding, and VT100 keyboard sessions.
 
-`tools/experiments/validate_integration.py --cache PATH --out PATH` exercises real
-tiles, all zooms 0–19 in half/braille, two themes, and retained/fresh cell timings.
+`tools/qa_rendering.py --cache PATH --out PATH` exercises real tiles at zooms
+0–19 in every character mode and reports warm cell timings and output sizes.
 These are CPU measurements, not SSH or terminal presentation latency. Rebuild
 libcarto with CMake before running native tests.
 
