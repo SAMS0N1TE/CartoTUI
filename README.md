@@ -3,7 +3,7 @@
 Interactive map viewer for the terminal with vector or raster tiles rendered as
 ASCII, Unicode quadrants, or braille.
 
-## [Latest update provides massive performance improvements and an easy to run Windows executable. Click here for the release.](https://github.com/SAMS0N1TE/CartoTUI/releases/tag/v0.13.0)
+## [Latest update provides massive performance improvements and an easy to run Windows executable. Click here for the release.](https://github.com/SAMS0N1TE/CartoTUI/releases/tag/v0.14.0)
 
 
 <img width="1038" height="890" src="docs/motion.gif" />
