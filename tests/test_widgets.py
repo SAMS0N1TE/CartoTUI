@@ -234,8 +234,8 @@ def test_adsb_update_row_tops_out_at_ten_seconds():
 
 def test_adsb_shows_streaming_for_a_source_without_a_poll_interval():
     """A receiver pushes messages as they arrive; a poll knob would be a lie."""
-    from cartotui.traffic.sbs1 import SBS1TCPSource
     from cartotui.traffic.aircraft import AircraftRegistry
+    from cartotui.traffic.sbs1 import SBS1TCPSource
     from cartotui.ui.widgets.registry import create_widget
 
     cfg = Config()

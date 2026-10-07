@@ -1,12 +1,12 @@
 from types import SimpleNamespace
 
-from cartotui.geodesy import latlon_to_tile_xy
 from cartotui.ui.map_overlay import (
     _admin_level,
     _iter_line_coords,
     _line_cells,
     draw_boundary_lines,
 )
+
 
 def test_admin_level_from_number_and_class():
     assert _admin_level({"admin_level": 2}) == 2

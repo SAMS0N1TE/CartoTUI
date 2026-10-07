@@ -99,9 +99,10 @@ def test_keyboard_settings_over_vt100(direct, packed):
 
 
 def test_colour_and_name_dialogs_accept_keyboard_over_vt100():
+    from prompt_toolkit.application.current import set_app
+
     from cartotui import theme_loader as T
     from cartotui.ui.widgets.input_dialog import ask_text
-    from prompt_toolkit.application.current import set_app
 
     async def run():
         output = Vt100_Output(io.StringIO(), lambda: Size(rows=30, columns=90), enable_cpr=False)

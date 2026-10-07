@@ -26,6 +26,7 @@ MODES = ("half", "quadrant", "braille", "ascii")
 
 def test_crisp_overlays_are_independent_of_image_mode(monkeypatch):
     from PIL import Image
+
     from cartotui.rendering import libcarto_backend
     from cartotui.ui import map_control
     calls = {}
@@ -52,6 +53,7 @@ def test_crisp_overlays_are_independent_of_image_mode(monkeypatch):
 @pytest.mark.parametrize("mode, expected", [("braille", 3), ("quadrant", 3), ("ascii", 6), ("half", 6)])
 def test_release_road_width_is_preserved_at_fixed_extent(monkeypatch, mode, expected):
     from PIL import Image
+
     from cartotui.rendering import libcarto_backend
     calls = []
     def raster(source, lat, lon, z, width, height, **kwargs):

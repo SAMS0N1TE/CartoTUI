@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 from cartotui.aircraft_colors import altitude_color
 from cartotui.traffic.interest import classify

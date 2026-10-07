@@ -4,6 +4,7 @@ from __future__ import annotations
 from cartotui.raster_vector import ROAD_CLASS_PRIORITY, rasterise_view
 from cartotui.themes import theme_vector_style
 
+
 class _FakeTile:
     extent = 4096
 

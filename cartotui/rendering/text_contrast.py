@@ -1,10 +1,10 @@
 """Keep sparse DOS characters readable without changing their density."""
-from functools import lru_cache
 import re
+from functools import lru_cache
 
 import numpy as np
 
-from cartotui.rendering.packed import PackedFrame, DEFAULT
+from cartotui.rendering.packed import DEFAULT, PackedFrame
 
 _FG = re.compile(r"(?<!\S)fg:#([0-9a-fA-F]{6})(?![0-9a-fA-F])")
 

@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from cartotui.rendering.renderer import Renderer, default_palettes
 from cartotui.rendering.packed import DEFAULT
+from cartotui.rendering.renderer import Renderer, default_palettes
 
 
 @pytest.mark.parametrize("native", [False, True])

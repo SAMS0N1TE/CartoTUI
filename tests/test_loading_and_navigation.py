@@ -3,12 +3,12 @@ from types import SimpleNamespace
 from PIL import Image
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-
-from cartotui.radar import RadarSource
-from cartotui.ui.statusbar import StatusBar
-from cartotui.config import Config
-from cartotui.ui.state import MapState
 from test_settings import make_app
+
+from cartotui.config import Config
+from cartotui.radar import RadarSource
+from cartotui.ui.state import MapState
+from cartotui.ui.statusbar import StatusBar
 
 
 def test_radar_progress_distinguishes_metadata_tiles_and_retries(monkeypatch):

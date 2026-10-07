@@ -15,6 +15,7 @@ from cartotui.traffic.record import (
     aircraft_to_dict,
 )
 
+
 def test_parse_aircraft_core_and_enrichment():
     raw = {"hex": "a8856d", "flight": "UAL620  ", "r": "N64809", "t": "B739",
            "desc": "BOEING 737-900", "ownOp": "UNITED AIRLINES INC",
@@ -140,8 +141,9 @@ def test_select_visible_altitude_band():
 
 def test_overlay_preserves_map_background():
     import time
-    from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
+
     from cartotui.raster_vector import VectorStyle
+    from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
     w, h = 40, 12
     rows = [[("fg:#d2d2d2 bg:#4f4f4f", "▀" * w)] for _ in range(h)]
     ac = Aircraft(icao="AAA111", callsign="TEST", lat=40.75, lon=-73.95,
@@ -158,8 +160,9 @@ def test_overlay_preserves_map_background():
 
 def test_overlay_returns_hitbox_at_marker():
     import time
-    from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
+
     from cartotui.raster_vector import VectorStyle
+    from cartotui.ui.aircraft_overlay import apply_aircraft_overlay
     w, h = 60, 20
     rows = [[("fg:#d2d2d2 bg:#4f4f4f", "▀" * w)] for _ in range(h)]
     ac = Aircraft(icao="AAA111", callsign="TEST", lat=40.75, lon=-73.95,

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from cartotui.rendering.packed import PackedFrame, DEFAULT
+
+from cartotui.rendering.packed import DEFAULT, PackedFrame
 from cartotui.rendering.text_contrast import balance_dos_ink
 from cartotui.themes import available_themes, theme_vector_style
 from cartotui.ui.solid_geometry import luminance
