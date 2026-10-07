@@ -67,6 +67,7 @@ if [ "$SKIP_DLL" = "0" ]; then
         "$CC" -shared -fPIC -O2 -I"$LIB/include" \
             "$LIB/src/style.c" "$LIB/src/framebuffer.c" "$LIB/src/raster.c" \
             "$LIB/src/geom.c" "$LIB/src/mvt.c" "$LIB/src/carto.c" \
+            "$LIB/src/cells.c" "$LIB/src/terminal.c" \
             -o "$OUT" -lm
         [ -f "$OUT" ] && echo "  built $OUT" || echo "  DLL build failed; the Python renderer will be used."
     else
